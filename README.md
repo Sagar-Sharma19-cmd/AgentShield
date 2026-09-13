@@ -149,6 +149,30 @@ docker compose up --build
 
 ---
 
+## Development Workflow & CI/CD
+
+### Branch Strategy
+All development follows a feature-branch workflow off `main`:
+- `main`: Production-ready, stable baseline code.
+- `feature/*`: Dedicated branches for major functional milestones (e.g. `feature/core-gateway`, `feature/policy-engine`, `feature/risk-engine`).
+
+### Pull Request & CI Workflow
+1. Create a feature branch off `main`.
+2. Push changes and open a Pull Request (PR) targeting `main`.
+3. Automated GitHub Actions run path-filtered CI checks:
+   - **Backend CI (`backend-ci.yml`)**: Triggered on `backend/**` changes; runs Java 17 / Maven build and unit tests (`mvn clean test package`).
+   - **Risk Engine CI (`risk-engine-ci.yml`)**: Triggered on `risk-engine/**` changes; runs Python 3.11 / Pytest suite (`pytest`).
+   - **Security Checks (`security-checks.yml`)**: Runs on all PRs; performs open-source secret scanning and vulnerability checks via Trivy.
+4. Merge into `main` after all required status checks pass successfully.
+
+### Future CD Plan
+Continuous Deployment (CD) pipelines will be introduced once core gateway and risk engine functionalities stabilize:
+- Automated multi-architecture Docker container builds.
+- Registry publishing and local/staging deployment orchestration.
+
+---
+
 ## Author
 
 Sagar Sharma — Capstone Project, 2026
+
