@@ -1,0 +1,3 @@
+# Integration tests placeholder
+# Will test requests spanning backend + risk engine + database.
+# Planned for Phase 7.

@@ -1,0 +1,87 @@
+# ============================================================
+# AgentShield — Docker Compose
+#
+# This file defines the local multi-service development
+# environment. Services are added incrementally as each
+# component is implemented.
+#
+# Current status:
+#   - postgres   : configured (ready to use)
+#   - backend    : placeholder (not yet implemented)
+#   - risk-engine: placeholder (not yet implemented)
+#   - frontend   : placeholder (not yet implemented)
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # PostgreSQL — primary database
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: agentshield-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-agentshield}
+      POSTGRES_USER: ${POSTGRES_USER:-agentshield_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agentshield_user}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  # ----------------------------------------------------------
+  # Backend — Spring Boot Security Gateway
+  # Uncomment when backend/Dockerfile is ready
+  # ----------------------------------------------------------
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: agentshield-backend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-agentshield}
+  #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentshield_user}
+  #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+  #     RISK_ENGINE_URL: http://risk-engine:8000
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+
+  # ----------------------------------------------------------
+  # Risk Engine — Python FastAPI
+  # Uncomment when risk-engine/Dockerfile is ready
+  # ----------------------------------------------------------
+  # risk-engine:
+  #   build:
+  #     context: ./risk-engine
+  #     dockerfile: Dockerfile
+  #   container_name: agentshield-risk-engine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8000:8000"
+
+  # ----------------------------------------------------------
+  # Frontend — Next.js Dashboard
+  # Uncomment when frontend/Dockerfile is ready
+  # ----------------------------------------------------------
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   container_name: agentshield-frontend
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: http://localhost:8080
+
+volumes:
+  postgres_data:
