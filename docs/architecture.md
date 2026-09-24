@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status:** Placeholder — to be filled in during Phase 1–3.
+> **Status:** Core Security Gateway Implemented (Milestone 1A)
 
 ---
 
@@ -12,23 +12,22 @@ AgentShield is a runtime security gateway that intercepts every tool call made b
 ┌─────────────────────┐
 │      AI Agent       │
 └────────┬────────────┘
-         │  Tool/API Request
+         │  Tool/API Request (POST /api/v1/gateway/evaluate)
          ▼
 ┌─────────────────────────────────────────────────────┐
 │              AgentShield Security Gateway            │
 │                                                     │
-│   ┌───────────────┐   ┌───────────────┐             │
-│   │ Policy Engine │   │  Risk Engine  │  (external) │
-│   │  (Java/Spring)│   │ (Python/FastAPI)            │
-│   └───────────────┘   └───────────────┘             │
-│              │                │                     │
-│              └────────┬───────┘                     │
-│                       ▼                             │
-│             Decision: ALLOW / REVIEW / DENY         │
-│                       │                             │
-│              ┌─────────────────┐                    │
-│              │   Audit Logger  │                    │
-│              └─────────────────┘                    │
+│   ┌─────────────────────┐   ┌───────────────────┐   │
+│   │    GatewayService   │──►│   PolicyEngine    │   │
+│   └──────────┬──────────┘   │ (Deterministic)   │   │
+│              │              └───────────────────┘   │
+│              ▼                                      │
+│     Decision: ALLOW / REVIEW / DENY                 │
+│              │                                      │
+│              ▼                                      │
+│     ┌─────────────────┐                             │
+│     │  Audit Log DB   │ (PostgreSQL)                │
+│     └─────────────────┘                             │
 └───────────────────────┬─────────────────────────────┘
                         │
                         ▼
@@ -39,24 +38,22 @@ AgentShield is a runtime security gateway that intercepts every tool call made b
 
 ## Components
 
-### Backend (Spring Boot)
+### Backend (Spring Boot 3.5.12, Java 17)
 
-- Exposes a REST API that agents call when they want to take an action.
-- Evaluates the request against the policy engine.
-- Calls the risk engine for a numeric risk score.
-- Returns a decision (ALLOW / REVIEW / DENY) with reasoning.
-- Persists all decisions to PostgreSQL for audit and analysis.
+- Exposes REST API `POST /api/v1/gateway/evaluate` for AI agent tool requests.
+- Evaluates incoming requests via deterministic `PolicyEngine`.
+- Computes baseline risk scores ($0–100$).
+- Returns security decisions (`ALLOW` / `REVIEW` / `DENY`) with reasons.
+- Persists audit logs to PostgreSQL database via `AuditService` & JPA `AuditRepository`.
 
-**Planned packages:**
+**Implemented Packages:**
 ```
-com.agentshield.gateway       — Request routing and main controllers
-com.agentshield.policy        — Policy evaluation logic
-com.agentshield.audit         — Audit log persistence
-com.agentshield.model         — Domain models / entities
-com.agentshield.repository    — JPA repositories (database access)
-com.agentshield.service       — Business logic layer
-com.agentshield.config        — Spring configuration
-com.agentshield.dto           — Data Transfer Objects (request/response)
+com.agentshield.gateway       — REST Controller & GatewayService orchestration
+com.agentshield.policy        — PolicyEngine & deterministic risk baseline
+com.agentshield.audit         — AuditLog JPA entity, AuditRepository, AuditService
+com.agentshield.model         — ActionType, DecisionType, ResourceSensitivity, ActionOutcome enums
+com.agentshield.config        — GlobalExceptionHandler REST validation handling
+com.agentshield.dto           — EvaluationRequest, EvaluationResponse, ErrorResponse DTOs
 ```
 
 ### Risk Engine (Python / FastAPI)

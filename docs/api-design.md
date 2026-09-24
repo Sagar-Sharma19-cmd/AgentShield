@@ -1,6 +1,6 @@
 # API Design
 
-> **Status:** Placeholder — to be finalised during Phase 1 (backend implementation).
+> **Status:** Implemented (Milestone 1A — Core Gateway)
 
 ---
 
@@ -12,30 +12,21 @@ http://localhost:8080/api/v1
 
 ---
 
-## Endpoints (Planned)
+## Endpoints
 
 ### Gateway
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/gateway/evaluate` | Submit an agent action for security evaluation |
-| `GET` | `/gateway/health` | Health check |
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| `POST` | `/gateway/evaluate` | Submit an agent tool request for security evaluation | ✅ Implemented (Milestone 1A) |
+| `GET` | `/actuator/health` | Health check endpoint | ✅ Implemented |
 
 ### Audit Log
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/audit` | List recent audit log entries |
-| `GET` | `/audit/{id}` | Get a specific audit entry |
-
-### Policies (Phase 2)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/policies` | List all policies |
-| `POST` | `/policies` | Create a new policy |
-| `PUT` | `/policies/{id}` | Update a policy |
-| `DELETE` | `/policies/{id}` | Delete a policy |
+| Method | Path | Description | Status |
+|--------|------|-------------|--------|
+| `GET` | `/audit` | List recent audit log entries | 🔲 Planned |
+| `GET` | `/audit/{id}` | Get a specific audit entry | 🔲 Planned |
 
 ---
 
@@ -46,10 +37,11 @@ http://localhost:8080/api/v1
 **Request body:**
 ```json
 {
-  "agentId": "string",
-  "sessionId": "string",
-  "action": "READ | WRITE | DELETE | EXECUTE | CALL_API",
-  "resource": "string",
+  "agentId": "string (required)",
+  "sessionId": "string (required)",
+  "action": "READ | WRITE | DELETE | EXECUTE | EXTERNAL_REQUEST (required)",
+  "resource": "string (required)",
+  "tool": "string (required)",
   "metadata": {
     "key": "value"
   }
@@ -59,33 +51,45 @@ http://localhost:8080/api/v1
 **Response body (ALLOW):**
 ```json
 {
-  "requestId": "uuid",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "action": "READ",
+  "resource": "src/main/App.java",
   "decision": "ALLOW",
-  "riskScore": 12,
   "reason": "Action is within permitted policy bounds.",
-  "timestamp": "2026-01-01T00:00:00Z"
+  "riskScore": 10,
+  "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
 **Response body (DENY):**
 ```json
 {
-  "requestId": "uuid",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "action": "READ",
+  "resource": ".env",
   "decision": "DENY",
-  "riskScore": 91,
-  "reason": "Access to credential files is not permitted.",
-  "timestamp": "2026-01-01T00:00:00Z"
+  "reason": "Access to credential or secret resource is denied by policy.",
+  "riskScore": 90,
+  "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
 **Response body (REVIEW):**
 ```json
 {
-  "requestId": "uuid",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "action": "DELETE",
+  "resource": "dev/temp-file.log",
   "decision": "REVIEW",
-  "riskScore": 55,
-  "reason": "Action requires human review before proceeding.",
-  "timestamp": "2026-01-01T00:00:00Z"
+  "reason": "DELETE action on non-production resource requires human review.",
+  "riskScore": 60,
+  "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 

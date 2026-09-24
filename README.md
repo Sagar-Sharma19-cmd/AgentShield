@@ -87,8 +87,8 @@ All components run locally via **Docker Compose**.
 | Phase | Status | Description |
 |-------|--------|-------------|
 | Phase 0 | ✅ Complete | Repository structure and documentation foundation |
-| Phase 1 | 🔲 Planned | Core backend gateway — Spring Boot REST API skeleton |
-| Phase 2 | 🔲 Planned | Policy engine — rule-based allow/deny decisions |
+| Phase 1 | ✅ Complete | Core backend gateway — Spring Boot REST API (`POST /api/v1/gateway/evaluate`) |
+| Phase 2 | ✅ Complete | Policy engine — deterministic rule evaluation & baseline risk heuristics |
 | Phase 3 | 🔲 Planned | Risk engine — Python/FastAPI scoring service |
 | Phase 4 | 🔲 Planned | Frontend dashboard — Next.js monitoring UI |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
