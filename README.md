@@ -20,18 +20,36 @@ AI Agent
     ▼
 AgentShield Security Gateway
     │
-    ├─ Policy Evaluation   (is this action permitted?)
-    ├─ Risk Evaluation     (how dangerous is this action?)
-    └─ Behaviour Analysis  (does this fit the agent's normal pattern?)
+    ├─ Agent Identity      (WHO is asking? registered and ACTIVE?)
+    ├─ Tool Registry       (WHAT tool? registered and ACTIVE?)
+    ├─ Permission Engine   (is this agent explicitly allowed this action on this tool?)
+    ├─ Policy Evaluation   (is this resource/action dangerous?)
+    ├─ Risk Evaluation     (how dangerous is this action?)            [planned]
+    └─ Behaviour Analysis  (does this fit the agent's normal pattern?) [planned]
     │
     ▼
- ALLOW / REVIEW / DENY
+ ALLOW / REVIEW / DENY  ──►  Audit log (PostgreSQL)
     │
     ▼
 Protected Tool / API / Resource
 ```
 
 The agent never talks to protected tools directly. Every request goes through the gateway.
+
+### Decision hierarchy
+
+Authorization always runs **before** policy, and policy can never grant what authorization denied:
+
+1. Agent missing / suspended / revoked → **DENY**
+2. Tool missing / disabled → **DENY**
+3. No enabled permission grant covering the action → **DENY**
+4. Authorized → PolicyEngine:
+   - dangerous resource/action (secrets, production DELETE) → **DENY**
+   - potentially risky (non-production DELETE, EXECUTE, external requests) → **REVIEW**
+   - otherwise → **ALLOW**
+
+Every decision is audited with the agent, tool, authorization result and reason.
+See [`docs/architecture.md`](docs/architecture.md) for the full model.
 
 ---
 
@@ -50,35 +68,35 @@ All components run locally via **Docker Compose**.
 
 ---
 
-## Request / Response Format (Planned)
+## Quick Start: Register an Agent and Evaluate a Request
 
-**Incoming request from agent:**
-```json
-{
-  "agentId": "coding-agent-01",
-  "sessionId": "sess-abc123",
-  "action": "READ",
-  "resource": "repository",
-  "metadata": {}
-}
+```bash
+# 1. Register an agent and a tool
+curl -s -X POST localhost:8080/api/v1/agents -H 'Content-Type: application/json' \
+     -d '{"name":"research-agent","description":"Reads source code"}'
+curl -s -X POST localhost:8080/api/v1/tools  -H 'Content-Type: application/json' \
+     -d '{"name":"filesystem","toolType":"FILESYSTEM"}'
+
+# 2. Grant READ on filesystem (use the ids returned above)
+curl -s -X POST localhost:8080/api/v1/permissions -H 'Content-Type: application/json' \
+     -d '{"agentId":"<agent-id>","toolId":"<tool-id>","allowedActions":["READ"]}'
+
+# 3. Evaluate an agent action
+curl -s -X POST localhost:8080/api/v1/gateway/evaluate -H 'Content-Type: application/json' \
+     -d '{"agentId":"research-agent","sessionId":"s-1","tool":"filesystem","action":"READ","resource":"src/Main.java"}'
 ```
 
-**Gateway decision:**
 ```json
 {
   "decision": "ALLOW",
-  "riskScore": 12,
+  "authorizationResult": "AUTHORIZED",
+  "riskScore": 10,
   "reason": "Action is within permitted policy bounds."
 }
 ```
 
-```json
-{
-  "decision": "DENY",
-  "riskScore": 91,
-  "reason": "Access to sensitive credential files is not permitted."
-}
-```
+The same agent attempting `WRITE` returns `DENY` / `UNAUTHORIZED`, because `WRITE` was never granted.
+Full API reference: [`docs/api-design.md`](docs/api-design.md).
 
 ---
 
@@ -89,6 +107,7 @@ All components run locally via **Docker Compose**.
 | Phase 0 | ✅ Complete | Repository structure and documentation foundation |
 | Phase 1 | ✅ Complete | Core backend gateway — Spring Boot REST API (`POST /api/v1/gateway/evaluate`) |
 | Phase 2 | ✅ Complete | Policy engine — deterministic rule evaluation & baseline risk heuristics |
+| Phase 2b | ✅ Complete | Agent identity, tool registry & fine-grained agent-tool permissions (`PermissionEngine`) |
 | Phase 3 | 🔲 Planned | Risk engine — Python/FastAPI scoring service |
 | Phase 4 | 🔲 Planned | Frontend dashboard — Next.js monitoring UI |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
@@ -114,7 +133,16 @@ AgentShield/
 
 ---
 
-## Running Locally (Once Implemented)
+## Running Locally
+
+```bash
+# Current: PostgreSQL in Docker + backend via Maven
+docker compose up -d postgres
+cd backend && mvn spring-boot:run      # http://localhost:8080
+cd backend && mvn clean test package   # run the test suite (H2, no Docker needed)
+```
+
+Planned full stack:
 
 ```bash
 # Start all services
@@ -136,6 +164,10 @@ docker compose up --build
 5. **The risk engine is independent from the Java backend** (communicates via REST).
 6. **No secrets hard-coded anywhere** — environment variables and `.env` files only.
 7. **Simple enough to run on a laptop**, complex enough to demonstrate real security principles.
+8. **Least privilege, deny by default** — agents can do nothing until explicitly granted an action on a tool.
+9. **Authorization is external and deterministic** — the LLM never decides what it is allowed to do.
+
+> **Current limitation:** agent identity is *self-asserted* in the request body (verified as registered and active, not yet authenticated), and the admin APIs are unauthenticated. Authentication is a planned milestone.
 
 ---
 

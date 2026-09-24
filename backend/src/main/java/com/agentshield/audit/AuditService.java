@@ -3,6 +3,7 @@ package com.agentshield.audit;
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.DecisionType;
+import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.policy.PolicyEvaluationResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class AuditService {
     public AuditLog recordEvaluation(EvaluationRequest request,
                                       UUID requestId,
                                       PolicyEvaluationResult result,
+                                      AuthorizationDecision authorization,
                                       Instant timestamp) {
         ActionOutcome outcome = mapOutcome(result.getDecision());
 
@@ -44,6 +46,10 @@ public class AuditService {
                 .riskScore(result.getRiskScore())
                 .reason(result.getReason())
                 .actionOutcome(outcome)
+                .registeredAgentId(authorization.agentId())
+                .registeredToolId(authorization.toolId())
+                .authorizationResult(authorization.result())
+                .authorizationReason(authorization.reason())
                 .timestamp(timestamp)
                 .build();
 

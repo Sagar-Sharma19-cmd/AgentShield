@@ -1,10 +1,17 @@
 package com.agentshield.gateway;
 
+import com.agentshield.agent.Agent;
+import com.agentshield.agent.AgentRepository;
 import com.agentshield.audit.AuditLog;
 import com.agentshield.audit.AuditRepository;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.ToolType;
+import com.agentshield.permission.AgentToolPermission;
+import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.tool.Tool;
+import com.agentshield.tool.ToolRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -40,9 +48,26 @@ class GatewayControllerIntegrationTest {
     @Autowired
     private AuditRepository auditRepository;
 
+    @Autowired
+    private AgentRepository agentRepository;
+
+    @Autowired
+    private ToolRepository toolRepository;
+
+    @Autowired
+    private AgentToolPermissionRepository permissionRepository;
+
     @BeforeEach
     void setUp() {
         auditRepository.deleteAll();
+        permissionRepository.deleteAll();
+        agentRepository.deleteAll();
+        toolRepository.deleteAll();
+
+        // The gateway now requires a registered, authorized agent before policy evaluation
+        Agent agent = agentRepository.save(new Agent("test-agent-1", "Integration test agent"));
+        Tool tool = toolRepository.save(new Tool("file-reader-tool", "Integration test tool", ToolType.FILESYSTEM));
+        permissionRepository.save(new AgentToolPermission(agent, tool, Set.of(ActionType.READ, ActionType.DELETE), true));
     }
 
     @Test

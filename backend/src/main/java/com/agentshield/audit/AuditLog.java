@@ -2,6 +2,7 @@ package com.agentshield.audit;
 
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
+import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.ResourceSensitivity;
 import jakarta.persistence.Column;
@@ -18,6 +19,9 @@ import java.util.UUID;
 
 /**
  * JPA Entity storing audit records of all gateway evaluation decisions.
+ *
+ * Identity/authorization columns (registeredAgentId, registeredToolId, authorizationResult,
+ * authorizationReason) are nullable so audit rows written before agent identity existed remain valid.
  */
 @Entity
 @Table(name = "audit_logs")
@@ -64,13 +68,26 @@ public class AuditLog {
     @Column(nullable = false)
     private ActionOutcome actionOutcome;
 
+    /** Resolved registered agent id; null when the requesting agent is not registered. */
+    private UUID registeredAgentId;
+
+    /** Resolved registered tool id; null when the tool is not registered or was not checked. */
+    private UUID registeredToolId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private AuthorizationResult authorizationResult;
+
+    @Column(length = 1000)
+    private String authorizationReason;
+
     @Column(nullable = false, updatable = false)
     private Instant timestamp;
 
     public AuditLog() {
     }
 
-    public AuditLog(UUID id, UUID requestId, String agentId, String sessionId, String tool, ActionType action, String resource, ResourceSensitivity resourceSensitivity, DecisionType decision, int riskScore, String reason, ActionOutcome actionOutcome, Instant timestamp) {
+    public AuditLog(UUID id, UUID requestId, String agentId, String sessionId, String tool, ActionType action, String resource, ResourceSensitivity resourceSensitivity, DecisionType decision, int riskScore, String reason, ActionOutcome actionOutcome, UUID registeredAgentId, UUID registeredToolId, AuthorizationResult authorizationResult, String authorizationReason, Instant timestamp) {
         this.id = id;
         this.requestId = requestId;
         this.agentId = agentId;
@@ -83,6 +100,10 @@ public class AuditLog {
         this.riskScore = riskScore;
         this.reason = reason;
         this.actionOutcome = actionOutcome;
+        this.registeredAgentId = registeredAgentId;
+        this.registeredToolId = registeredToolId;
+        this.authorizationResult = authorizationResult;
+        this.authorizationReason = authorizationReason;
         this.timestamp = timestamp;
     }
 
@@ -182,6 +203,38 @@ public class AuditLog {
         this.actionOutcome = actionOutcome;
     }
 
+    public UUID getRegisteredAgentId() {
+        return registeredAgentId;
+    }
+
+    public void setRegisteredAgentId(UUID registeredAgentId) {
+        this.registeredAgentId = registeredAgentId;
+    }
+
+    public UUID getRegisteredToolId() {
+        return registeredToolId;
+    }
+
+    public void setRegisteredToolId(UUID registeredToolId) {
+        this.registeredToolId = registeredToolId;
+    }
+
+    public AuthorizationResult getAuthorizationResult() {
+        return authorizationResult;
+    }
+
+    public void setAuthorizationResult(AuthorizationResult authorizationResult) {
+        this.authorizationResult = authorizationResult;
+    }
+
+    public String getAuthorizationReason() {
+        return authorizationReason;
+    }
+
+    public void setAuthorizationReason(String authorizationReason) {
+        this.authorizationReason = authorizationReason;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -207,6 +260,10 @@ public class AuditLog {
         private int riskScore;
         private String reason;
         private ActionOutcome actionOutcome;
+        private UUID registeredAgentId;
+        private UUID registeredToolId;
+        private AuthorizationResult authorizationResult;
+        private String authorizationReason;
         private Instant timestamp;
 
         public Builder id(UUID id) {
@@ -269,13 +326,33 @@ public class AuditLog {
             return this;
         }
 
+        public Builder registeredAgentId(UUID registeredAgentId) {
+            this.registeredAgentId = registeredAgentId;
+            return this;
+        }
+
+        public Builder registeredToolId(UUID registeredToolId) {
+            this.registeredToolId = registeredToolId;
+            return this;
+        }
+
+        public Builder authorizationResult(AuthorizationResult authorizationResult) {
+            this.authorizationResult = authorizationResult;
+            return this;
+        }
+
+        public Builder authorizationReason(String authorizationReason) {
+            this.authorizationReason = authorizationReason;
+            return this;
+        }
+
         public Builder timestamp(Instant timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
         public AuditLog build() {
-            return new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, timestamp);
+            return new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, timestamp);
         }
     }
 }

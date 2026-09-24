@@ -1,6 +1,7 @@
 package com.agentshield.dto;
 
 import com.agentshield.model.ActionType;
+import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
 
 import java.time.Instant;
@@ -19,12 +20,13 @@ public class EvaluationResponse {
     private DecisionType decision;
     private String reason;
     private int riskScore;
+    private AuthorizationResult authorizationResult;
     private Instant timestamp;
 
     public EvaluationResponse() {
     }
 
-    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, Instant timestamp) {
+    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, AuthorizationResult authorizationResult, Instant timestamp) {
         this.requestId = requestId;
         this.agentId = agentId;
         this.sessionId = sessionId;
@@ -33,6 +35,7 @@ public class EvaluationResponse {
         this.decision = decision;
         this.reason = reason;
         this.riskScore = riskScore;
+        this.authorizationResult = authorizationResult;
         this.timestamp = timestamp;
     }
 
@@ -100,6 +103,14 @@ public class EvaluationResponse {
         this.riskScore = riskScore;
     }
 
+    public AuthorizationResult getAuthorizationResult() {
+        return authorizationResult;
+    }
+
+    public void setAuthorizationResult(AuthorizationResult authorizationResult) {
+        this.authorizationResult = authorizationResult;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -121,6 +132,7 @@ public class EvaluationResponse {
         private DecisionType decision;
         private String reason;
         private int riskScore;
+        private AuthorizationResult authorizationResult;
         private Instant timestamp;
 
         public Builder requestId(UUID requestId) {
@@ -163,13 +175,18 @@ public class EvaluationResponse {
             return this;
         }
 
+        public Builder authorizationResult(AuthorizationResult authorizationResult) {
+            this.authorizationResult = authorizationResult;
+            return this;
+        }
+
         public Builder timestamp(Instant timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
         public EvaluationResponse build() {
-            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, timestamp);
+            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, timestamp);
         }
     }
 }
