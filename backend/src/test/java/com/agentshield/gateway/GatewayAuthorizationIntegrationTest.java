@@ -2,8 +2,11 @@ package com.agentshield.gateway;
 
 import com.agentshield.agent.Agent;
 import com.agentshield.agent.AgentRepository;
+import com.agentshield.agent.AgentService;
 import com.agentshield.audit.AuditLog;
 import com.agentshield.audit.AuditRepository;
+import com.agentshield.dto.AgentCreateRequest;
+import com.agentshield.dto.AgentCreateResponse;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AgentStatus;
@@ -13,6 +16,7 @@ import com.agentshield.model.ToolStatus;
 import com.agentshield.model.ToolType;
 import com.agentshield.permission.AgentToolPermission;
 import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.security.AgentApiKeyAuthenticationFilter;
 import com.agentshield.tool.Tool;
 import com.agentshield.tool.ToolRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * End-to-end tests of the gateway decision hierarchy:
- * identity -> tool registry -> permission -> policy -> audit.
+ * authentication -> identity claim -> tool registry -> permission -> policy -> audit.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -65,7 +69,11 @@ class GatewayAuthorizationIntegrationTest {
     @Autowired
     private AgentToolPermissionRepository permissionRepository;
 
+    @Autowired
+    private AgentService agentService;
+
     private Agent agent;
+    private String agentApiKey;
     private Tool filesystem;
 
     @BeforeEach
@@ -75,7 +83,9 @@ class GatewayAuthorizationIntegrationTest {
         agentRepository.deleteAll();
         toolRepository.deleteAll();
 
-        agent = agentRepository.save(new Agent("deployment-agent", null));
+        AgentCreateResponse registered = agentService.registerAgent(new AgentCreateRequest("deployment-agent", null));
+        agentApiKey = registered.apiKey();
+        agent = agentRepository.findById(registered.id()).orElseThrow();
         filesystem = toolRepository.save(new Tool("filesystem", null, ToolType.FILESYSTEM));
     }
 
@@ -167,14 +177,44 @@ class GatewayAuthorizationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Unregistered agent -> DENY / AGENT_NOT_FOUND")
-    void testUnregisteredAgentDenied() throws Exception {
+    @DisplayName("Impersonation: authenticated agent claiming a privileged agent's id -> DENY / AGENT_IDENTITY_MISMATCH")
+    void testImpersonationDenied() throws Exception {
+        // deployment-agent has no grants; privileged-agent can READ filesystem
+        registerPrivilegedAgentWithReadGrant();
+
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload("ghost-agent", "filesystem", "READ", "src/Main.java"))))
+                        .content(objectMapper.writeValueAsString(payload("privileged-agent", "filesystem", "READ", "src/Main.java"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.decision").value("DENY"))
-                .andExpect(jsonPath("$.authorizationResult").value("AGENT_NOT_FOUND"));
+                .andExpect(jsonPath("$.authorizationResult").value("AGENT_IDENTITY_MISMATCH"));
+    }
+
+    @Test
+    @DisplayName("agentId may be the authenticated agent's UUID")
+    void testAgentIdAsUuidAccepted() throws Exception {
+        grant(ActionType.READ);
+
+        mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload(agent.getId().toString(), "filesystem", "READ", "src/Main.java"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("ALLOW"));
+    }
+
+    @Test
+    @DisplayName("Authorization: Bearer <agent key> is accepted as an alternative header")
+    void testBearerTokenAccepted() throws Exception {
+        grant(ActionType.READ);
+
+        mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header("Authorization", "Bearer " + agentApiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload("deployment-agent", "filesystem", "READ", "src/Main.java"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("ALLOW"));
     }
 
     @Test
@@ -183,6 +223,7 @@ class GatewayAuthorizationIntegrationTest {
         grant(ActionType.READ);
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload("deployment-agent", "shell", "READ", "src/Main.java"))))
                 .andExpect(status().isOk())
@@ -210,16 +251,20 @@ class GatewayAuthorizationIntegrationTest {
     }
 
     @Test
-    @DisplayName("Audit 22b. Unknown agent denial is audited without resolved ids")
-    void testUnknownAgentDenialAudited() throws Exception {
-        mockMvc.perform(post("/api/v1/gateway/evaluate")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(payload("ghost-agent", "filesystem", "READ", "src/Main.java"))));
+    @DisplayName("Audit 22b. Impersonation attempt is audited with claimed id and real authenticated agent")
+    void testImpersonationAudited() throws Exception {
+        registerPrivilegedAgentWithReadGrant();
 
-        List<AuditLog> logs = auditRepository.findByAuthorizationResult(AuthorizationResult.AGENT_NOT_FOUND);
+        mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload("privileged-agent", "filesystem", "READ", "src/Main.java"))))
+                .andExpect(status().isOk());
+
+        List<AuditLog> logs = auditRepository.findByAuthorizationResult(AuthorizationResult.AGENT_IDENTITY_MISMATCH);
         assertEquals(1, logs.size());
-        assertEquals("ghost-agent", logs.get(0).getAgentId());
-        assertNull(logs.get(0).getRegisteredAgentId());
+        assertEquals("privileged-agent", logs.get(0).getAgentId());
+        assertEquals(agent.getId(), logs.get(0).getRegisteredAgentId());
         assertNull(logs.get(0).getRegisteredToolId());
         assertEquals(DecisionType.DENY, logs.get(0).getDecision());
     }
@@ -266,12 +311,19 @@ class GatewayAuthorizationIntegrationTest {
         assertEquals(filesystem.getId(), log.getRegisteredToolId());
     }
 
+    private void registerPrivilegedAgentWithReadGrant() {
+        AgentCreateResponse privileged = agentService.registerAgent(new AgentCreateRequest("privileged-agent", null));
+        Agent privilegedAgent = agentRepository.findById(privileged.id()).orElseThrow();
+        permissionRepository.save(new AgentToolPermission(privilegedAgent, filesystem, Set.of(ActionType.READ), true));
+    }
+
     private void grant(ActionType... actions) {
         permissionRepository.save(new AgentToolPermission(agent, filesystem, Set.of(actions), true));
     }
 
     private ResultActions evaluate(String action, String resource) throws Exception {
         return mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload("deployment-agent", "filesystem", action, resource))))
                 .andExpect(status().isOk());

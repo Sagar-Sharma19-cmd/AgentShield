@@ -2,14 +2,18 @@ package com.agentshield.gateway;
 
 import com.agentshield.agent.Agent;
 import com.agentshield.agent.AgentRepository;
+import com.agentshield.agent.AgentService;
 import com.agentshield.audit.AuditLog;
 import com.agentshield.audit.AuditRepository;
+import com.agentshield.dto.AgentCreateRequest;
+import com.agentshield.dto.AgentCreateResponse;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.ToolType;
 import com.agentshield.permission.AgentToolPermission;
 import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.security.AgentApiKeyAuthenticationFilter;
 import com.agentshield.tool.Tool;
 import com.agentshield.tool.ToolRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +61,11 @@ class GatewayControllerIntegrationTest {
     @Autowired
     private AgentToolPermissionRepository permissionRepository;
 
+    @Autowired
+    private AgentService agentService;
+
+    private String agentApiKey;
+
     @BeforeEach
     void setUp() {
         auditRepository.deleteAll();
@@ -64,8 +73,10 @@ class GatewayControllerIntegrationTest {
         agentRepository.deleteAll();
         toolRepository.deleteAll();
 
-        // The gateway now requires a registered, authorized agent before policy evaluation
-        Agent agent = agentRepository.save(new Agent("test-agent-1", "Integration test agent"));
+        // The gateway requires an authenticated, authorized agent before policy evaluation
+        AgentCreateResponse registered = agentService.registerAgent(new AgentCreateRequest("test-agent-1", "Integration test agent"));
+        agentApiKey = registered.apiKey();
+        Agent agent = agentRepository.findById(registered.id()).orElseThrow();
         Tool tool = toolRepository.save(new Tool("file-reader-tool", "Integration test tool", ToolType.FILESYSTEM));
         permissionRepository.save(new AgentToolPermission(agent, tool, Set.of(ActionType.READ, ActionType.DELETE), true));
     }
@@ -77,6 +88,7 @@ class GatewayControllerIntegrationTest {
         payload.remove("agentId");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest())
@@ -91,6 +103,7 @@ class GatewayControllerIntegrationTest {
         payload.remove("sessionId");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest())
@@ -105,6 +118,7 @@ class GatewayControllerIntegrationTest {
         payload.remove("action");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest())
@@ -119,6 +133,7 @@ class GatewayControllerIntegrationTest {
         payload.remove("resource");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest())
@@ -133,6 +148,7 @@ class GatewayControllerIntegrationTest {
         payload.remove("tool");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isBadRequest())
@@ -146,6 +162,7 @@ class GatewayControllerIntegrationTest {
         Map<String, Object> payload = createValidPayload();
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
@@ -168,6 +185,7 @@ class GatewayControllerIntegrationTest {
         payload.put("resource", "dev/temp-file.log");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
@@ -189,6 +207,7 @@ class GatewayControllerIntegrationTest {
         payload.put("resource", ".env");
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, agentApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
