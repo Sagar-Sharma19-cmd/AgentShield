@@ -250,29 +250,37 @@ No body. Returns `200` with the same `AgentCreateResponse` shape containing the 
 
 ---
 
-## Risk Engine Endpoint (Internal)
+## Risk Engine Endpoint (Internal, standalone, not yet called by the backend)
 
-Called by the backend; not exposed directly to agents.
+Phase 1 implemented. This endpoint exists in the standalone Python risk-engine
+service only — `GatewayService` does not call it yet (see
+`docs/architecture.md` and `docs/risk-engine.md`).
 
 ### `POST http://risk-engine:8000/score`
 
 **Request:**
 ```json
 {
-  "agentId": "string",
-  "action": "string",
-  "resource": "string",
-  "metadata": {}
+  "action": "READ | WRITE | DELETE | EXECUTE | EXTERNAL_REQUEST",
+  "resource": "string (required, non-blank)",
+  "resource_sensitivity": "PUBLIC | INTERNAL | SENSITIVE | CRITICAL | null (accepted, not yet used in scoring)"
 }
 ```
 
 **Response:**
 ```json
 {
-  "riskScore": 42,
-  "factors": ["sensitive_resource", "high_frequency_action"]
+  "risk_score": 42,
+  "risk_tier": "MEDIUM",
+  "factors": [
+    { "name": "ACTION_BASE_RISK", "score": 10, "reason": "WRITE action carries a base risk of 10." }
+  ],
+  "reason": "MEDIUM risk: ..."
 }
 ```
+
+See `docs/risk-engine.md` for the full deterministic scoring formula, factor
+weights, and tier thresholds.
 
 ---
 
