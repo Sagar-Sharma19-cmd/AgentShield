@@ -20,7 +20,8 @@ AI Agent
     ▼
 AgentShield Security Gateway
     │
-    ├─ Agent Identity      (WHO is asking? registered and ACTIVE?)
+    ├─ Authentication      (WHO is asking? proven by the agent's own API key)
+    ├─ Agent Identity      (does the claimed agentId match the key? is it ACTIVE?)
     ├─ Tool Registry       (WHAT tool? registered and ACTIVE?)
     ├─ Permission Engine   (is this agent explicitly allowed this action on this tool?)
     ├─ Policy Evaluation   (is this resource/action dangerous?)
@@ -38,9 +39,10 @@ The agent never talks to protected tools directly. Every request goes through th
 
 ### Decision hierarchy
 
-Authorization always runs **before** policy, and policy can never grant what authorization denied:
+Authentication runs first, authorization runs **before** policy, and policy can never grant what authorization denied:
 
-1. Agent missing / suspended / revoked → **DENY**
+0. Missing / invalid / revoked API key → **HTTP 401**
+1. Claimed `agentId` is not the key's owner, or agent suspended → **DENY**
 2. Tool missing / disabled → **DENY**
 3. No enabled permission grant covering the action → **DENY**
 4. Authorized → PolicyEngine:
@@ -70,20 +72,29 @@ All components run locally via **Docker Compose**.
 
 ## Quick Start: Register an Agent and Evaluate a Request
 
-```bash
-# 1. Register an agent and a tool
-curl -s -X POST localhost:8080/api/v1/agents -H 'Content-Type: application/json' \
-     -d '{"name":"research-agent","description":"Reads source code"}'
-curl -s -X POST localhost:8080/api/v1/tools  -H 'Content-Type: application/json' \
-     -d '{"name":"filesystem","toolType":"FILESYSTEM"}'
+Admin APIs need `X-Admin-API-Key`; the gateway needs the agent's own key in `X-Agent-API-Key`
+(or `Authorization: Bearer …`). See [Running Locally](#running-locally) for the required secrets.
 
-# 2. Grant READ on filesystem (use the ids returned above)
-curl -s -X POST localhost:8080/api/v1/permissions -H 'Content-Type: application/json' \
+```bash
+ADMIN="X-Admin-API-Key: $AGENTSHIELD_ADMIN_API_KEY"
+
+# 1. Register an agent — the response contains its API key ONCE ("apiKey"); store it securely
+curl -s -X POST localhost:8080/api/v1/agents -H "$ADMIN" -H 'Content-Type: application/json' \
+     -d '{"name":"research-agent","description":"Reads source code"}'
+
+# 2. Register a tool and grant READ on it (use the ids returned above)
+curl -s -X POST localhost:8080/api/v1/tools -H "$ADMIN" -H 'Content-Type: application/json' \
+     -d '{"name":"filesystem","toolType":"FILESYSTEM"}'
+curl -s -X POST localhost:8080/api/v1/permissions -H "$ADMIN" -H 'Content-Type: application/json' \
      -d '{"agentId":"<agent-id>","toolId":"<tool-id>","allowedActions":["READ"]}'
 
-# 3. Evaluate an agent action
-curl -s -X POST localhost:8080/api/v1/gateway/evaluate -H 'Content-Type: application/json' \
+# 3. The agent evaluates an action with its own key
+curl -s -X POST localhost:8080/api/v1/gateway/evaluate \
+     -H "X-Agent-API-Key: <agent-api-key>" -H 'Content-Type: application/json' \
      -d '{"agentId":"research-agent","sessionId":"s-1","tool":"filesystem","action":"READ","resource":"src/Main.java"}'
+
+# Lost or leaked key? Issue a new one — the old key stops working immediately
+curl -s -X POST localhost:8080/api/v1/agents/<agent-id>/rotate-key -H "$ADMIN"
 ```
 
 ```json
@@ -96,6 +107,8 @@ curl -s -X POST localhost:8080/api/v1/gateway/evaluate -H 'Content-Type: applica
 ```
 
 The same agent attempting `WRITE` returns `DENY` / `UNAUTHORIZED`, because `WRITE` was never granted.
+A request without a valid key gets **HTTP 401**, and a request whose `agentId` names a different
+agent gets `DENY` / `AGENT_IDENTITY_MISMATCH`.
 Full API reference: [`docs/api-design.md`](docs/api-design.md).
 
 ---
@@ -108,6 +121,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 1 | ✅ Complete | Core backend gateway — Spring Boot REST API (`POST /api/v1/gateway/evaluate`) |
 | Phase 2 | ✅ Complete | Policy engine — deterministic rule evaluation & baseline risk heuristics |
 | Phase 2b | ✅ Complete | Agent identity, tool registry & fine-grained agent-tool permissions (`PermissionEngine`) |
+| Phase 2c | ✅ Complete | Agent API key authentication, admin API protection, Flyway database migrations |
 | Phase 3 | 🔲 Planned | Risk engine — Python/FastAPI scoring service |
 | Phase 4 | 🔲 Planned | Frontend dashboard — Next.js monitoring UI |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
@@ -135,12 +149,27 @@ AgentShield/
 
 ## Running Locally
 
+The backend **refuses to start** without two secrets (each ≥ 32 characters), supplied as environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `AGENTSHIELD_API_KEY_PEPPER` | Server-side key used to HMAC agent API keys before storage. Changing it invalidates all agent keys. |
+| `AGENTSHIELD_ADMIN_API_KEY` | Value required in the `X-Admin-API-Key` header for admin APIs |
+
 ```bash
 # Current: PostgreSQL in Docker + backend via Maven
 docker compose up -d postgres
-cd backend && mvn spring-boot:run      # http://localhost:8080
-cd backend && mvn clean test package   # run the test suite (H2, no Docker needed)
+
+export AGENTSHIELD_API_KEY_PEPPER="$(openssl rand -base64 48)"   # keep stable across restarts
+export AGENTSHIELD_ADMIN_API_KEY="$(openssl rand -base64 48)"
+cd backend && mvn spring-boot:run      # http://localhost:8080 — Flyway migrates the schema on startup
+
+cd backend && mvn clean test package   # run the test suite (H2 + Flyway, no Docker or secrets needed)
 ```
+
+**Upgrading a database created before Flyway** (by an earlier version of this project): start once with
+`SPRING_FLYWAY_BASELINE_ON_MIGRATE=true`. Existing data is kept; existing agents have no API key
+until you call `POST /api/v1/agents/{id}/rotate-key`. See [Database Migrations](docs/architecture.md#database-migrations-flyway).
 
 Planned full stack:
 
@@ -166,8 +195,9 @@ docker compose up --build
 7. **Simple enough to run on a laptop**, complex enough to demonstrate real security principles.
 8. **Least privilege, deny by default** — agents can do nothing until explicitly granted an action on a tool.
 9. **Authorization is external and deterministic** — the LLM never decides what it is allowed to do.
+10. **Authenticated identity, hashed credentials** — every agent proves who it is with its own API key; only HMAC hashes are stored, and keys are never logged.
 
-> **Current limitation:** agent identity is *self-asserted* in the request body (verified as registered and active, not yet authenticated), and the admin APIs are unauthenticated. Authentication is a planned milestone.
+> **Current limitations:** a single shared admin key (no per-operator RBAC yet), and failed authentications are logged but not written to the audit table. Serve AgentShield over TLS outside local development — API keys are bearer credentials.
 
 ---
 

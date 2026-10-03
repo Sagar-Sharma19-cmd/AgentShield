@@ -17,7 +17,7 @@ import java.util.UUID;
 
 /**
  * JPA Entity representing an AI agent registered with AgentShield.
- * Holds identity only — no credentials or secrets are stored.
+ * Holds identity and a hashed API key credential; the plaintext key is never stored.
  */
 @Entity
 @Table(name = "agents")
@@ -36,6 +36,14 @@ public class Agent {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AgentStatus status;
+
+    /** HMAC-SHA256 of the agent's API key; null when the agent has no usable key. */
+    @Column(unique = true, length = 64)
+    private String apiKeyHash;
+
+    /** Non-secret display prefix of the current key, e.g. agk_live_abcd. */
+    @Column(length = 16)
+    private String apiKeyPrefix;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -82,6 +90,27 @@ public class Agent {
 
     public void setStatus(AgentStatus status) {
         this.status = status;
+    }
+
+    public String getApiKeyPrefix() {
+        return apiKeyPrefix;
+    }
+
+    public boolean hasApiKey() {
+        return apiKeyHash != null;
+    }
+
+    /**
+     * Replaces the agent's credential. Any previously issued key stops working immediately.
+     */
+    public void assignApiKey(String apiKeyHash, String apiKeyPrefix) {
+        this.apiKeyHash = apiKeyHash;
+        this.apiKeyPrefix = apiKeyPrefix;
+    }
+
+    public void clearApiKey() {
+        this.apiKeyHash = null;
+        this.apiKeyPrefix = null;
     }
 
     public Instant getCreatedAt() {

@@ -6,6 +6,7 @@ import com.agentshield.audit.AuditRepository;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AgentStatus;
 import com.agentshield.model.ToolType;
+import com.agentshield.security.AdminApiKeyAuthenticationFilter;
 import com.agentshield.tool.Tool;
 import com.agentshield.tool.ToolRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -41,6 +43,9 @@ class PermissionControllerIntegrationTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Value("${agentshield.security.admin-api-key}")
+    private String adminApiKey;
 
     @Autowired
     private AuditRepository auditRepository;
@@ -71,7 +76,7 @@ class PermissionControllerIntegrationTest {
     @Test
     @DisplayName("Permission 9. Grant READ permission -> 201, enabled by default")
     void testGrantReadPermission() throws Exception {
-        mockMvc.perform(post("/api/v1/permissions")
+        mockMvc.perform(post("/api/v1/permissions").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", agent.getId(), "toolId", tool.getId(),
                                 "allowedActions", List.of("READ")))))
@@ -83,7 +88,7 @@ class PermissionControllerIntegrationTest {
                 .andExpect(jsonPath("$.allowedActions[0]").value("READ"))
                 .andExpect(jsonPath("$.enabled").value(true));
 
-        mockMvc.perform(get("/api/v1/permissions/agent/{agentId}", agent.getId()))
+        mockMvc.perform(get("/api/v1/permissions/agent/{agentId}", agent.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].toolName").value("filesystem"));
@@ -95,12 +100,12 @@ class PermissionControllerIntegrationTest {
         AgentToolPermission permission = permissionRepository.save(
                 new AgentToolPermission(agent, tool, Set.of(ActionType.READ), true));
 
-        mockMvc.perform(delete("/api/v1/permissions/{id}", permission.getId()))
+        mockMvc.perform(delete("/api/v1/permissions/{id}", permission.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isNoContent());
 
         assertFalse(permissionRepository.existsById(permission.getId()));
 
-        mockMvc.perform(delete("/api/v1/permissions/{id}", permission.getId()))
+        mockMvc.perform(delete("/api/v1/permissions/{id}", permission.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isNotFound());
     }
 
@@ -109,7 +114,7 @@ class PermissionControllerIntegrationTest {
     void testDuplicateGrant() throws Exception {
         permissionRepository.save(new AgentToolPermission(agent, tool, Set.of(ActionType.READ), true));
 
-        mockMvc.perform(post("/api/v1/permissions")
+        mockMvc.perform(post("/api/v1/permissions").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", agent.getId(), "toolId", tool.getId(),
                                 "allowedActions", List.of("WRITE")))))
@@ -120,14 +125,14 @@ class PermissionControllerIntegrationTest {
     @Test
     @DisplayName("Empty allowedActions -> 400; unknown agent -> 404; revoked agent -> 409")
     void testGrantValidation() throws Exception {
-        mockMvc.perform(post("/api/v1/permissions")
+        mockMvc.perform(post("/api/v1/permissions").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", agent.getId(), "toolId", tool.getId(),
                                 "allowedActions", List.of()))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.allowedActions").exists());
 
-        mockMvc.perform(post("/api/v1/permissions")
+        mockMvc.perform(post("/api/v1/permissions").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", "00000000-0000-0000-0000-000000000000",
                                 "toolId", tool.getId(), "allowedActions", List.of("READ")))))
@@ -135,7 +140,7 @@ class PermissionControllerIntegrationTest {
 
         agent.setStatus(AgentStatus.REVOKED);
         agentRepository.save(agent);
-        mockMvc.perform(post("/api/v1/permissions")
+        mockMvc.perform(post("/api/v1/permissions").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", agent.getId(), "toolId", tool.getId(),
                                 "allowedActions", List.of("READ")))))

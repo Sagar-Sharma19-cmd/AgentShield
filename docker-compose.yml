@@ -51,6 +51,8 @@ services:
   #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentshield_user}
   #     SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
   #     RISK_ENGINE_URL: http://risk-engine:8000
+  #     AGENTSHIELD_API_KEY_PEPPER: ${AGENTSHIELD_API_KEY_PEPPER:?set in .env}
+  #     AGENTSHIELD_ADMIN_API_KEY: ${AGENTSHIELD_ADMIN_API_KEY:?set in .env}
   #   depends_on:
   #     postgres:
   #       condition: service_healthy

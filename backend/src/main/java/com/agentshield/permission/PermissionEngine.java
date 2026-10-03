@@ -5,6 +5,7 @@ import com.agentshield.agent.AgentRepository;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.ToolStatus;
+import com.agentshield.security.AuthenticatedAgent;
 import com.agentshield.tool.Tool;
 import com.agentshield.tool.ToolRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,17 +16,19 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Deterministic authorization engine: decides whether a registered agent may perform
- * an action with a registered tool. Runs outside the AI agent and before the PolicyEngine.
+ * Deterministic authorization engine: decides whether the authenticated agent may perform
+ * an action with a registered tool. Runs outside the AI agent, after API key authentication
+ * and before the PolicyEngine.
  *
  * Checks are evaluated in order and the first failure wins (deny by default):
- * 1. Agent must exist                      -> AGENT_NOT_FOUND
- * 2. Agent must be ACTIVE                  -> AGENT_SUSPENDED / AGENT_REVOKED
- * 3. Tool must exist                       -> TOOL_NOT_FOUND
- * 4. Tool must be ACTIVE                   -> TOOL_DISABLED
- * 5. An agent-tool grant must exist        -> UNAUTHORIZED
- * 6. The grant must be enabled             -> PERMISSION_DISABLED
- * 7. The grant must include the action     -> UNAUTHORIZED
+ * 1. Authenticated agent must exist        -> AGENT_NOT_FOUND
+ * 2. Claimed agentId must be the caller    -> AGENT_IDENTITY_MISMATCH
+ * 3. Agent must be ACTIVE                  -> AGENT_SUSPENDED / AGENT_REVOKED
+ * 4. Tool must exist                       -> TOOL_NOT_FOUND
+ * 5. Tool must be ACTIVE                   -> TOOL_DISABLED
+ * 6. An agent-tool grant must exist        -> UNAUTHORIZED
+ * 7. The grant must be enabled             -> PERMISSION_DISABLED
+ * 8. The grant must include the action     -> UNAUTHORIZED
  * Otherwise                                -> AUTHORIZED
  */
 @Component
@@ -45,17 +48,25 @@ public class PermissionEngine {
     }
 
     /**
-     * @param agentIdentifier registered agent UUID or unique agent name
+     * @param caller          agent authenticated by its API key
+     * @param claimedAgentId  agentId asserted in the request body (agent UUID or unique name)
      * @param toolName        unique registered tool name
      * @param action          requested action
      */
     @Transactional(readOnly = true)
-    public AuthorizationDecision authorize(String agentIdentifier, String toolName, ActionType action) {
-        Optional<Agent> maybeAgent = resolveAgent(agentIdentifier);
+    public AuthorizationDecision authorize(AuthenticatedAgent caller, String claimedAgentId,
+                                           String toolName, ActionType action) {
+        Optional<Agent> maybeAgent = caller == null ? Optional.empty() : agentRepository.findById(caller.id());
         if (maybeAgent.isEmpty()) {
             return deny(AuthorizationResult.AGENT_NOT_FOUND, "Agent is not registered with AgentShield.", null, null);
         }
         Agent agent = maybeAgent.get();
+
+        if (!identifies(agent, claimedAgentId)) {
+            return deny(AuthorizationResult.AGENT_IDENTITY_MISMATCH,
+                    "Authenticated agent '" + agent.getName() + "' does not match the agentId in the request.",
+                    agent.getId(), null);
+        }
 
         switch (agent.getStatus()) {
             case ACTIVE -> { }
@@ -103,16 +114,19 @@ public class PermissionEngine {
     }
 
     /**
-     * Resolves an agent by UUID when the identifier is a valid UUID, otherwise by unique name.
+     * True when the claimed identifier is the agent's unique name or its UUID.
      */
-    private Optional<Agent> resolveAgent(String identifier) {
-        if (identifier == null || identifier.isBlank()) {
-            return Optional.empty();
+    private boolean identifies(Agent agent, String claimedAgentId) {
+        if (claimedAgentId == null || claimedAgentId.isBlank()) {
+            return false;
+        }
+        if (claimedAgentId.equals(agent.getName())) {
+            return true;
         }
         try {
-            return agentRepository.findById(UUID.fromString(identifier));
+            return UUID.fromString(claimedAgentId).equals(agent.getId());
         } catch (IllegalArgumentException notAUuid) {
-            return agentRepository.findByName(identifier);
+            return false;
         }
     }
 

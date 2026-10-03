@@ -2,16 +2,22 @@ package com.agentshield.tool;
 
 import com.agentshield.agent.Agent;
 import com.agentshield.agent.AgentRepository;
+import com.agentshield.agent.AgentService;
 import com.agentshield.audit.AuditRepository;
+import com.agentshield.dto.AgentCreateRequest;
+import com.agentshield.dto.AgentCreateResponse;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.ToolType;
 import com.agentshield.permission.AgentToolPermission;
 import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.security.AdminApiKeyAuthenticationFilter;
+import com.agentshield.security.AgentApiKeyAuthenticationFilter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -38,11 +44,17 @@ class ToolControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Value("${agentshield.security.admin-api-key}")
+    private String adminApiKey;
+
     @Autowired
     private AuditRepository auditRepository;
 
     @Autowired
     private AgentRepository agentRepository;
+
+    @Autowired
+    private AgentService agentService;
 
     @Autowired
     private ToolRepository toolRepository;
@@ -61,7 +73,7 @@ class ToolControllerIntegrationTest {
     @Test
     @DisplayName("Tool 5. Create tool -> 201, ACTIVE")
     void testCreateTool() throws Exception {
-        mockMvc.perform(post("/api/v1/tools")
+        mockMvc.perform(post("/api/v1/tools").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("name", "filesystem", "description", "Local files", "toolType", "FILESYSTEM"))))
                 .andExpect(status().isCreated())
@@ -76,12 +88,12 @@ class ToolControllerIntegrationTest {
     void testGetTool() throws Exception {
         Tool tool = toolRepository.save(new Tool("database", "Postgres", ToolType.DATABASE));
 
-        mockMvc.perform(get("/api/v1/tools/{id}", tool.getId()))
+        mockMvc.perform(get("/api/v1/tools/{id}", tool.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("database"))
                 .andExpect(jsonPath("$.toolType").value("DATABASE"));
 
-        mockMvc.perform(get("/api/v1/tools"))
+        mockMvc.perform(get("/api/v1/tools").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
     }
@@ -91,7 +103,7 @@ class ToolControllerIntegrationTest {
     void testDisableTool() throws Exception {
         Tool tool = toolRepository.save(new Tool("filesystem", null, ToolType.FILESYSTEM));
 
-        mockMvc.perform(patch("/api/v1/tools/{id}/status", tool.getId())
+        mockMvc.perform(patch("/api/v1/tools/{id}/status", tool.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("status", "DISABLED"))))
                 .andExpect(status().isOk())
@@ -101,16 +113,18 @@ class ToolControllerIntegrationTest {
     @Test
     @DisplayName("Tool 8. Disabled tool cannot be used -> DENY / TOOL_DISABLED")
     void testDisabledToolCannotBeUsed() throws Exception {
-        Agent agent = agentRepository.save(new Agent("research-agent", null));
+        AgentCreateResponse registered = agentService.registerAgent(new AgentCreateRequest("research-agent", null));
+        Agent agent = agentRepository.findById(registered.id()).orElseThrow();
         Tool tool = toolRepository.save(new Tool("filesystem", null, ToolType.FILESYSTEM));
         permissionRepository.save(new AgentToolPermission(agent, tool, Set.of(ActionType.READ), true));
 
-        mockMvc.perform(patch("/api/v1/tools/{id}/status", tool.getId())
+        mockMvc.perform(patch("/api/v1/tools/{id}/status", tool.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("status", "DISABLED"))))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/api/v1/gateway/evaluate")
+                        .header(AgentApiKeyAuthenticationFilter.HEADER, registered.apiKey())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("agentId", "research-agent", "sessionId", "s-1",
                                 "action", "READ", "resource", "src/Main.java", "tool", "filesystem"))))
@@ -124,7 +138,7 @@ class ToolControllerIntegrationTest {
     void testDuplicateToolName() throws Exception {
         toolRepository.save(new Tool("filesystem", null, ToolType.FILESYSTEM));
 
-        mockMvc.perform(post("/api/v1/tools")
+        mockMvc.perform(post("/api/v1/tools").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("name", "filesystem", "toolType", "FILESYSTEM"))))
                 .andExpect(status().isConflict());
@@ -133,13 +147,13 @@ class ToolControllerIntegrationTest {
     @Test
     @DisplayName("Missing toolType -> 400, unknown tool id -> 404")
     void testValidationAndNotFound() throws Exception {
-        mockMvc.perform(post("/api/v1/tools")
+        mockMvc.perform(post("/api/v1/tools").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of("name", "filesystem"))))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.toolType").exists());
 
-        mockMvc.perform(get("/api/v1/tools/{id}", "00000000-0000-0000-0000-000000000000"))
+        mockMvc.perform(get("/api/v1/tools/{id}", "00000000-0000-0000-0000-000000000000").header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
                 .andExpect(status().isNotFound());
     }
 

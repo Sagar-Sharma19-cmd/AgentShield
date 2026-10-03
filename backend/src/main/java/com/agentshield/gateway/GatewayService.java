@@ -9,6 +9,7 @@ import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.permission.PermissionEngine;
 import com.agentshield.policy.PolicyEngine;
 import com.agentshield.policy.PolicyEvaluationResult;
+import com.agentshield.security.AuthenticatedAgent;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -19,7 +20,8 @@ import java.util.UUID;
  * Primary orchestration service for AgentShield Security Gateway.
  *
  * Decision hierarchy:
- * 1. PermissionEngine (identity, tool registry, explicit grant) — any failure is a final DENY.
+ * 0. API key authentication (Spring Security filter) — failure is HTTP 401 before this service runs.
+ * 1. PermissionEngine (identity claim, tool registry, explicit grant) — any failure is a final DENY.
  * 2. PolicyEngine (resource/action risk) — runs only for authorized requests and can only
  *    ALLOW, REVIEW or DENY what authorization already permitted; it can never grant access.
  */
@@ -40,13 +42,13 @@ public class GatewayService {
         this.auditService = auditService;
     }
 
-    public EvaluationResponse evaluateRequest(EvaluationRequest request) {
+    public EvaluationResponse evaluateRequest(EvaluationRequest request, AuthenticatedAgent caller) {
         UUID requestId = UUID.randomUUID();
         Instant timestamp = Instant.now();
 
-        // 1. Authorize agent identity, tool registration and explicit permission grant
-        AuthorizationDecision authorization =
-                permissionEngine.authorize(request.getAgentId(), request.getTool(), request.getAction());
+        // 1. Authorize the authenticated agent: identity claim, tool registration and explicit permission grant
+        AuthorizationDecision authorization = permissionEngine.authorize(
+                caller, request.getAgentId(), request.getTool(), request.getAction());
 
         // 2. Evaluate security policy rules and risk heuristics only for authorized requests
         PolicyEvaluationResult result = authorization.isAuthorized()

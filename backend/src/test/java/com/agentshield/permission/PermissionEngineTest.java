@@ -7,6 +7,7 @@ import com.agentshield.model.AgentStatus;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.ToolStatus;
 import com.agentshield.model.ToolType;
+import com.agentshield.security.AuthenticatedAgent;
 import com.agentshield.tool.Tool;
 import com.agentshield.tool.ToolRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -55,7 +57,7 @@ class PermissionEngineTest {
     void testAuthorizedRead() {
         grant(Set.of(ActionType.READ), true);
 
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "filesystem", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ);
 
         assertTrue(decision.isAuthorized());
         assertEquals(AuthorizationResult.AUTHORIZED, decision.result());
@@ -64,11 +66,11 @@ class PermissionEngineTest {
     }
 
     @Test
-    @DisplayName("Agent resolved by UUID as well as by name")
-    void testAgentResolvedByUuid() {
+    @DisplayName("Claimed agentId may be the caller's UUID as well as its name")
+    void testClaimByUuid() {
         grant(Set.of(ActionType.READ), true);
 
-        AuthorizationDecision decision = permissionEngine.authorize(agent.getId().toString(), "filesystem", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), agent.getId().toString(), "filesystem", ActionType.READ);
 
         assertEquals(AuthorizationResult.AUTHORIZED, decision.result());
     }
@@ -76,7 +78,7 @@ class PermissionEngineTest {
     @Test
     @DisplayName("Permission 11. READ without any grant -> UNAUTHORIZED")
     void testReadWithoutPermission() {
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "filesystem", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ);
 
         assertFalse(decision.isAuthorized());
         assertEquals(AuthorizationResult.UNAUTHORIZED, decision.result());
@@ -87,7 +89,7 @@ class PermissionEngineTest {
     void testWriteWithoutPermission() {
         grant(Set.of(ActionType.READ), true);
 
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "filesystem", ActionType.WRITE);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.WRITE);
 
         assertEquals(AuthorizationResult.UNAUTHORIZED, decision.result());
     }
@@ -97,7 +99,7 @@ class PermissionEngineTest {
     void testDeleteWithoutPermission() {
         grant(Set.of(ActionType.READ, ActionType.WRITE), true);
 
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "filesystem", ActionType.DELETE);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.DELETE);
 
         assertEquals(AuthorizationResult.UNAUTHORIZED, decision.result());
     }
@@ -107,7 +109,7 @@ class PermissionEngineTest {
     void testPermissionDisabled() {
         grant(Set.of(ActionType.READ), false);
 
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "filesystem", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ);
 
         assertEquals(AuthorizationResult.PERMISSION_DISABLED, decision.result());
     }
@@ -118,24 +120,40 @@ class PermissionEngineTest {
         grant(Set.of(ActionType.READ), true);
         toolRepository.save(new Tool("database", null, ToolType.DATABASE));
 
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "database", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "database", ActionType.READ);
 
         assertEquals(AuthorizationResult.UNAUTHORIZED, decision.result());
     }
 
     @Test
-    @DisplayName("Unknown agent -> AGENT_NOT_FOUND")
+    @DisplayName("Authenticated principal no longer registered -> AGENT_NOT_FOUND")
     void testAgentNotFound() {
-        AuthorizationDecision decision = permissionEngine.authorize("ghost-agent", "filesystem", ActionType.READ);
+        AuthenticatedAgent ghost = new AuthenticatedAgent(UUID.randomUUID(), "ghost-agent");
+
+        AuthorizationDecision decision = permissionEngine.authorize(ghost, "ghost-agent", "filesystem", ActionType.READ);
 
         assertEquals(AuthorizationResult.AGENT_NOT_FOUND, decision.result());
         assertNull(decision.agentId());
     }
 
     @Test
+    @DisplayName("Caller claiming another agent's identity -> AGENT_IDENTITY_MISMATCH, even if that agent is authorized")
+    void testIdentityMismatch() {
+        Agent other = agentRepository.save(new Agent("privileged-agent", null));
+        permissionRepository.save(new AgentToolPermission(other, filesystem, Set.of(ActionType.READ), true));
+
+        AuthorizationDecision byName = permissionEngine.authorize(caller(), "privileged-agent", "filesystem", ActionType.READ);
+        AuthorizationDecision byUuid = permissionEngine.authorize(caller(), other.getId().toString(), "filesystem", ActionType.READ);
+
+        assertEquals(AuthorizationResult.AGENT_IDENTITY_MISMATCH, byName.result());
+        assertEquals(AuthorizationResult.AGENT_IDENTITY_MISMATCH, byUuid.result());
+        assertEquals(agent.getId(), byName.agentId());
+    }
+
+    @Test
     @DisplayName("Unknown tool -> TOOL_NOT_FOUND")
     void testToolNotFound() {
-        AuthorizationDecision decision = permissionEngine.authorize("research-agent", "ghost-tool", ActionType.READ);
+        AuthorizationDecision decision = permissionEngine.authorize(caller(), "research-agent", "ghost-tool", ActionType.READ);
 
         assertEquals(AuthorizationResult.TOOL_NOT_FOUND, decision.result());
         assertEquals(agent.getId(), decision.agentId());
@@ -150,7 +168,7 @@ class PermissionEngineTest {
         agentRepository.save(agent);
 
         assertEquals(AuthorizationResult.AGENT_SUSPENDED,
-                permissionEngine.authorize("research-agent", "filesystem", ActionType.READ).result());
+                permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ).result());
     }
 
     @Test
@@ -161,7 +179,7 @@ class PermissionEngineTest {
         agentRepository.save(agent);
 
         assertEquals(AuthorizationResult.AGENT_REVOKED,
-                permissionEngine.authorize("research-agent", "filesystem", ActionType.READ).result());
+                permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ).result());
     }
 
     @Test
@@ -172,7 +190,7 @@ class PermissionEngineTest {
         toolRepository.save(filesystem);
 
         assertEquals(AuthorizationResult.TOOL_DISABLED,
-                permissionEngine.authorize("research-agent", "filesystem", ActionType.READ).result());
+                permissionEngine.authorize(caller(), "research-agent", "filesystem", ActionType.READ).result());
     }
 
     @Test
@@ -180,9 +198,14 @@ class PermissionEngineTest {
     void testNullInputsDenied() {
         grant(Set.of(ActionType.READ), true);
 
-        assertEquals(AuthorizationResult.AGENT_NOT_FOUND, permissionEngine.authorize(null, "filesystem", ActionType.READ).result());
-        assertEquals(AuthorizationResult.TOOL_NOT_FOUND, permissionEngine.authorize("research-agent", null, ActionType.READ).result());
-        assertEquals(AuthorizationResult.UNAUTHORIZED, permissionEngine.authorize("research-agent", "filesystem", null).result());
+        assertEquals(AuthorizationResult.AGENT_NOT_FOUND, permissionEngine.authorize(null, "research-agent", "filesystem", ActionType.READ).result());
+        assertEquals(AuthorizationResult.AGENT_IDENTITY_MISMATCH, permissionEngine.authorize(caller(), null, "filesystem", ActionType.READ).result());
+        assertEquals(AuthorizationResult.TOOL_NOT_FOUND, permissionEngine.authorize(caller(), "research-agent", null, ActionType.READ).result());
+        assertEquals(AuthorizationResult.UNAUTHORIZED, permissionEngine.authorize(caller(), "research-agent", "filesystem", null).result());
+    }
+
+    private AuthenticatedAgent caller() {
+        return new AuthenticatedAgent(agent.getId(), agent.getName());
     }
 
     private void grant(Set<ActionType> actions, boolean enabled) {

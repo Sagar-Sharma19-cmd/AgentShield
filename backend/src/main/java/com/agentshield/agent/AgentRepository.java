@@ -15,4 +15,6 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
     Optional<Agent> findByName(String name);
 
     boolean existsByName(String name);
+
+    Optional<Agent> findByApiKeyHash(String apiKeyHash);
 }
