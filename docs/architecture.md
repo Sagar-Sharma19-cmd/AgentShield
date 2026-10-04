@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C) + Risk Engine Gateway Integration (Phase 2 — deterministic, escalation-only; see [Risk Engine Integration](#risk-engine-integration)) + Human Review Workflow (Phase 3 — see [Human Review Workflow](#human-review-workflow))
+> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C) + Risk Engine Gateway Integration (Phase 2 — deterministic, escalation-only; see [Risk Engine Integration](#risk-engine-integration)) + Human Review Workflow (Phase 3 — see [Human Review Workflow](#human-review-workflow)) + Audit Read API (Phase 4 — see [Audit Read API](#audit-read-api))
 
 ---
 
@@ -95,7 +95,10 @@ com.agentshield.riskengine  — RiskEngineClient / HttpRiskEngineClient (calls t
 com.agentshield.review      — ReviewRequest entity, ReviewRequestRepository, ReviewRequestService
                               (state machine), ReviewRequestController (human review workflow,
                               see Human Review Workflow below)
-com.agentshield.audit       — AuditLog entity, AuditRepository, AuditService
+com.agentshield.audit       — AuditLog entity, AuditRepository (+ Specification-based
+                              filtering), AuditLogSpecifications, AuditService,
+                              AuditController (Audit Read API, Phase 4 — see
+                              Audit Read API below)
 com.agentshield.model       — ActionType, DecisionType, ResourceSensitivity, ActionOutcome, RiskTier,
                               ReviewStatus, AgentStatus, ToolStatus, ToolType, AuthorizationResult enums
 com.agentshield.dto         — Request / response DTOs
@@ -172,17 +175,17 @@ environment — means a leaked database dump alone cannot be used to verify cand
 
 ### Admin API key
 
-`/api/v1/agents/**`, `/api/v1/tools/**` and `/api/v1/permissions/**` require
-`X-Admin-API-Key`. The configured key is compared as a SHA-256 digest with
-`MessageDigest.isEqual` (constant time, length-independent). Agent keys are never accepted on
-admin endpoints, and the admin key is never accepted on the gateway.
+`/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`, `/api/v1/reviews/**` and
+`/api/v1/audit/**` require `X-Admin-API-Key`. The configured key is compared as a SHA-256
+digest with `MessageDigest.isEqual` (constant time, length-independent). Agent keys are never
+accepted on admin endpoints, and the admin key is never accepted on the gateway.
 
 ### Security filter chains
 
 | Order | Paths | Credential | Role |
 |-------|-------|-----------|------|
 | 1 | `/api/v1/gateway/**` | agent API key | `ROLE_AGENT` |
-| 2 | `/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**` | admin API key | `ROLE_ADMIN` |
+| 2 | `/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`, `/api/v1/reviews/**`, `/api/v1/audit/**` | admin API key | `ROLE_ADMIN` |
 | 3 | `/actuator/health`, `/actuator/info`, `/error` | none | public |
 | 3 | everything else | — | denied |
 
@@ -417,6 +420,60 @@ The new columns are nullable, so rows written before Milestone 1B remain valid. 
 
 Requests rejected with **401 are not written to `audit_logs`**: they are refused before the request body is parsed or validated, so there is no trustworthy request to record. They are logged at `WARN` by the authentication filters (path, remote address and reason — never the key).
 
+## Audit Read API
+
+Phase 4 exposes the `audit_logs` table written by `AuditService.recordEvaluation` through a
+read-only admin API. There is no write endpoint — every row is still created exclusively by
+`GatewayService` during gateway evaluation; this phase adds query access only.
+
+```
+GET /api/v1/audit/{requestId}   — single-row correlation lookup
+GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
+                                 — paginated, filterable list (default order: timestamp DESC)
+```
+
+- **`requestId` is the correlation key**, the same UUID generated once per gateway evaluation
+  and shared with `risk_assessments` and `review_requests` (see [Risk Engine
+  Integration](#risk-engine-integration) and [Human Review Workflow](#human-review-workflow)).
+  `GET /api/v1/audit/{requestId}` looks up by this value, not by the row's own `id` — an
+  operator investigating a `reviewRequestId` or a `risk_assessments` row can follow the same
+  `requestId` straight to its audit record. `AuditRepository.findByRequestId(...)` returns
+  `Optional<AuditLog>` (not a list): `AuditService.recordEvaluation` is called exactly once per
+  gateway evaluation (see `GatewayService.evaluateRequest`), so at most one row exists per
+  `requestId`. An unknown `requestId` is a `404`; a malformed (non-UUID) one is a `400`.
+- **Filtering** uses `JpaSpecificationExecutor` (`AuditLogSpecifications`) rather than a
+  combinatorial set of derived repository method names, since `agentId`, `decision`,
+  `authorizationResult`, and a `from`/`to` timestamp range are all optional and independent —
+  each contributes a predicate only when present, composed with `Specification.allOf(...)`.
+- **Pagination is mandatory and bounded.** `page` (`>= 0`) and `size` (`1..100`) are validated
+  at the controller (`@Validated` + `@Min`/`@Max` on `@RequestParam`); out-of-range values are
+  rejected with `400` before reaching the database, rather than being silently clamped.
+- **Sort order is fixed, not client-controlled.** The list query always orders by
+  `timestamp DESC`; there is no `sort` query parameter. This is deliberate: accepting an
+  arbitrary client-supplied sort field would let a caller turn any entity property into a sort
+  expression. Operators needing a different order have no override in this phase.
+- **Indexing (`V6__add_audit_logs_indexes.sql`):** `audit_logs` previously had no indexes
+  beyond its primary key. V6 adds indexes on `request_id` (the correlation lookup), `agent_id`
+  (the most common equality filter) and `timestamp` (the default sort column and the
+  `from`/`to` range filter). No composite `(decision, timestamp)` index was added — `decision`
+  has only 3 possible values, too low a cardinality to usefully narrow a scan beyond what the
+  `timestamp` index already provides for the default-sorted query; one can be added later if a
+  real workload demonstrates the need.
+- **No field redaction needed.** `AuditLogResponse` exposes every persisted `AuditLog` field
+  as-is: `AuditService.recordEvaluation` never persists the inbound request's `metadata` map,
+  API keys, or any other credential (see [Audit](#audit) above) — only
+  `agentId`/`sessionId`/`tool`/`action`/`resource` and the resulting decision are written — so
+  there is nothing secret in the entity to filter out of the response.
+- **Security:** `/api/v1/audit/**` is on the existing admin filter chain (`ROLE_ADMIN`,
+  `X-Admin-API-Key`) — the same convention as `/agents`, `/tools`, `/permissions` and
+  `/reviews`. An agent API key, or no key at all, is rejected with `401` before the controller
+  runs. This is an operator action, not an agent action, so no new authentication mechanism
+  was introduced.
+- **API:** see `docs/api-design.md`'s "Audit Log" section for the full request/response shapes.
+- **Out of scope for this phase:** a dashboard or any UI, trajectory/behavioral analysis, ML,
+  the simulator, and any change to gateway authorization behavior or to the human review
+  workflow's own state machine — all untouched by this phase.
+
 ---
 
 ## Database Migrations (Flyway)
@@ -428,6 +485,7 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 | V3 | `V3__add_identity_mismatch_authorization_result.sql` | Adds `AGENT_IDENTITY_MISMATCH` to the `audit_logs.authorization_result` CHECK constraint |
 | V4 | `V4__add_risk_assessments.sql` | New `risk_assessments` table (Risk Engine Phase 2 integration): `id`, `request_id`, `risk_score`, `risk_tier`, `factors` (JSON text), `reason`, `engine_available`, `created_at`, plus an index on `request_id` |
 | V5 | `V5__add_review_requests.sql` | New `review_requests` table (Human Review Workflow, Phase 3): `id`, `request_id` (unique), `agent_id`, `session_id`, `tool`, `action`, `resource`, `resource_sensitivity`, `risk_score`, `risk_tier`, `original_decision`, `status`, `reason`, `created_at`, `updated_at`, `reviewed_at`, plus indexes on `status` and `created_at` |
+| V6 | `V6__add_audit_logs_indexes.sql` | Audit Read API (Phase 4): adds indexes on `audit_logs.request_id`, `audit_logs.agent_id` and `audit_logs.timestamp` — no schema/column changes, `audit_logs` previously had no indexes beyond its primary key |
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.

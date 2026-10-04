@@ -1,6 +1,6 @@
 # API Design
 
-> **Status:** Implemented (1A — Core Gateway, 1B — Agent Identity, Tool Registry & Permissions, 1C — Agent & Admin API Key Authentication)
+> **Status:** Implemented (1A — Core Gateway, 1B — Agent Identity, Tool Registry & Permissions, 1C — Agent & Admin API Key Authentication, Phase 2 — Risk Engine Gateway Integration, Phase 3 — Human Review Workflow, Phase 4 — Audit Read API)
 
 ---
 
@@ -17,7 +17,7 @@ http://localhost:8080/api/v1
 | API | Header | Credential |
 |-----|--------|------------|
 | Gateway (`/gateway/**`) | `X-Agent-API-Key: agk_live_…` **or** `Authorization: Bearer agk_live_…` | The calling agent's own API key |
-| Admin (`/agents/**`, `/tools/**`, `/permissions/**`, `/reviews/**`) | `X-Admin-API-Key: …` | Admin key from `AGENTSHIELD_ADMIN_API_KEY` |
+| Admin (`/agents/**`, `/tools/**`, `/permissions/**`, `/reviews/**`, `/audit/**`) | `X-Admin-API-Key: …` | Admin key from `AGENTSHIELD_ADMIN_API_KEY` |
 | `/actuator/health`, `/actuator/info` | none | public |
 
 Any other path is denied. Agent keys never work on admin APIs and the admin key never works on the gateway.
@@ -116,12 +116,59 @@ where `riskScore` is PolicyEngine's static score — see the Gateway response no
 `originalDecision` is the PolicyEngine decision before risk escalation (`ALLOW` or `REVIEW` —
 never `DENY`, since a DENY never reaches the review workflow).
 
-### Audit Log
+### Audit Log — requires admin API key
 
-| Method | Path | Description | Status |
-|--------|------|-------------|--------|
-| `GET` | `/audit` | List recent audit log entries | 🔲 Planned |
-| `GET` | `/audit/{id}` | Get a specific audit entry | 🔲 Planned |
+Read-only API over `audit_logs` (Phase 4). There is no write endpoint — every row is created
+exclusively by `GatewayService` via `AuditService.recordEvaluation`. See `docs/architecture.md`'s
+"Audit Read API" for the full design.
+
+| Method | Path | Description | Success |
+|--------|------|-------------|---------|
+| `GET` | `/audit/{requestId}` | Get the audit row for a gateway request, by `requestId` (the correlation key shared with `risk_assessments` and `review_requests`) | `200` |
+| `GET` | `/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=` | Paginated, filterable list, default order `timestamp DESC` | `200` |
+
+All list filters are optional and combine with AND: `agentId` (exact match), `decision`
+(`ALLOW`/`REVIEW`/`DENY`), `authorizationResult` (see the gateway's `authorizationResult`
+values below), `from`/`to` (ISO-8601 instant, inclusive range on `timestamp`). `page` (default
+`0`, must be `>= 0`) and `size` (default `20`, must be `1..100`) are validated at the
+controller; out-of-range values return `400`. There is no `sort` parameter — sort order is
+always `timestamp DESC`, so a caller can never turn an arbitrary entity field into a sort
+expression. An unknown `{requestId}` returns `404`; a malformed (non-UUID) `{requestId}`
+returns `400`.
+
+**Response body (`GET /audit/{requestId}`, `AuditLogResponse`):**
+```json
+{
+  "id": "d4e5f6a7-0000-4000-8000-000000000003",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "tool": "filesystem",
+  "action": "READ",
+  "resource": "src/main/App.java",
+  "resourceSensitivity": "INTERNAL",
+  "decision": "ALLOW",
+  "riskScore": 10,
+  "reason": "Action is within permitted policy bounds.",
+  "actionOutcome": "ALLOWED",
+  "registeredAgentId": "6f1c2d9e-8a4b-4c1e-9f3a-2b7d5e6a1c00",
+  "registeredToolId": "0b8e7f6a-1d2c-4e3f-8a9b-7c6d5e4f3a21",
+  "authorizationResult": "AUTHORIZED",
+  "authorizationReason": "Agent 'coding-agent-01' is permitted to perform READ with tool 'filesystem'.",
+  "timestamp": "2026-09-13T22:50:00Z"
+}
+```
+
+**Response body (`GET /audit`, `AuditLogPageResponse`):**
+```json
+{
+  "content": [ { "...": "AuditLogResponse, see above" } ],
+  "page": 0,
+  "size": 20,
+  "totalElements": 1,
+  "totalPages": 1
+}
+```
 
 ---
 
