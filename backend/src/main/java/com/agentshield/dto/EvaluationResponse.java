@@ -16,6 +16,10 @@ import java.util.UUID;
  * Engine assessment that may have escalated {@code decision}; both are {@code null} when
  * the Risk Engine was not consulted (the request was already denied by authorization or
  * policy before the Risk Engine would have been called).
+ *
+ * {@code reviewRequestId} is set only when the final {@code decision} is REVIEW (Phase 3
+ * human review workflow); it is {@code null} for ALLOW and DENY, which never create a
+ * review request.
  */
 public class EvaluationResponse {
 
@@ -30,12 +34,13 @@ public class EvaluationResponse {
     private AuthorizationResult authorizationResult;
     private RiskTier riskTier;
     private Boolean riskEngineAvailable;
+    private UUID reviewRequestId;
     private Instant timestamp;
 
     public EvaluationResponse() {
     }
 
-    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, AuthorizationResult authorizationResult, RiskTier riskTier, Boolean riskEngineAvailable, Instant timestamp) {
+    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, AuthorizationResult authorizationResult, RiskTier riskTier, Boolean riskEngineAvailable, UUID reviewRequestId, Instant timestamp) {
         this.requestId = requestId;
         this.agentId = agentId;
         this.sessionId = sessionId;
@@ -47,6 +52,7 @@ public class EvaluationResponse {
         this.authorizationResult = authorizationResult;
         this.riskTier = riskTier;
         this.riskEngineAvailable = riskEngineAvailable;
+        this.reviewRequestId = reviewRequestId;
         this.timestamp = timestamp;
     }
 
@@ -138,6 +144,14 @@ public class EvaluationResponse {
         this.riskEngineAvailable = riskEngineAvailable;
     }
 
+    public UUID getReviewRequestId() {
+        return reviewRequestId;
+    }
+
+    public void setReviewRequestId(UUID reviewRequestId) {
+        this.reviewRequestId = reviewRequestId;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -162,6 +176,7 @@ public class EvaluationResponse {
         private AuthorizationResult authorizationResult;
         private RiskTier riskTier;
         private Boolean riskEngineAvailable;
+        private UUID reviewRequestId;
         private Instant timestamp;
 
         public Builder requestId(UUID requestId) {
@@ -219,13 +234,18 @@ public class EvaluationResponse {
             return this;
         }
 
+        public Builder reviewRequestId(UUID reviewRequestId) {
+            this.reviewRequestId = reviewRequestId;
+            return this;
+        }
+
         public Builder timestamp(Instant timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
         public EvaluationResponse build() {
-            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, riskTier, riskEngineAvailable, timestamp);
+            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, riskTier, riskEngineAvailable, reviewRequestId, timestamp);
         }
     }
 }

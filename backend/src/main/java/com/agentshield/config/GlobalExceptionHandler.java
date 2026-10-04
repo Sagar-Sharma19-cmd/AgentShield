@@ -2,6 +2,7 @@ package com.agentshield.config;
 
 import com.agentshield.dto.ErrorResponse;
 import com.agentshield.exception.ConflictException;
+import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -67,6 +68,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     public ResponseEntity<ErrorResponse> handleConflict(ConflictException ex) {
         return error(HttpStatus.CONFLICT, "Conflict", ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidReviewStateException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidReviewState(InvalidReviewStateException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

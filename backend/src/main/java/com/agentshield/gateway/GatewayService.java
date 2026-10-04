@@ -10,6 +10,8 @@ import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.permission.PermissionEngine;
 import com.agentshield.policy.PolicyEngine;
 import com.agentshield.policy.PolicyEvaluationResult;
+import com.agentshield.review.ReviewRequest;
+import com.agentshield.review.ReviewRequestService;
 import com.agentshield.riskengine.RiskAssessment;
 import com.agentshield.riskengine.RiskAssessmentService;
 import com.agentshield.riskengine.RiskEngineClient;
@@ -34,6 +36,10 @@ import java.util.UUID;
  *    tier can only escalate that decision (see DecisionEscalator); it can never grant or
  *    downgrade authorization. A Risk Engine failure/timeout escalates in risk terms (fails
  *    safely to HIGH/REVIEW territory) rather than failing open.
+ * 4. ReviewRequestService (Phase 3) — when, and only when, the final decision is REVIEW, a
+ *    persistent review request is created for a human operator to later APPROVE or REJECT.
+ *    ALLOW and DENY never create a review request, and the review workflow cannot turn a
+ *    DENY into an ALLOW — it only ever handles requests that already reached REVIEW.
  */
 @Service
 public class GatewayService {
@@ -47,17 +53,19 @@ public class GatewayService {
     private final RiskEngineClient riskEngineClient;
     private final DecisionEscalator decisionEscalator;
     private final RiskAssessmentService riskAssessmentService;
+    private final ReviewRequestService reviewRequestService;
 
     @Autowired
     public GatewayService(PermissionEngine permissionEngine, PolicyEngine policyEngine, AuditService auditService,
                           RiskEngineClient riskEngineClient, DecisionEscalator decisionEscalator,
-                          RiskAssessmentService riskAssessmentService) {
+                          RiskAssessmentService riskAssessmentService, ReviewRequestService reviewRequestService) {
         this.permissionEngine = permissionEngine;
         this.policyEngine = policyEngine;
         this.auditService = auditService;
         this.riskEngineClient = riskEngineClient;
         this.decisionEscalator = decisionEscalator;
         this.riskAssessmentService = riskAssessmentService;
+        this.reviewRequestService = reviewRequestService;
     }
 
     public EvaluationResponse evaluateRequest(EvaluationRequest request, AuthenticatedAgent caller) {
@@ -72,7 +80,7 @@ public class GatewayService {
             // Permission denial is authoritative: the Risk Engine is never called.
             PolicyEvaluationResult denial = authorizationDenial(authorization);
             auditService.recordEvaluation(request, requestId, denial, authorization, timestamp);
-            return buildResponse(requestId, request, denial, authorization, null, null, timestamp);
+            return buildResponse(requestId, request, denial, authorization, null, null, null, timestamp);
         }
 
         // 2. Evaluate security policy rules for the authorized request
@@ -82,7 +90,7 @@ public class GatewayService {
             // Policy denial is authoritative: the Risk Engine cannot downgrade it, so it is
             // not consulted.
             auditService.recordEvaluation(request, requestId, policyResult, authorization, timestamp);
-            return buildResponse(requestId, request, policyResult, authorization, null, null, timestamp);
+            return buildResponse(requestId, request, policyResult, authorization, null, null, null, timestamp);
         }
 
         // 3. Risk Engine is an escalation-only signal for ALLOW/REVIEW policy outcomes.
@@ -96,8 +104,17 @@ public class GatewayService {
         // 4. Audit the final (possibly escalated) decision
         auditService.recordEvaluation(request, requestId, finalResult, authorization, timestamp);
 
+        // 5. Final decision REVIEW -> persist a human review request (Phase 3). ALLOW/DENY never do.
+        UUID reviewRequestId = null;
+        if (finalDecision == DecisionType.REVIEW) {
+            ReviewRequest reviewRequest = reviewRequestService.createReviewRequest(requestId, request,
+                    policyResult.getResourceSensitivity(), riskAssessment.riskScore(), riskAssessment.riskTier(),
+                    policyResult.getDecision(), finalResult.getReason(), timestamp);
+            reviewRequestId = reviewRequest.getId();
+        }
+
         return buildResponse(requestId, request, finalResult, authorization,
-                riskAssessment.riskTier(), riskAssessment.engineAvailable(), timestamp);
+                riskAssessment.riskTier(), riskAssessment.engineAvailable(), reviewRequestId, timestamp);
     }
 
     private PolicyEvaluationResult withEscalatedDecision(PolicyEvaluationResult policyResult,
@@ -120,7 +137,7 @@ public class GatewayService {
 
     private EvaluationResponse buildResponse(UUID requestId, EvaluationRequest request, PolicyEvaluationResult result,
                                               AuthorizationDecision authorization, RiskTier riskTier,
-                                              Boolean riskEngineAvailable, Instant timestamp) {
+                                              Boolean riskEngineAvailable, UUID reviewRequestId, Instant timestamp) {
         return EvaluationResponse.builder()
                 .requestId(requestId)
                 .agentId(request.getAgentId())
@@ -133,6 +150,7 @@ public class GatewayService {
                 .authorizationResult(authorization.result())
                 .riskTier(riskTier)
                 .riskEngineAvailable(riskEngineAvailable)
+                .reviewRequestId(reviewRequestId)
                 .timestamp(timestamp)
                 .build();
     }

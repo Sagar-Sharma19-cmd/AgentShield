@@ -8,10 +8,13 @@ import com.agentshield.audit.AuditRepository;
 import com.agentshield.dto.AgentCreateRequest;
 import com.agentshield.dto.AgentCreateResponse;
 import com.agentshield.model.ActionType;
+import com.agentshield.model.DecisionType;
+import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
 import com.agentshield.model.ToolType;
 import com.agentshield.permission.AgentToolPermission;
 import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.review.ReviewRequestRepository;
 import com.agentshield.riskengine.RiskAssessment;
 import com.agentshield.riskengine.RiskAssessmentRecord;
 import com.agentshield.riskengine.RiskAssessmentRepository;
@@ -75,6 +78,9 @@ class RiskEngineGatewayIntegrationTest {
     private RiskAssessmentRepository riskAssessmentRepository;
 
     @Autowired
+    private ReviewRequestRepository reviewRequestRepository;
+
+    @Autowired
     private AgentRepository agentRepository;
 
     @Autowired
@@ -95,6 +101,7 @@ class RiskEngineGatewayIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        reviewRequestRepository.deleteAll();
         riskAssessmentRepository.deleteAll();
         auditRepository.deleteAll();
         permissionRepository.deleteAll();
@@ -308,6 +315,100 @@ class RiskEngineGatewayIntegrationTest {
         assertEquals(1, auditLogs.size());
         assertEquals(1, riskRecords.size());
         assertEquals(auditLogs.get(0).getRequestId(), riskRecords.get(0).getRequestId());
+    }
+
+    // ------------------------------------------------------------------
+    // D. Phase 3 — Human review workflow gateway integration
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("D. Final decision REVIEW (policy REVIEW, risk LOW) creates exactly one ReviewRequest")
+    void testReviewDecisionCreatesExactlyOneReviewRequest() throws Exception {
+        grant(ActionType.DELETE);
+        stubRisk(RiskTier.LOW);
+
+        ResultActions result = evaluate("DELETE", "dev/temp-file.log")
+                .andExpect(jsonPath("$.decision").value("REVIEW"))
+                .andExpect(jsonPath("$.reviewRequestId").isNotEmpty());
+
+        String requestIdJson = objectMapper.readTree(result.andReturn().getResponse().getContentAsString())
+                .get("requestId").asText();
+
+        List<RiskAssessmentRecord> riskRecords = riskAssessmentRepository.findAll();
+        assertEquals(1, riskRecords.size());
+        var reviewRequests = reviewRequestRepository.findAll();
+        assertEquals(1, reviewRequests.size());
+        assertEquals(requestIdJson, reviewRequests.get(0).getRequestId().toString());
+        assertEquals(ReviewStatus.PENDING, reviewRequests.get(0).getStatus());
+        assertEquals(50, reviewRequests.get(0).getRiskScore());
+        assertEquals(RiskTier.LOW, reviewRequests.get(0).getRiskTier());
+        assertEquals(DecisionType.REVIEW, reviewRequests.get(0).getOriginalDecision());
+    }
+
+    @Test
+    @DisplayName("D. ALLOW escalated to REVIEW by HIGH risk creates a ReviewRequest with originalDecision=ALLOW")
+    void testAllowEscalatedToReviewCreatesReviewRequestWithOriginalAllow() throws Exception {
+        grant(ActionType.READ);
+        stubRisk(RiskTier.HIGH);
+
+        evaluate("READ", "src/Main.java")
+                .andExpect(jsonPath("$.decision").value("REVIEW"))
+                .andExpect(jsonPath("$.reviewRequestId").isNotEmpty());
+
+        var reviewRequests = reviewRequestRepository.findAll();
+        assertEquals(1, reviewRequests.size());
+        assertEquals(DecisionType.ALLOW, reviewRequests.get(0).getOriginalDecision());
+        assertEquals(RiskTier.HIGH, reviewRequests.get(0).getRiskTier());
+    }
+
+    @Test
+    @DisplayName("D. Final decision ALLOW never creates a ReviewRequest")
+    void testAllowDoesNotCreateReviewRequest() throws Exception {
+        grant(ActionType.READ);
+        stubRisk(RiskTier.LOW);
+
+        evaluate("READ", "src/Main.java")
+                .andExpect(jsonPath("$.decision").value("ALLOW"))
+                .andExpect(jsonPath("$.reviewRequestId").doesNotExist());
+
+        assertEquals(0, reviewRequestRepository.findAll().size());
+    }
+
+    @Test
+    @DisplayName("D. Policy DENY never creates a ReviewRequest")
+    void testPolicyDenyDoesNotCreateReviewRequest() throws Exception {
+        grant(ActionType.READ);
+        when(riskEngineClient.assessRisk(any(), any(), any()))
+                .thenReturn(new RiskAssessment(0, RiskTier.LOW, List.of(), "should never be used", true));
+
+        evaluate("READ", ".env")
+                .andExpect(jsonPath("$.decision").value("DENY"))
+                .andExpect(jsonPath("$.reviewRequestId").doesNotExist());
+
+        assertEquals(0, reviewRequestRepository.findAll().size());
+    }
+
+    @Test
+    @DisplayName("D. Permission DENY never creates a ReviewRequest")
+    void testPermissionDenyDoesNotCreateReviewRequest() throws Exception {
+        evaluate("READ", "src/Main.java")
+                .andExpect(jsonPath("$.decision").value("DENY"))
+                .andExpect(jsonPath("$.reviewRequestId").doesNotExist());
+
+        assertEquals(0, reviewRequestRepository.findAll().size());
+    }
+
+    @Test
+    @DisplayName("D. CRITICAL risk escalates ALLOW to DENY, not REVIEW, and never creates a ReviewRequest")
+    void testCriticalEscalationToDenyDoesNotCreateReviewRequest() throws Exception {
+        grant(ActionType.READ);
+        stubRisk(RiskTier.CRITICAL);
+
+        evaluate("READ", "src/Main.java")
+                .andExpect(jsonPath("$.decision").value("DENY"))
+                .andExpect(jsonPath("$.reviewRequestId").doesNotExist());
+
+        assertEquals(0, reviewRequestRepository.findAll().size());
     }
 
     private void stubRisk(RiskTier tier) {

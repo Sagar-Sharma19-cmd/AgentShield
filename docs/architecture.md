@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C) + Risk Engine Gateway Integration (Phase 2 — deterministic, escalation-only; see [Risk Engine Integration](#risk-engine-integration))
+> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C) + Risk Engine Gateway Integration (Phase 2 — deterministic, escalation-only; see [Risk Engine Integration](#risk-engine-integration)) + Human Review Workflow (Phase 3 — see [Human Review Workflow](#human-review-workflow))
 
 ---
 
@@ -58,6 +58,13 @@ Milestone 1C makes the **WHO** verifiable: every gateway request must be authent
 │              └──────────────┬─────────────┘                   │
 │                             ▼                                 │
 │          AuditService ──► PostgreSQL ◄── RiskAssessmentService│
+│                             │                                 │
+│                 final decision == REVIEW?                     │
+│                             │ yes                              │
+│                             ▼                                 │
+│                  ReviewRequestService ──► PostgreSQL           │
+│                  (PENDING review_requests row; see             │
+│                   Human Review Workflow below)                 │
 └─────────────────────────────┬─────────────────────────────────┘
                               ▼
                Protected Tool / API / Resource
@@ -85,9 +92,12 @@ com.agentshield.policy      — PolicyEngine & deterministic risk baseline
 com.agentshield.riskengine  — RiskEngineClient / HttpRiskEngineClient (calls the Python Risk Engine),
                               RiskAssessment, RiskFactor, RiskAssessmentRecord/Repository/Service
                               (risk_assessments persistence)
+com.agentshield.review      — ReviewRequest entity, ReviewRequestRepository, ReviewRequestService
+                              (state machine), ReviewRequestController (human review workflow,
+                              see Human Review Workflow below)
 com.agentshield.audit       — AuditLog entity, AuditRepository, AuditService
 com.agentshield.model       — ActionType, DecisionType, ResourceSensitivity, ActionOutcome, RiskTier,
-                              AgentStatus, ToolStatus, ToolType, AuthorizationResult enums
+                              ReviewStatus, AgentStatus, ToolStatus, ToolType, AuthorizationResult enums
 com.agentshield.dto         — Request / response DTOs
 com.agentshield.exception   — ResourceNotFoundException (404), ConflictException (409)
 com.agentshield.config      — GlobalExceptionHandler
@@ -264,6 +274,7 @@ Authentication happens first, in the Spring Security filter. Authorization is th
 | 9 | Policy: dangerous resource/action (secrets, prod DELETE) | `AUTHORIZED` | **DENY** (Risk Engine not consulted) |
 | 10 | Policy: potentially risky (non-prod DELETE, EXECUTE, EXTERNAL_REQUEST) | `AUTHORIZED` | **REVIEW** → Risk Engine may escalate to DENY |
 | 11 | Otherwise | `AUTHORIZED` | **ALLOW** → Risk Engine may escalate to REVIEW/DENY |
+| 12 | Final decision (after risk escalation) is REVIEW | `AUTHORIZED` | A `review_requests` row is created (PENDING) — see [Human Review Workflow](#human-review-workflow) |
 
 Key properties:
 
@@ -325,6 +336,72 @@ final decision ── audited (audit_logs, unchanged schema) ── risk assessm
 - **Out of scope for this integration:** ML/anomaly detection, trajectory/session analysis,
   caching, retries, and async processing — all future work, not implemented.
 
+## Human Review Workflow
+
+Phase 3 adds a minimal persistent workflow for the `REVIEW` decisions the gateway already
+produces. It is purely downstream of the existing decision: it cannot be reached by, and
+cannot influence, an `ALLOW` or `DENY`.
+
+```
+GatewayService: final decision (after DecisionEscalator)
+        │
+   ┌────┼────────────┬─────────────────┐
+   │    │            │                 │
+ ALLOW  DENY       REVIEW              │
+   │    │            │                 │
+(unchanged)   ReviewRequestService.createReviewRequest(...)
+              → review_requests row, status = PENDING
+                      │
+      POST /api/v1/reviews/{id}/start   (admin API key)
+                      ▼
+                  IN_REVIEW
+                 ╱         ╲
+  POST .../approve       POST .../reject
+         ▼                      ▼
+     APPROVED                REJECTED        (both terminal — immutable)
+```
+
+- **State machine (strict):** `PENDING → IN_REVIEW → APPROVED` or `PENDING → IN_REVIEW → REJECTED`.
+  There is no `PENDING → APPROVED/REJECTED` shortcut. `APPROVED` and `REJECTED` are terminal —
+  any further transition attempt (including re-`start`) is rejected. Enforced in
+  `ReviewRequestService.transition(...)`, throwing `InvalidReviewStateException` (HTTP 400) on
+  violation.
+- **Creation (gateway-only).** `GatewayService` creates a review request if, and only if, the
+  final decision (after `DecisionEscalator`) is `REVIEW` — never for `ALLOW` or `DENY`. There is
+  no API to create one directly. Creation is idempotent on `request_id`
+  (`review_requests.request_id` is also DB-unique): re-processing the same `request_id` returns
+  the existing row rather than creating a duplicate.
+- **Security invariant: review can never downgrade a DENY.** The review workflow only ever
+  operates on requests that already reached `REVIEW`; `APPROVED`/`REJECTED` are human decisions
+  *about* a review item, not an authorization re-evaluation, and nothing in this workflow can
+  turn a `DENY` into an `ALLOW` or even touch a `DENY`'d request — `DecisionEscalator`'s DENY
+  short-circuit (see [Risk Engine Integration](#risk-engine-integration)) runs entirely before
+  this workflow is ever reached.
+- **Relationship to `AuditLog` / `RiskAssessment`:** all three are correlated by the same
+  `request_id` generated once per gateway evaluation. `audit_logs` records the final decision
+  that triggered the review; `risk_assessments` records the Risk Engine's factor breakdown that
+  may have driven the escalation; `review_requests` records the human workflow's own lifecycle
+  on top of that already-decided `REVIEW`. None of the three duplicates the others' detail.
+- **`riskScore`/`riskTier` on `ReviewRequest`** are the Risk Engine's own assessment (the same
+  values returned on `EvaluationResponse.riskTier`), not PolicyEngine's static score — so a
+  human reviewer sees one internally consistent risk signal, rather than the PolicyEngine/
+  Risk-Engine score split that `EvaluationResponse.riskScore` intentionally preserves for API
+  backward compatibility (see [Risk Engine Integration](#risk-engine-integration)).
+  `originalDecision` is the PolicyEngine decision *before* risk escalation (`ALLOW` or
+  `REVIEW` — never `DENY`), so a reviewer can tell at a glance whether this item reached REVIEW
+  by direct policy rule or by risk escalation of an otherwise-ALLOWed action.
+- **API:** `GET /api/v1/reviews/{id}`, `GET /api/v1/reviews?status=PENDING`,
+  `POST /api/v1/reviews/{id}/start`, `POST /api/v1/reviews/{id}/approve`,
+  `POST /api/v1/reviews/{id}/reject` — see `docs/api-design.md`. Secured by the existing admin
+  API key convention (`ROLE_ADMIN`, same filter chain as `/agents`, `/tools`, `/permissions`) —
+  this is an operator action, not an agent action, so no new authentication mechanism was added.
+- **`EvaluationResponse.reviewRequestId`** is set only when the final decision is `REVIEW`;
+  `null` for `ALLOW`/`DENY`. Additive, backward-compatible field.
+- **Out of scope for this workflow:** notifications, a review queue UI/dashboard, reviewer
+  identity/RBAC (the existing single shared admin key is reused as-is), SLA/expiry on pending
+  reviews, and any automatic action on approval/rejection (e.g. re-invoking the protected tool) —
+  all future work, not implemented.
+
 ## Audit
 
 Each gateway evaluation writes one `audit_logs` row containing the original request fields (`agentId`, `tool`, `action`, `resource`, …), the final `decision`/`actionOutcome`/`riskScore`/`reason`, and:
@@ -350,6 +427,7 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 | V2 | `V2__add_agent_api_keys.sql` | `agents.api_key_hash` (unique) and `agents.api_key_prefix` |
 | V3 | `V3__add_identity_mismatch_authorization_result.sql` | Adds `AGENT_IDENTITY_MISMATCH` to the `audit_logs.authorization_result` CHECK constraint |
 | V4 | `V4__add_risk_assessments.sql` | New `risk_assessments` table (Risk Engine Phase 2 integration): `id`, `request_id`, `risk_score`, `risk_tier`, `factors` (JSON text), `reason`, `engine_available`, `created_at`, plus an index on `request_id` |
+| V5 | `V5__add_review_requests.sql` | New `review_requests` table (Human Review Workflow, Phase 3): `id`, `request_id` (unique), `agent_id`, `session_id`, `tool`, `action`, `resource`, `resource_sensitivity`, `risk_score`, `risk_tier`, `original_decision`, `status`, `reason`, `created_at`, `updated_at`, `reviewed_at`, plus indexes on `status` and `created_at` |
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.
@@ -385,6 +463,10 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 - No retries or caching around the Risk Engine call; a failure always takes the fallback path
   rather than retrying (a retry could exceed the timeout budget).
 - Risk Engine integration runs synchronously in the request path; no async processing or queue.
+- The human review workflow (Phase 3) has no notifications, review queue UI, reviewer identity/
+  RBAC (it reuses the single shared admin key), SLA/expiry on pending reviews, or automatic
+  action on approval/rejection — approving a review records a human decision but does not
+  re-invoke the protected tool. See [Human Review Workflow](#human-review-workflow).
 
 ## Future Roadmap
 
@@ -395,7 +477,9 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 5. Trajectory / session analysis and ML-based anomaly detection as additional, explainable-adjacent
    Risk Engine factors (deterministic Risk Engine gateway integration is implemented — see
    [Risk Engine Integration](#risk-engine-integration)).
-6. Review queue for `REVIEW` decisions and the frontend dashboard.
+6. Review queue UI and the frontend dashboard, built on the Phase 3 `review_requests` data
+   (persistent human review workflow — PENDING/IN_REVIEW/APPROVED/REJECTED — is implemented;
+   see [Human Review Workflow](#human-review-workflow)); notifications and reviewer RBAC.
 
 ---
 
