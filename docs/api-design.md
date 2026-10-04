@@ -17,7 +17,7 @@ http://localhost:8080/api/v1
 | API | Header | Credential |
 |-----|--------|------------|
 | Gateway (`/gateway/**`) | `X-Agent-API-Key: agk_live_…` **or** `Authorization: Bearer agk_live_…` | The calling agent's own API key |
-| Admin (`/agents/**`, `/tools/**`, `/permissions/**`) | `X-Admin-API-Key: …` | Admin key from `AGENTSHIELD_ADMIN_API_KEY` |
+| Admin (`/agents/**`, `/tools/**`, `/permissions/**`, `/reviews/**`) | `X-Admin-API-Key: …` | Admin key from `AGENTSHIELD_ADMIN_API_KEY` |
 | `/actuator/health`, `/actuator/info` | none | public |
 
 Any other path is denied. Agent keys never work on admin APIs and the admin key never works on the gateway.
@@ -72,6 +72,50 @@ Any other path is denied. Agent keys never work on admin APIs and the admin key 
 | `GET` | `/permissions/agent/{agentId}` | List an agent's grants | `200` |
 | `DELETE` | `/permissions/{id}` | Revoke a grant | `204` |
 
+### Reviews — requires admin API key
+
+Human review workflow for gateway requests whose final decision is `REVIEW` (Phase 3). There is
+no endpoint to create a review request directly — it is created only by `GatewayService`. See
+`docs/architecture.md`'s "Human Review Workflow" for the full state machine and security
+invariants.
+
+| Method | Path | Description | Success |
+|--------|------|-------------|---------|
+| `GET` | `/reviews/{id}` | Get a review request | `200` |
+| `GET` | `/reviews?status=PENDING` | List review requests by status (`status` required: `PENDING`, `IN_REVIEW`, `APPROVED`, `REJECTED`) | `200` |
+| `POST` | `/reviews/{id}/start` | `PENDING → IN_REVIEW` | `200` |
+| `POST` | `/reviews/{id}/approve` | `IN_REVIEW → APPROVED` (terminal) | `200` |
+| `POST` | `/reviews/{id}/reject` | `IN_REVIEW → REJECTED` (terminal) | `200` |
+
+An invalid transition (e.g. `approve` before `start`, or any transition from `APPROVED`/
+`REJECTED`) returns `400`. An unknown `{id}` returns `404`.
+
+**Response body (`ReviewRequestResponse`):**
+```json
+{
+  "id": "b2c3d4e5-0000-4000-8000-000000000002",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "tool": "filesystem",
+  "action": "DELETE",
+  "resource": "dev/temp-file.log",
+  "resourceSensitivity": "SENSITIVE",
+  "riskScore": 50,
+  "riskTier": "HIGH",
+  "originalDecision": "REVIEW",
+  "status": "PENDING",
+  "reason": "DELETE action on non-production resource requires human review.",
+  "createdAt": "2026-09-13T22:50:00Z",
+  "updatedAt": "2026-09-13T22:50:00Z",
+  "reviewedAt": null
+}
+```
+`riskScore`/`riskTier` here are the Risk Engine's own assessment (unlike `EvaluationResponse`,
+where `riskScore` is PolicyEngine's static score — see the Gateway response notes above).
+`originalDecision` is the PolicyEngine decision before risk escalation (`ALLOW` or `REVIEW` —
+never `DENY`, since a DENY never reaches the review workflow).
+
 ### Audit Log
 
 | Method | Path | Description | Status |
@@ -114,6 +158,8 @@ Content-Type: application/json
 `riskEngineAvailable` describe the separate Risk Engine assessment that may have escalated
 `decision` (see `docs/architecture.md`'s "Risk Engine Integration"); both are `null` when the
 Risk Engine was not consulted, i.e. whenever `decision` was already DENY before it could run.
+`reviewRequestId` is set only when the final `decision` is `REVIEW` (Phase 3 human review
+workflow — see `docs/architecture.md`'s "Human Review Workflow"); `null` for `ALLOW`/`DENY`.
 
 **Response body (ALLOW):**
 ```json
@@ -129,6 +175,7 @@ Risk Engine was not consulted, i.e. whenever `decision` was already DENY before 
   "authorizationResult": "AUTHORIZED",
   "riskTier": "LOW",
   "riskEngineAvailable": true,
+  "reviewRequestId": null,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
@@ -147,11 +194,12 @@ Risk Engine was not consulted, i.e. whenever `decision` was already DENY before 
   "authorizationResult": "AUTHORIZED",
   "riskTier": null,
   "riskEngineAvailable": null,
+  "reviewRequestId": null,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
-**Response body (ALLOW, escalated to REVIEW by the Risk Engine — `riskScore` stays low because it is PolicyEngine's own score, not the Risk Engine's):**
+**Response body (ALLOW, escalated to REVIEW by the Risk Engine — `riskScore` stays low because it is PolicyEngine's own score, not the Risk Engine's; `reviewRequestId` is now set):**
 ```json
 {
   "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -165,6 +213,7 @@ Risk Engine was not consulted, i.e. whenever `decision` was already DENY before 
   "authorizationResult": "AUTHORIZED",
   "riskTier": "HIGH",
   "riskEngineAvailable": true,
+  "reviewRequestId": "b2c3d4e5-0000-4000-8000-000000000002",
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
@@ -187,9 +236,13 @@ escalation. Always read `riskTier` (not `riskScore`) to understand why a decisio
   "authorizationResult": "AUTHORIZED",
   "riskTier": "CRITICAL",
   "riskEngineAvailable": true,
+  "reviewRequestId": null,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
+`reviewRequestId` is `null` here too — the final decision is DENY (CRITICAL risk escalates
+`REVIEW` straight to `DENY`, never through the review workflow; see `docs/architecture.md`'s
+"Human Review Workflow").
 
 **Response body (DENY — authorization failure, Risk Engine not consulted):**
 ```json
@@ -205,6 +258,7 @@ escalation. Always read `riskTier` (not `riskScore`) to understand why a decisio
   "authorizationResult": "UNAUTHORIZED",
   "riskTier": null,
   "riskEngineAvailable": null,
+  "reviewRequestId": null,
   "timestamp": "2026-09-24T10:00:00Z"
 }
 ```

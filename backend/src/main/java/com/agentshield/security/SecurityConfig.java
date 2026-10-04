@@ -18,7 +18,9 @@ import org.springframework.security.web.authentication.HttpStatusEntryPoint;
  * Spring Security configuration: three stateless filter chains.
  *
  * 1. Gateway  (/api/v1/gateway/**)                        — agent API key, ROLE_AGENT
- * 2. Admin    (/api/v1/agents|tools|permissions/**)       — admin API key, ROLE_ADMIN
+ * 2. Admin    (/api/v1/agents|tools|permissions|reviews/**) — admin API key, ROLE_ADMIN
+ *    (the human review workflow is an operator action, so it reuses the admin chain
+ *    rather than introducing a new authentication/authorization mechanism)
  * 3. Default  — health/info and error dispatch are public; everything else is denied
  *
  * Agent keys are never accepted on admin endpoints and vice versa.
@@ -55,7 +57,7 @@ public class SecurityConfig {
                 new ApiKeyAuthenticationEntryPoint(objectMapper, "ApiKey realm=\"agentshield-admin\"");
 
         return statelessApi(http)
-                .securityMatcher("/api/v1/agents/**", "/api/v1/tools/**", "/api/v1/permissions/**")
+                .securityMatcher("/api/v1/agents/**", "/api/v1/tools/**", "/api/v1/permissions/**", "/api/v1/reviews/**")
                 .authorizeHttpRequests(auth -> auth.anyRequest().hasRole("ADMIN"))
                 .addFilterBefore(new AdminApiKeyAuthenticationFilter(adminApiKey, entryPoint),
                         AnonymousAuthenticationFilter.class)
