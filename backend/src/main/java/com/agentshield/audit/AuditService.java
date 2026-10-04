@@ -1,11 +1,18 @@
 package com.agentshield.audit;
 
 import com.agentshield.dto.EvaluationRequest;
+import com.agentshield.exception.ResourceNotFoundException;
 import com.agentshield.model.ActionOutcome;
+import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
 import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.policy.PolicyEvaluationResult;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +71,38 @@ public class AuditService {
     @Transactional(readOnly = true)
     public List<AuditLog> getAuditLogsForSession(String sessionId) {
         return auditRepository.findBySessionId(sessionId);
+    }
+
+    /**
+     * Looks up the single audit row for a gateway request (Audit Read API,
+     * GET /api/v1/audit/{requestId}). One row is written per requestId — see
+     * GatewayService.evaluateRequest — so a missing row means the id is unknown.
+     */
+    @Transactional(readOnly = true)
+    public AuditLog getByRequestId(UUID requestId) {
+        return auditRepository.findByRequestId(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Audit log not found for requestId " + requestId));
+    }
+
+    /**
+     * Paginated, filterable search backing the Audit Read API's list endpoint
+     * (GET /api/v1/audit). All filters are optional; absent ones impose no
+     * predicate (see AuditLogSpecifications). Always ordered by timestamp DESC —
+     * callers cannot control sort order, so arbitrary entity fields can never
+     * become client-controlled sort expressions. page/size are expected to already
+     * be validated (page >= 0, 1 <= size <= max) by the controller boundary.
+     */
+    @Transactional(readOnly = true)
+    public Page<AuditLog> search(String agentId, DecisionType decision, AuthorizationResult authorizationResult,
+                                  Instant from, Instant to, int page, int size) {
+        Specification<AuditLog> spec = Specification.allOf(
+                AuditLogSpecifications.agentIdEquals(agentId),
+                AuditLogSpecifications.decisionEquals(decision),
+                AuditLogSpecifications.authorizationResultEquals(authorizationResult),
+                AuditLogSpecifications.timestampFrom(from),
+                AuditLogSpecifications.timestampTo(to));
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timestamp"));
+        return auditRepository.findAll(spec, pageable);
     }
 
     private ActionOutcome mapOutcome(DecisionType decision) {
