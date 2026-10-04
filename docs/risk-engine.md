@@ -1,10 +1,12 @@
 # Risk Engine Design
 
-> **Status:** Phase 1 implemented — deterministic, rule-based risk scoring only.
-> The engine is a standalone, independently runnable and testable Python
-> service. It is **not yet called by the Spring Boot backend** (see
-> `docs/architecture.md`, Part 6). ML-based scoring and trajectory/behavioral
-> analysis are future phases and are explicitly **not** implemented.
+> **Status:** Phase 1 (deterministic, rule-based scoring) and Phase 2 (Spring Boot gateway
+> integration) are both implemented. The Python engine itself is unchanged by Phase 2 — it
+> remains a standalone, independently runnable and testable service with the same `POST
+> /score` contract. The Java side now calls it; see **Gateway Integration (Phase 2)** below
+> and `docs/architecture.md`'s "Risk Engine Integration" section for the full design.
+> ML-based scoring and trajectory/behavioral analysis are future phases and are explicitly
+> **not** implemented.
 
 ---
 
@@ -17,10 +19,12 @@ tier, and the individual factors that contributed to the score.
 
 The Risk Engine is a **risk signal only**. It does not authorize or deny
 anything, does not grant permissions, and must never override an
-authentication or permission decision made elsewhere in AgentShield. (The
-authoritative authorization flow —
-`Authentication -> PermissionEngine -> PolicyEngine -> AuditService` — is
-documented in `docs/architecture.md` and is unaffected by this engine.)
+authentication or permission decision made elsewhere in AgentShield. The Risk
+Engine provides a risk signal and does not grant authorization — it can only
+escalate a decision PermissionEngine/PolicyEngine already reached, never
+grant or downgrade one. (The authoritative authorization flow —
+`Authentication -> PermissionEngine -> PolicyEngine -> RiskEngineClient ->
+DecisionEscalator -> AuditService` — is documented in `docs/architecture.md`.)
 
 The Risk Engine is intentionally separate from the Java backend so that:
 
@@ -171,6 +175,29 @@ This example is for a `DELETE` on `secrets/admin/prod-credentials-password.pem`
 
 ---
 
+## Gateway Integration (Phase 2)
+
+The Python engine's `POST /score` contract and scoring logic are **unchanged** by Phase 2 —
+only the Java backend changed. Full design/diagram: `docs/architecture.md`, "Risk Engine
+Integration".
+
+- **Who calls it:** `com.agentshield.riskengine.HttpRiskEngineClient`, only when PolicyEngine
+  already returned ALLOW or REVIEW for an authorized request. A DENY (from either
+  PermissionEngine or PolicyEngine) is final and skips the Risk Engine entirely.
+- **Escalation only:** the Java-side `DecisionEscalator` combines the Risk Engine's `risk_tier`
+  with the existing decision and can only escalate it (ALLOW→REVIEW→DENY), never grant or
+  downgrade. The Risk Engine provides a risk signal and does not grant authorization.
+- **Timeout:** `agentshield.risk-engine.timeout-ms` (default 300) bounds both the connect and
+  read phase of the Java HTTP call.
+- **Fail-safe fallback:** on timeout, connection failure, an HTTP error status, or a response
+  the Java client cannot parse, it uses `risk_score=65`, `risk_tier=HIGH`,
+  `reason="risk_engine_unavailable"` — never fails open and never throws.
+- **Persistence:** every call (successful or fallback) is persisted to the Java-side
+  `risk_assessments` table, correlated by `request_id` with the `audit_logs` row for the same
+  gateway request.
+
+---
+
 ## Implementation
 
 | File | Responsibility |
@@ -193,18 +220,19 @@ This example is for a `DELETE` on `secrets/admin/prod-credentials-password.pem`
 - The engine has no knowledge of agent history, request frequency, or
   session/trajectory context — each request is scored independently.
 - `resource_sensitivity` supplied by a caller is accepted but currently
-  ignored by scoring (see Input, above).
-- **Not yet integrated with the Spring Boot backend.** `GatewayService` does
-  not call this service; see `docs/architecture.md`.
+  ignored by scoring (see Input, above) — unchanged by Phase 2; the Java
+  client sends PolicyEngine's classification for API-vocabulary consistency,
+  but Factor A still derives sensitivity itself from `resource`.
 - **No ML or anomaly detection is implemented.** Any such capability is
   future work and must not be described as implemented until it exists.
+- The Java-side integration (Phase 2) has no retries or caching around the
+  call, and runs synchronously in the request path — see
+  `docs/architecture.md`'s "Current Limitations".
 
 ---
 
 ## Future Work (not implemented)
 
-- Spring Boot gateway integration (`GatewayService` calling this engine),
-  including a defined fail-closed behavior if the engine is unreachable.
 - ML-based anomaly detection (e.g. isolation forest) trained on audit history,
   as an additional, explainable-adjacent factor — never a black-box override
   of the deterministic factors.
