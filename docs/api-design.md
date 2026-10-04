@@ -110,6 +110,11 @@ Content-Type: application/json
 }
 ```
 
+`riskScore` is always PolicyEngine's own score (unaffected by the Risk Engine). `riskTier` /
+`riskEngineAvailable` describe the separate Risk Engine assessment that may have escalated
+`decision` (see `docs/architecture.md`'s "Risk Engine Integration"); both are `null` when the
+Risk Engine was not consulted, i.e. whenever `decision` was already DENY before it could run.
+
 **Response body (ALLOW):**
 ```json
 {
@@ -122,11 +127,13 @@ Content-Type: application/json
   "reason": "Action is within permitted policy bounds.",
   "riskScore": 10,
   "authorizationResult": "AUTHORIZED",
+  "riskTier": "LOW",
+  "riskEngineAvailable": true,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
-**Response body (DENY):**
+**Response body (DENY — by policy, Risk Engine not consulted):**
 ```json
 {
   "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -138,11 +145,35 @@ Content-Type: application/json
   "reason": "Access to credential or secret resource is denied by policy.",
   "riskScore": 90,
   "authorizationResult": "AUTHORIZED",
+  "riskTier": null,
+  "riskEngineAvailable": null,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
-**Response body (REVIEW):**
+**Response body (ALLOW, escalated to REVIEW by the Risk Engine — `riskScore` stays low because it is PolicyEngine's own score, not the Risk Engine's):**
+```json
+{
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agentId": "coding-agent-01",
+  "sessionId": "sess-12345",
+  "action": "WRITE",
+  "resource": "src/config/settings.py",
+  "decision": "REVIEW",
+  "reason": "Action is within permitted policy bounds. Escalated to REVIEW by Risk Engine assessment (HIGH).",
+  "riskScore": 20,
+  "authorizationResult": "AUTHORIZED",
+  "riskTier": "HIGH",
+  "riskEngineAvailable": true,
+  "timestamp": "2026-09-13T22:50:00Z"
+}
+```
+This combination (`riskScore: 20`, `riskTier: "HIGH"`, `decision: "REVIEW"`) is intentional, not a bug:
+`riskScore` is always PolicyEngine's own 0-100 score for the resource/action pair, unaffected by
+the Risk Engine's escalation; `riskTier` is the *separate* Risk Engine signal that drove the
+escalation. Always read `riskTier` (not `riskScore`) to understand why a decision was escalated.
+
+**Response body (REVIEW, escalated to DENY by the Risk Engine):**
 ```json
 {
   "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -150,15 +181,17 @@ Content-Type: application/json
   "sessionId": "sess-12345",
   "action": "DELETE",
   "resource": "dev/temp-file.log",
-  "decision": "REVIEW",
-  "reason": "DELETE action on non-production resource requires human review.",
+  "decision": "DENY",
+  "reason": "DELETE action on non-production resource requires human review. Escalated to DENY by Risk Engine assessment (CRITICAL).",
   "riskScore": 60,
   "authorizationResult": "AUTHORIZED",
+  "riskTier": "CRITICAL",
+  "riskEngineAvailable": true,
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
 
-**Response body (DENY — authorization failure):**
+**Response body (DENY — authorization failure, Risk Engine not consulted):**
 ```json
 {
   "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
@@ -170,6 +203,8 @@ Content-Type: application/json
   "reason": "Authorization failed: Agent 'research-agent' is not permitted to perform WRITE with tool 'filesystem'.",
   "riskScore": 100,
   "authorizationResult": "UNAUTHORIZED",
+  "riskTier": null,
+  "riskEngineAvailable": null,
   "timestamp": "2026-09-24T10:00:00Z"
 }
 ```
@@ -250,11 +285,12 @@ No body. Returns `200` with the same `AgentCreateResponse` shape containing the 
 
 ---
 
-## Risk Engine Endpoint (Internal, standalone, not yet called by the backend)
+## Risk Engine Endpoint (Internal)
 
-Phase 1 implemented. This endpoint exists in the standalone Python risk-engine
-service only — `GatewayService` does not call it yet (see
-`docs/architecture.md` and `docs/risk-engine.md`).
+Called by the backend (`com.agentshield.riskengine.HttpRiskEngineClient`), not exposed
+directly to agents. Unchanged contract from Phase 1 — see `docs/architecture.md`'s "Risk
+Engine Integration" section and `docs/risk-engine.md` for the full design, escalation
+semantics, timeout, and fail-safe fallback behavior.
 
 ### `POST http://risk-engine:8000/score`
 

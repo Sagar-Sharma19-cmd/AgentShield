@@ -122,7 +122,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 2 | ✅ Complete | Policy engine — deterministic rule evaluation & baseline risk heuristics |
 | Phase 2b | ✅ Complete | Agent identity, tool registry & fine-grained agent-tool permissions (`PermissionEngine`) |
 | Phase 2c | ✅ Complete | Agent API key authentication, admin API protection, Flyway database migrations |
-| Phase 3 | 🔲 Planned | Risk engine — Python/FastAPI scoring service |
+| Phase 3 | ✅ Complete | Risk engine — deterministic Python/FastAPI scoring service, integrated into the Spring Boot gateway as an escalation-only risk signal |
 | Phase 4 | 🔲 Planned | Frontend dashboard — Next.js monitoring UI |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
 | Phase 6 | 🔲 Planned | Behaviour analysis and trajectory evaluation |

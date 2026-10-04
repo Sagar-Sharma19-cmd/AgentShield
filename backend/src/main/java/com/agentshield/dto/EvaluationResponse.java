@@ -3,12 +3,19 @@ package com.agentshield.dto;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.RiskTier;
 
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Security evaluation decision response returned to the calling agent.
+ *
+ * {@code riskScore} is the PolicyEngine's own score and is unaffected by Risk Engine
+ * integration. {@code riskTier}/{@code riskEngineAvailable} describe the (separate) Risk
+ * Engine assessment that may have escalated {@code decision}; both are {@code null} when
+ * the Risk Engine was not consulted (the request was already denied by authorization or
+ * policy before the Risk Engine would have been called).
  */
 public class EvaluationResponse {
 
@@ -21,12 +28,14 @@ public class EvaluationResponse {
     private String reason;
     private int riskScore;
     private AuthorizationResult authorizationResult;
+    private RiskTier riskTier;
+    private Boolean riskEngineAvailable;
     private Instant timestamp;
 
     public EvaluationResponse() {
     }
 
-    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, AuthorizationResult authorizationResult, Instant timestamp) {
+    public EvaluationResponse(UUID requestId, String agentId, String sessionId, ActionType action, String resource, DecisionType decision, String reason, int riskScore, AuthorizationResult authorizationResult, RiskTier riskTier, Boolean riskEngineAvailable, Instant timestamp) {
         this.requestId = requestId;
         this.agentId = agentId;
         this.sessionId = sessionId;
@@ -36,6 +45,8 @@ public class EvaluationResponse {
         this.reason = reason;
         this.riskScore = riskScore;
         this.authorizationResult = authorizationResult;
+        this.riskTier = riskTier;
+        this.riskEngineAvailable = riskEngineAvailable;
         this.timestamp = timestamp;
     }
 
@@ -111,6 +122,22 @@ public class EvaluationResponse {
         this.authorizationResult = authorizationResult;
     }
 
+    public RiskTier getRiskTier() {
+        return riskTier;
+    }
+
+    public void setRiskTier(RiskTier riskTier) {
+        this.riskTier = riskTier;
+    }
+
+    public Boolean getRiskEngineAvailable() {
+        return riskEngineAvailable;
+    }
+
+    public void setRiskEngineAvailable(Boolean riskEngineAvailable) {
+        this.riskEngineAvailable = riskEngineAvailable;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -133,6 +160,8 @@ public class EvaluationResponse {
         private String reason;
         private int riskScore;
         private AuthorizationResult authorizationResult;
+        private RiskTier riskTier;
+        private Boolean riskEngineAvailable;
         private Instant timestamp;
 
         public Builder requestId(UUID requestId) {
@@ -180,13 +209,23 @@ public class EvaluationResponse {
             return this;
         }
 
+        public Builder riskTier(RiskTier riskTier) {
+            this.riskTier = riskTier;
+            return this;
+        }
+
+        public Builder riskEngineAvailable(Boolean riskEngineAvailable) {
+            this.riskEngineAvailable = riskEngineAvailable;
+            return this;
+        }
+
         public Builder timestamp(Instant timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
         public EvaluationResponse build() {
-            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, timestamp);
+            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, riskTier, riskEngineAvailable, timestamp);
         }
     }
 }

@@ -1,6 +1,6 @@
 # Architecture Overview
 
-> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C)
+> **Status:** Core Security Gateway (1A) + Agent Identity, Tool Registry & Permissions (1B) + Agent Authentication, Admin API Security & Flyway Migrations (1C) + Risk Engine Gateway Integration (Phase 2 — deterministic, escalation-only; see [Risk Engine Integration](#risk-engine-integration))
 
 ---
 
@@ -43,11 +43,21 @@ Milestone 1C makes the **WHO** verifiable: every gateway request must be authent
 │   │     PolicyEngine      │               │                   │
 │   │ resource/action risk  │               │                   │
 │   └──────────┬────────────┘               │                   │
+│      ALLOW / REVIEW        │ DENY         │                   │
+│              │             └──────────────┤ (Risk Engine      │
+│              ▼                            │  not consulted)   │
+│   ┌───────────────────────┐               │                   │
+│   │   RiskEngineClient    │               │                   │
+│   │ (Python Risk Engine,  │               │                   │
+│   │  escalation signal    │               │                   │
+│   │  only — see below)    │               │                   │
+│   └──────────┬────────────┘               │                   │
 │              ▼                            │                   │
+│   DecisionEscalator.combine(…)            │                   │
 │      ALLOW / REVIEW / DENY                │                   │
 │              └──────────────┬─────────────┘                   │
 │                             ▼                                 │
-│                        AuditService ──► PostgreSQL            │
+│          AuditService ──► PostgreSQL ◄── RiskAssessmentService│
 └─────────────────────────────┬─────────────────────────────────┘
                               ▼
                Protected Tool / API / Resource
@@ -63,7 +73,8 @@ Layering: **Controller → Service → Engine → Repository**. Controllers cont
 authorization lives only in `PermissionEngine`; security policy lives only in `PolicyEngine`.
 
 ```
-com.agentshield.gateway     — GatewayController, GatewayService (orchestrates permission → policy → audit)
+com.agentshield.gateway     — GatewayController, GatewayService (orchestrates permission → policy →
+                              risk engine → DecisionEscalator → audit), DecisionEscalator
 com.agentshield.agent       — Agent entity, AgentRepository, AgentService, AgentController
 com.agentshield.tool        — Tool entity, ToolRepository, ToolService, ToolController
 com.agentshield.permission  — AgentToolPermission entity + repository, PermissionService,
@@ -71,17 +82,25 @@ com.agentshield.permission  — AgentToolPermission entity + repository, Permiss
 com.agentshield.security    — SecurityConfig (filter chains), Agent/Admin API key filters,
                               AgentApiKeyAuthenticator, ApiKeyGenerator, ApiKeyHasher, AuthenticatedAgent
 com.agentshield.policy      — PolicyEngine & deterministic risk baseline
+com.agentshield.riskengine  — RiskEngineClient / HttpRiskEngineClient (calls the Python Risk Engine),
+                              RiskAssessment, RiskFactor, RiskAssessmentRecord/Repository/Service
+                              (risk_assessments persistence)
 com.agentshield.audit       — AuditLog entity, AuditRepository, AuditService
-com.agentshield.model       — ActionType, DecisionType, ResourceSensitivity, ActionOutcome,
+com.agentshield.model       — ActionType, DecisionType, ResourceSensitivity, ActionOutcome, RiskTier,
                               AgentStatus, ToolStatus, ToolType, AuthorizationResult enums
 com.agentshield.dto         — Request / response DTOs
 com.agentshield.exception   — ResourceNotFoundException (404), ConflictException (409)
 com.agentshield.config      — GlobalExceptionHandler
 ```
 
-### Risk Engine (Python / FastAPI) — planned integration
+### Risk Engine (Python / FastAPI) — Phase 1 scoring implemented, Phase 2 gateway integration implemented
 
-A separate microservice that will compute a risk score (0–100). Not yet called by the backend.
+A standalone, independently runnable and testable service (`risk-engine/`) that computes a
+deterministic, explainable risk score (0–100) and tier from an `action`/`resource` pair — see
+`docs/risk-engine.md` for the scoring design. The Spring Boot backend now calls it via
+`RiskEngineClient` for every request PolicyEngine has already ALLOWed or REVIEWed; see
+[Risk Engine Integration](#risk-engine-integration) below. No ML or trajectory/behavioral
+analysis is implemented in either service.
 
 ### Frontend (Next.js) — planned
 
@@ -242,16 +261,69 @@ Authentication happens first, in the Spring Security filter. Authorization is th
 | 6 | Grant disabled | `PERMISSION_DISABLED` | **DENY** |
 | 7 | Action not in grant | `UNAUTHORIZED` | **DENY** |
 | 8 | All checks pass | `AUTHORIZED` | → continue to PolicyEngine |
-| 9 | Policy: dangerous resource/action (secrets, prod DELETE) | `AUTHORIZED` | **DENY** |
-| 10 | Policy: potentially risky (non-prod DELETE, EXECUTE, EXTERNAL_REQUEST) | `AUTHORIZED` | **REVIEW** |
-| 11 | Otherwise | `AUTHORIZED` | **ALLOW** |
+| 9 | Policy: dangerous resource/action (secrets, prod DELETE) | `AUTHORIZED` | **DENY** (Risk Engine not consulted) |
+| 10 | Policy: potentially risky (non-prod DELETE, EXECUTE, EXTERNAL_REQUEST) | `AUTHORIZED` | **REVIEW** → Risk Engine may escalate to DENY |
+| 11 | Otherwise | `AUTHORIZED` | **ALLOW** → Risk Engine may escalate to REVIEW/DENY |
 
 Key properties:
 
 - **The PolicyEngine is never consulted for unauthorized requests**, so it cannot override a missing permission. It can only tighten (REVIEW / DENY) what authorization already permitted.
+- **The Risk Engine is never consulted after a DENY** (from either PermissionEngine or PolicyEngine) — see [Risk Engine Integration](#risk-engine-integration). It can only escalate an ALLOW or REVIEW, never grant or downgrade.
 - **Authorization denials** are returned with `riskScore = 100` and recorded with `resourceSensitivity = CRITICAL` (fail-closed maximum). These values describe the authorization failure; the resource itself was not classified.
-- Every response includes `authorizationResult`, and every decision — authorization or policy — is written to `audit_logs`.
+- Every response includes `authorizationResult`, and every decision — authorization, policy, or risk-escalated — is written to `audit_logs`.
 - **Impersonation is blocked and audited:** an agent that authenticates with its own key but claims another agent's `agentId` gets `AGENT_IDENTITY_MISMATCH`. It can never borrow the other agent's permissions.
+
+## Risk Engine Integration
+
+The Risk Engine (`risk-engine/`, Python/FastAPI) is a **risk signal, not an authorization
+authority**. `GatewayService` calls it, via `RiskEngineClient`, only when PolicyEngine has
+already returned ALLOW or REVIEW for an authorized request — never for a DENY, since a DENY
+is already final and the Risk Engine could not change it anyway.
+
+```
+PolicyEngine result (ALLOW or REVIEW)
+        │
+        ▼
+RiskEngineClient.assessRisk(action, resource, resourceSensitivity)
+   ├─ success  → RiskAssessment(riskScore, riskTier, factors, reason, engineAvailable=true)
+   └─ failure  → RiskAssessment.unavailable(): score=65, tier=HIGH,
+                 reason="risk_engine_unavailable", engineAvailable=false
+        │            (timeout, connection failure, HTTP error, or an unparsable response —
+        │             never thrown as an exception, and never treated as zero risk)
+        ▼
+DecisionEscalator.combine(existingDecision, riskTier)   — escalate-only:
+   existing ALLOW:  LOW/MEDIUM → ALLOW,  HIGH → REVIEW,  CRITICAL → DENY
+   existing REVIEW: LOW/MEDIUM → REVIEW, HIGH → REVIEW,  CRITICAL → DENY
+   existing DENY:   always → DENY (not reachable here — DENY already short-circuited)
+        │
+        ▼
+final decision ── audited (audit_logs, unchanged schema) ── risk assessment persisted
+                                                              (risk_assessments, correlated
+                                                               by request_id)
+```
+
+- **Escalation only.** `DecisionEscalator` can never turn a DENY into REVIEW/ALLOW, or a REVIEW
+  into ALLOW. `EvaluationResponse.riskScore` remains PolicyEngine's own score, unaffected by the
+  Risk Engine; the Risk Engine's own score/tier are exposed separately as `riskTier` and
+  `riskEngineAvailable` (both `null` when the Risk Engine was not consulted).
+- **Fails safe, never open.** `HttpRiskEngineClient` catches every failure mode (timeout,
+  connection failure, non-2xx HTTP status, or a response it cannot parse into a valid
+  `RiskAssessment`) and returns the approved fallback (`score=65`, `tier=HIGH`,
+  `reason="risk_engine_unavailable"`, `engineAvailable=false`) instead of throwing or defaulting
+  to "no risk". Combined with an existing ALLOW, this fallback escalates to REVIEW.
+- **Timeout is enforced on the wire**, not just configured: `agentshield.risk-engine.timeout-ms`
+  (default 300) sets both the connect and read timeout on the underlying
+  `SimpleClientHttpRequestFactory`, so a slow or hanging Risk Engine cannot block the gateway
+  past that bound. No retries are performed (a retry could multiply the timeout budget).
+- **Configuration:** `agentshield.risk-engine.url` (env `RISK_ENGINE_URL`, default
+  `http://localhost:8000`) and `agentshield.risk-engine.timeout-ms` (env
+  `RISK_ENGINE_TIMEOUT_MS`, default `300`).
+- **Persistence:** every Risk Engine consultation (successful or fallback) is persisted to
+  `risk_assessments` (id, request_id, risk_score, risk_tier, factors as JSON text, reason,
+  engine_available, created_at), correlated with the `audit_logs` row for the same request via
+  `request_id`. The factor breakdown lives only here, not duplicated into `audit_logs`.
+- **Out of scope for this integration:** ML/anomaly detection, trajectory/session analysis,
+  caching, retries, and async processing — all future work, not implemented.
 
 ## Audit
 
@@ -277,6 +349,7 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 | V1 | `V1__init_schema.sql` | Baseline schema: `agents`, `tools`, `agent_tool_permissions`, `agent_tool_permission_actions`, `audit_logs`. Mirrors the schema Hibernate previously generated, including enum CHECK constraint names. |
 | V2 | `V2__add_agent_api_keys.sql` | `agents.api_key_hash` (unique) and `agents.api_key_prefix` |
 | V3 | `V3__add_identity_mismatch_authorization_result.sql` | Adds `AGENT_IDENTITY_MISMATCH` to the `audit_logs.authorization_result` CHECK constraint |
+| V4 | `V4__add_risk_assessments.sql` | New `risk_assessments` table (Risk Engine Phase 2 integration): `id`, `request_id`, `risk_score`, `risk_tier`, `factors` (JSON text), `reason`, `engine_available`, `created_at`, plus an index on `request_id` |
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.
@@ -306,7 +379,12 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 - Permissions cannot be edited in place; revoke (DELETE) and re-grant to change them.
 - Permissions are per (agent, tool, action) — no resource-path scoping yet (e.g. "READ only under `src/`").
 - PolicyEngine rules are hard-coded, not data-driven.
-- The Python risk engine is not yet called by the backend.
+- The Risk Engine's own scoring is deterministic/rule-based (Phase 1); it is not a trained
+  model, and it has no knowledge of agent history, request frequency, or session/trajectory
+  context — each request is scored independently. See `docs/risk-engine.md`.
+- No retries or caching around the Risk Engine call; a failure always takes the fallback path
+  rather than retrying (a retry could exceed the timeout budget).
+- Risk Engine integration runs synchronously in the request path; no async processing or queue.
 
 ## Future Roadmap
 
@@ -314,7 +392,9 @@ Requests rejected with **401 are not written to `audit_logs`**: they are refused
 2. Per-operator admin identities with RBAC (e.g. OIDC for humans), replacing the shared admin key.
 3. Key expiry and overlapping rotation (two valid keys during a grace period); optional mTLS for agents.
 4. Resource-scoped permissions (path / pattern constraints per grant).
-5. Risk-engine integration, trajectory / session analysis, and ML anomaly detection.
+5. Trajectory / session analysis and ML-based anomaly detection as additional, explainable-adjacent
+   Risk Engine factors (deterministic Risk Engine gateway integration is implemented — see
+   [Risk Engine Integration](#risk-engine-integration)).
 6. Review queue for `REVIEW` decisions and the frontend dashboard.
 
 ---
