@@ -12,6 +12,8 @@ const STORAGE_KEY = "agentshield_dev_admin_api_key";
 
 interface AdminKeyContextValue {
   adminKey: string | null;
+  /** False until the stored key has been read on the client (avoids a locked-state flash on load). */
+  isReady: boolean;
   isUnlocked: boolean;
   setAdminKey: (key: string) => void;
   clearAdminKey: () => void;
@@ -40,7 +42,13 @@ export function AdminKeyProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo<AdminKeyContextValue>(
-    () => ({ adminKey, isUnlocked: hydrated && adminKey !== null, setAdminKey, clearAdminKey }),
+    () => ({
+      adminKey,
+      isReady: hydrated,
+      isUnlocked: hydrated && adminKey !== null,
+      setAdminKey,
+      clearAdminKey,
+    }),
     [adminKey, hydrated, setAdminKey, clearAdminKey],
   );
 
