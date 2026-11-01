@@ -29,12 +29,16 @@ public record ReviewRequestResponse(
         String reason,
         Instant createdAt,
         Instant updatedAt,
-        Instant reviewedAt
+        Instant reviewedAt,
+        /** Trajectory signal alone; null when trajectory analysis did not run. riskScore/riskTier are the effective values. */
+        Integer trajectoryScore,
+        RiskTier trajectoryTier,
+        String trajectoryReason
 ) {
     public static ReviewRequestResponse from(ReviewRequest r) {
         return new ReviewRequestResponse(r.getId(), r.getRequestId(), r.getAgentId(), r.getSessionId(), r.getTool(),
                 r.getAction(), r.getResource(), r.getResourceSensitivity(), r.getRiskScore(), r.getRiskTier(),
                 r.getOriginalDecision(), r.getStatus(), r.getReason(), r.getCreatedAt(), r.getUpdatedAt(),
-                r.getReviewedAt());
+                r.getReviewedAt(), r.getTrajectoryScore(), r.getTrajectoryTier(), r.getTrajectoryReason());
     }
 }
