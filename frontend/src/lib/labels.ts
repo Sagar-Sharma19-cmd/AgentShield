@@ -1,6 +1,7 @@
 import type {
   ActionOutcome,
   ActionType,
+  AgentStatus,
   AuthorizationResult,
   DecisionType,
   ResourceSensitivity,
@@ -55,6 +56,12 @@ export const OUTCOME_LABELS: Record<ActionOutcome, string> = {
   ALLOWED: "Allowed",
   BLOCKED: "Blocked",
   REVIEW_REQUIRED: "Held for review",
+};
+
+export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
+  ACTIVE: "Active",
+  SUSPENDED: "Suspended",
+  REVOKED: "Revoked",
 };
 
 export const SENSITIVITY_LABELS: Record<ResourceSensitivity, string> = {

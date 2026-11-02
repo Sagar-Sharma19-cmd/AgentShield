@@ -7,6 +7,7 @@ import { ApiError } from "@/lib/api/client";
 import { formatTimestamp } from "@/lib/format";
 import {
   ACTION_LABELS,
+  AGENT_STATUS_LABELS,
   AUTHORIZATION_LABELS,
   DECISION_LABELS,
   OUTCOME_LABELS,
@@ -14,14 +15,8 @@ import {
 } from "@/lib/labels";
 import { useAuditEvent } from "@/lib/queries/audit";
 import { useAgentGrants } from "@/lib/queries/agents";
-import type { AgentStatus, ReviewRequestResponse } from "@/types/api";
+import type { ReviewRequestResponse } from "@/types/api";
 import type { AgentResolution } from "@/lib/reviews/model";
-
-const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
-  ACTIVE: "Active",
-  SUSPENDED: "Suspended",
-  REVOKED: "Revoked",
-};
 
 /** Label and value pair. Values are shown exactly as the backend returned them, with no paraphrase. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Overview", href: "/", icon: LayoutDashboard, available: true },
   { label: "Activity", href: "/activity", icon: Activity, available: true },
   { label: "Reviews", href: "/reviews", icon: ShieldAlert, available: true },
-  { label: "Agents", href: "/agents", icon: Bot, available: false },
+  { label: "Agents", href: "/agents", icon: Bot, available: true },
   { label: "Tools", href: "/tools", icon: Wrench, available: false },
   { label: "Permissions", href: "/permissions", icon: KeyRound, available: false },
 ];

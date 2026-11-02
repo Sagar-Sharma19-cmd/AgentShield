@@ -4,12 +4,25 @@ import { useQuery } from "@tanstack/react-query";
 import { agentsApi, permissionsApi } from "@/lib/api/endpoints";
 import { useAdminKey } from "@/lib/auth/admin-key";
 import { retryTransientFailures } from "@/lib/queries/audit";
+import { dashboardKeys } from "@/lib/queries/dashboard";
+import type { QueryClient } from "@tanstack/react-query";
 
 export const agentKeys = {
   all: ["agents"] as const,
   registry: () => [...agentKeys.all, "registry"] as const,
   grants: (agentId: string) => [...agentKeys.all, "grants", agentId] as const,
 };
+
+/**
+ * Refreshes the two cached copies of the agent list: the registry (Agents and Reviews pages) and the
+ * dashboard agent list. Exact keys only, so grants and unrelated queries are not invalidated.
+ */
+export function refreshAgentRegistry(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: agentKeys.registry() }),
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.agents() }),
+  ]);
+}
 
 /** Full agent registry, used to show agent names and lifecycle status next to a review. */
 export function useAgentRegistry() {
