@@ -24,6 +24,7 @@ export function AgentRegistryCards({ agents, selectedId, onSelect }: AgentRegist
           <li key={agent.id}>
             <button
               type="button"
+              data-agent-id={agent.id}
               onClick={() => onSelect(agent.id)}
               aria-current={selected ? "true" : undefined}
               className={cn(

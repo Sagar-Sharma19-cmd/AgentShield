@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Search } from "lucide-react";
 import { AgentRegistryCards } from "@/components/agents/agent-registry-cards";
 import { AgentRegistryTable } from "@/components/agents/agent-registry-table";
+import { AGENTS_PAGE_HEADING_ID, AgentDetailSheet } from "@/components/agents/agent-detail-sheet";
 import { AgentRegistryError } from "@/components/agents/agent-registry-error";
 import { DashboardCard, SectionEmpty, SectionSkeleton } from "@/components/dashboard/section-states";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,18 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
     router.replace(buildAgentsHref(next, new URLSearchParams(window.location.search)), { scroll: false });
   }
 
+  /** Opening pushes a history entry, so browser Back closes the detail sheet. */
+  function openAgent(id: string) {
+    router.push(buildAgentsHref({ status: state.status, agent: id }, new URLSearchParams(window.location.search)), {
+      scroll: false,
+    });
+  }
+
+  /** Closing replaces the entry, so the list is not stacked with a duplicate step. */
+  function closeAgent() {
+    navigate({ status: state.status });
+  }
+
   function clearFilters() {
     setSearch("");
     navigate({ status: "ALL" });
@@ -55,7 +68,13 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 md:p-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
+          <h1
+            id={AGENTS_PAGE_HEADING_ID}
+            tabIndex={-1}
+            className="text-2xl font-semibold tracking-tight outline-none"
+          >
+            Agents
+          </h1>
           <p className="text-sm text-muted-foreground">
             Registered AI agent identities and their current status.
           </p>
@@ -140,11 +159,13 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
           </div>
         ) : (
           <>
-            <AgentRegistryTable agents={visible} selectedId={state.agent} onSelect={(id) => navigate({ status: state.status, agent: id })} />
-            <AgentRegistryCards agents={visible} selectedId={state.agent} onSelect={(id) => navigate({ status: state.status, agent: id })} />
+            <AgentRegistryTable agents={visible} selectedId={state.agent} onSelect={openAgent} />
+            <AgentRegistryCards agents={visible} selectedId={state.agent} onSelect={openAgent} />
           </>
         )}
       </DashboardCard>
+
+      <AgentDetailSheet agentId={state.agent} onClose={closeAgent} />
     </div>
   );
 }

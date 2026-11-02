@@ -35,6 +35,7 @@ export function AgentRegistryTable({ agents, selectedId, onSelect }: AgentRegist
                 <TableCell className="max-w-xs">
                   <button
                     type="button"
+                    data-agent-id={agent.id}
                     onClick={() => onSelect(agent.id)}
                     aria-current={selected ? "true" : undefined}
                     className="flex min-w-0 flex-col items-start gap-0.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
