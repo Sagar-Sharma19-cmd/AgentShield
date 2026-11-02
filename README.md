@@ -64,7 +64,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full model.
 | Component | Technology | Responsibility |
 |-----------|-----------|----------------|
 | `backend` | Java 17, Spring Boot 3, Maven | Security gateway — authorization, policy evaluation, risk escalation, human review and audit logging |
-| `frontend` | Next.js, TypeScript | Operator console. Workspaces (Dashboard, Reviews, Agents, Activity) are on `feature/frontend`; `main` has only the foundation page |
+| `frontend` | Next.js, TypeScript | Operator console (Overview, Activity, Reviews, Agents, Tools, CI/CD demo) on `feature/frontend`; `main` has only the foundation page |
 | `risk-engine` | Python, FastAPI, Pydantic | Deterministic, rule-based risk scoring service (weighted factors, no ML). Called by the gateway as an escalation-only signal |
 | `simulator` | Python | Simulates AI-agent tool requests for testing and demonstration |
 | `docs` | Markdown | Architecture, threat model, API design, and research notes |

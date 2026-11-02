@@ -1,6 +1,7 @@
 "use client";
 
 import { AgentLoadError } from "@/components/agents/agent-load-error";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { describeAgentDetailError, describeAgentStatusEffect, sortGrantsForDisplay } from "@/lib/agents/detail-model";
@@ -16,6 +17,8 @@ interface AgentGrantsSectionProps {
   onRetry: () => void;
   /** Undefined while the agent itself has not loaded, so no status note can be given yet. */
   status: AgentStatus | undefined;
+  /** When set, each grant shows a Revoke button. The caller owns the confirmation. */
+  onRevoke?: (grant: PermissionResponse) => void;
 }
 
 function actionsText(actions: PermissionResponse["allowedActions"]): string {
@@ -31,7 +34,15 @@ function GrantFlag({ enabled }: { enabled: boolean }) {
  * Read-only grants for one agent. Its own states are independent of the agent summary: a failed
  * grants request leaves the agent details visible.
  */
-export function AgentGrantsSection({ grants, isPending, isError, error, onRetry, status }: AgentGrantsSectionProps) {
+export function AgentGrantsSection({
+  grants,
+  isPending,
+  isError,
+  error,
+  onRetry,
+  status,
+  onRevoke,
+}: AgentGrantsSectionProps) {
   const effect = status ? describeAgentStatusEffect(status) : undefined;
 
   return (
@@ -63,13 +74,19 @@ export function AgentGrantsSection({ grants, isPending, isError, error, onRetry,
           </p>
         </div>
       ) : (
-        <GrantsList grants={sortGrantsForDisplay(grants)} />
+        <GrantsList grants={sortGrantsForDisplay(grants)} onRevoke={onRevoke} />
       )}
     </section>
   );
 }
 
-function GrantsList({ grants }: { grants: PermissionResponse[] }) {
+function GrantsList({
+  grants,
+  onRevoke,
+}: {
+  grants: PermissionResponse[];
+  onRevoke?: (grant: PermissionResponse) => void;
+}) {
   return (
     <>
       <div className="hidden sm:block">
@@ -80,6 +97,11 @@ function GrantsList({ grants }: { grants: PermissionResponse[] }) {
               <TableHead>Allowed actions</TableHead>
               <TableHead>Grant</TableHead>
               <TableHead>Updated</TableHead>
+              {onRevoke && (
+                <TableHead>
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -95,6 +117,13 @@ function GrantsList({ grants }: { grants: PermissionResponse[] }) {
                     {formatTimestamp(grant.updatedAt)}
                   </time>
                 </TableCell>
+                {onRevoke && (
+                  <TableCell className="text-right">
+                    <Button variant="outline" size="sm" onClick={() => onRevoke(grant)}>
+                      Revoke<span className="sr-only"> grant for {grant.toolName}</span>
+                    </Button>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -108,9 +137,16 @@ function GrantsList({ grants }: { grants: PermissionResponse[] }) {
               <GrantFlag enabled={grant.enabled} />
             </div>
             <p className="text-sm">{actionsText(grant.allowedActions)}</p>
-            <time dateTime={grant.updatedAt} className="font-mono text-xs tabular-nums text-muted-foreground">
-              Updated {formatTimestamp(grant.updatedAt)}
-            </time>
+            <div className="flex items-center justify-between gap-2">
+              <time dateTime={grant.updatedAt} className="font-mono text-xs tabular-nums text-muted-foreground">
+                Updated {formatTimestamp(grant.updatedAt)}
+              </time>
+              {onRevoke && (
+                <Button variant="outline" size="sm" onClick={() => onRevoke(grant)}>
+                  Revoke<span className="sr-only"> grant for {grant.toolName}</span>
+                </Button>
+              )}
+            </div>
           </li>
         ))}
       </ul>

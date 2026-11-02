@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Search } from "lucide-react";
+import { RegisterAgentFlow } from "@/components/agents/register-agent-flow";
 import { AgentRegistryCards } from "@/components/agents/agent-registry-cards";
 import { AgentRegistryTable } from "@/components/agents/agent-registry-table";
 import { AGENTS_PAGE_HEADING_ID, AgentDetailSheet } from "@/components/agents/agent-detail-sheet";
@@ -79,15 +80,18 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
             Registered AI agent identities and their current status.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={registry.isFetching}
-          onClick={() => void refreshAgentRegistry(queryClient)}
-        >
-          <RotateCw aria-hidden="true" className={registry.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={registry.isFetching}
+            onClick={() => void refreshAgentRegistry(queryClient)}
+          >
+            <RotateCw aria-hidden="true" className={registry.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
+            Refresh
+          </Button>
+          <RegisterAgentFlow />
+        </div>
       </header>
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

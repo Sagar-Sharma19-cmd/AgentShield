@@ -1,46 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  Activity,
-  Bot,
-  KeyRound,
-  LayoutDashboard,
-  LogOut,
-  ShieldCheck,
-  ShieldAlert,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { SecurityAlertsMonitor } from "@/components/alerts/security-alerts-monitor";
 import { SecurityAlertsProvider } from "@/components/alerts/security-alerts-context";
+import { ThemeSwitcher } from "@/components/shell/theme-switcher";
+import { AdminUnlockPanel } from "@/components/shell/admin-unlock-panel";
 import { useAdminKey } from "@/lib/auth/admin-key";
+import { breadcrumbsFor, isNavActive, NAV_ITEMS } from "@/lib/shell/navigation";
 import { cn } from "@/lib/utils";
-import { AdminUnlockPanel } from "./admin-unlock-panel";
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-  /** Only sections with a real implementation are linked. Planned sections are shown disabled. */
-  available: boolean;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { label: "Overview", href: "/", icon: LayoutDashboard, available: true },
-  { label: "Activity", href: "/activity", icon: Activity, available: true },
-  { label: "Reviews", href: "/reviews", icon: ShieldAlert, available: true },
-  { label: "Agents", href: "/agents", icon: Bot, available: true },
-  { label: "Tools", href: "/tools", icon: Wrench, available: false },
-  { label: "Permissions", href: "/permissions", icon: KeyRound, available: false },
-];
 
 /**
- * Operator console frame: product identity, navigation and session control. Below the md
- * breakpoint the sidebar becomes a horizontal, scrollable nav strip above the content.
+ * Operator console frame: a sidebar on laptop and desktop, a sheet menu on smaller screens, and a
+ * header with breadcrumbs and the theme switcher. Every route in the (console) group uses it.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { isReady, isUnlocked } = useAdminKey();
@@ -59,71 +36,147 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh flex-1 flex-col md:flex-row">
-      <Sidebar />
-      <main id="main" className="min-w-0 flex-1">
-        <SecurityAlertsProvider>
-          <SecurityAlertsMonitor />
-          {children}
-        </SecurityAlertsProvider>
-      </main>
+      <DesktopSidebar />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ConsoleHeader />
+        <main id="main" className="min-w-0 flex-1">
+          <SecurityAlertsProvider>
+            <SecurityAlertsMonitor />
+            <RouteTransition>{children}</RouteTransition>
+          </SecurityAlertsProvider>
+        </main>
+      </div>
     </div>
   );
 }
 
-function Sidebar() {
+/** Short fade when the section changes. Reduced-motion users get no animation (globals.css). */
+function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-
   return (
-    <aside className="flex flex-col border-b border-sidebar-border bg-sidebar text-sidebar-foreground md:sticky md:top-0 md:h-dvh md:w-56 md:shrink-0 md:border-r md:border-b-0">
-      <div className="flex items-center gap-2.5 px-4 py-4 md:py-5">
-        <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <ShieldCheck aria-hidden="true" className="size-4" />
-        </div>
-        <div className="leading-tight">
-          <p className="text-sm font-semibold tracking-tight">AgentShield</p>
-          <p className="hidden text-xs text-muted-foreground md:block">Runtime security gateway</p>
-        </div>
+    <div key={pathname} className="min-h-full animate-in fade-in-0 duration-200 ease-out">
+      {children}
+    </div>
+  );
+}
+
+function BrandMark() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div
+        aria-hidden="true"
+        className="flex size-8 items-center justify-center rounded-lg bg-linear-to-br from-brand-lilac to-brand-mint text-foreground shadow-sm"
+      >
+        <ShieldCheck className="size-4" />
       </div>
+      <div className="leading-tight">
+        <p className="font-heading text-sm font-semibold tracking-tight">AgentShield</p>
+        <p className="text-xs text-muted-foreground">Runtime security gateway</p>
+      </div>
+    </div>
+  );
+}
 
-      <nav aria-label="Console" className="flex gap-1 overflow-x-auto px-2 pb-2 md:flex-col md:overflow-visible md:pb-0">
-        {NAV_ITEMS.map((item) => (
-          <NavLink key={item.href} item={item} active={pathname === item.href} />
-        ))}
-      </nav>
-
-      <SessionControl />
+function DesktopSidebar() {
+  return (
+    <aside className="hidden md:sticky md:top-0 md:flex md:h-dvh md:w-60 md:shrink-0 md:flex-col md:border-r md:border-sidebar-border md:bg-sidebar md:text-sidebar-foreground">
+      <div className="px-4 py-5">
+        <BrandMark />
+      </div>
+      <NavList />
+      <SessionFooter />
     </aside>
   );
 }
 
-function NavLink({ item, active }: { item: NavItem; active: boolean }) {
-  const Icon = item.icon;
-  const className = cn(
-    "flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors duration-150 motion-reduce:transition-none",
-    active && "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
-    item.available && !active && "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-    !item.available && "cursor-default text-muted-foreground/70",
-  );
-
-  if (!item.available) {
-    return (
-      <span aria-disabled="true" className={className} title="Not built yet">
-        <Icon aria-hidden="true" className="size-4" />
-        {item.label}
-        <span className="ml-auto hidden text-[0.7rem] uppercase tracking-wide md:inline">Planned</span>
-      </span>
-    );
-  }
+function ConsoleHeader() {
+  const pathname = usePathname();
+  const crumbs = breadcrumbsFor(pathname);
 
   return (
-    <Link href={item.href} className={className} aria-current={active ? "page" : undefined}>
-      <Icon aria-hidden="true" className="size-4" />
-      {item.label}
-    </Link>
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-border bg-background/85 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6">
+      <MobileMenu />
+      <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
+        <ol className="flex min-w-0 items-center gap-1.5 text-sm">
+          {crumbs.map((crumb, index) => {
+            const last = index === crumbs.length - 1;
+            return (
+              <li key={`${crumb.label}-${index}`} className={cn("flex min-w-0 items-center gap-1.5", !last && "hidden sm:flex")}>
+                {index > 0 && <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />}
+                {crumb.href && !last ? (
+                  <Link href={crumb.href} className="truncate text-muted-foreground hover:text-foreground">
+                    {crumb.label}
+                  </Link>
+                ) : (
+                  <span aria-current={last ? "page" : undefined} className="truncate font-medium">
+                    {crumb.label}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
+      <ThemeSwitcher className="shrink-0" />
+    </header>
   );
 }
 
-function SessionControl() {
+function MobileMenu() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger asChild>
+        <Button variant="ghost" size="icon-sm" className="md:hidden" aria-label="Open navigation menu">
+          <Menu aria-hidden="true" />
+        </Button>
+      </SheetTrigger>
+      <SheetContent side="left" className="w-72 bg-sidebar text-sidebar-foreground sm:max-w-xs">
+        <SheetHeader>
+          <SheetTitle className="sr-only">Console navigation</SheetTitle>
+          <SheetDescription className="sr-only">Move between console sections.</SheetDescription>
+          <div className="px-1 pt-2">
+            <BrandMark />
+          </div>
+        </SheetHeader>
+        <NavList onNavigate={() => setOpen(false)} />
+        <SessionFooter />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function NavList({ onNavigate }: { onNavigate?: () => void }) {
+  const pathname = usePathname();
+
+  return (
+    <nav aria-label="Console" className="flex flex-col gap-1 px-2">
+      {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        const active = isNavActive(pathname, item.href);
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onNavigate}
+            aria-current={active ? "page" : undefined}
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors duration-150 outline-none focus-visible:ring-3 focus-visible:ring-ring/50 motion-reduce:transition-none",
+              active
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground shadow-sm"
+                : "text-sidebar-foreground/80 hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground",
+            )}
+          >
+            <Icon aria-hidden="true" className="size-4 shrink-0" />
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function SessionFooter() {
   const { clearAdminKey } = useAdminKey();
 
   return (

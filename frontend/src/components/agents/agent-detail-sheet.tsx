@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, RotateCw } from "lucide-react";
 import { AgentDetailSummary } from "@/components/agents/agent-detail-summary";
-import { AgentGrantsSection } from "@/components/agents/agent-grants-section";
+import { AgentPermissionsPanel } from "@/components/agents/agent-permissions-panel";
 import { AgentLifecycleSection } from "@/components/agents/agent-lifecycle-section";
 import { AgentLoadError } from "@/components/agents/agent-load-error";
 import { Button } from "@/components/ui/button";
@@ -141,14 +141,14 @@ export function AgentDetailSheet({ agentId: urlAgentId, onClose, onRestoreAgent 
                 <DetailSkeleton />
               )}
 
-              <AgentGrantsSection
-                grants={grants.data}
-                isPending={grants.isPending}
-                isError={grants.isError}
-                error={grants.error}
-                onRetry={() => void grants.refetch()}
-                status={detail.data?.status}
-              />
+              {agentId && (
+                <AgentPermissionsPanel
+                  agentId={agentId}
+                  agentName={detail.data?.name ?? "this agent"}
+                  status={detail.data?.status}
+                  grants={grants}
+                />
+              )}
 
               {agentId && (
                 <div>

@@ -14,6 +14,8 @@ import {
 
 interface OneTimeKeyDialogProps {
   agentName: string;
+  /** Wording only. "rotate" replaces an existing key; "register" creates the agent's first key. */
+  mode?: "rotate" | "register";
   /**
    * The plaintext key, held only by the parent's local state. It is not stored anywhere else: not in
    * query or mutation state, the URL, storage or logs. Clearing that state (onAcknowledge) removes it.
@@ -43,6 +45,7 @@ type CopyState = "idle" | "copied" | "failed";
  */
 export function OneTimeKeyDialog({
   agentName,
+  mode = "rotate",
   apiKey,
   leaveConfirmOpen,
   onAcknowledge,
@@ -83,9 +86,18 @@ export function OneTimeKeyDialog({
             <DialogHeader>
               <DialogTitle>Leave without saving this key?</DialogTitle>
               <DialogDescription>
-                AgentShield has already rotated {agentName}&apos;s API key, and the previous key no longer works.
-                This new key is shown only once. Leaving will permanently discard the only displayed copy. If the
-                key is lost, you will need to rotate the key again.
+                {mode === "register" ? (
+                  <>
+                    {agentName}&apos;s API key is shown only once. Leaving will permanently discard the only displayed
+                    copy. If the key is lost, you will need to rotate it to get a new one.
+                  </>
+                ) : (
+                  <>
+                    AgentShield has already rotated {agentName}&apos;s API key, and the previous key no longer works.
+                    This new key is shown only once. Leaving will permanently discard the only displayed copy. If the
+                    key is lost, you will need to rotate the key again.
+                  </>
+                )}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -134,8 +146,8 @@ export function OneTimeKeyDialog({
             <Alert>
               <AlertTitle>AgentShield cannot clear your clipboard</AlertTitle>
               <AlertDescription>
-                After you copy the key, clear the clipboard yourself once it is stored. The previous key stopped working
-                when this one was issued.
+                After you copy the key, clear the clipboard yourself once it is stored.
+                {mode === "rotate" && " The previous key stopped working when this one was issued."}
               </AlertDescription>
             </Alert>
 

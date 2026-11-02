@@ -122,9 +122,18 @@ analysis is implemented in either service.
 
 ### Frontend (Next.js) — implemented on `feature/frontend`, not merged to `main`
 
-On `feature/frontend`, the Next.js operator console has four workspaces (Dashboard, Reviews,
-Agents, Activity) and agent lifecycle controls (M3.3). On `main`, `frontend/` contains only the
-foundation page. This section describes the branch, not `main`.
+On `feature/frontend`, the Next.js operator console has these routes: Overview, Activity, Reviews,
+Agents, Tools and a CI/CD demo (`/pipeline`). Agents support registration with a one-time API key
+display, lifecycle controls (suspend, reactivate, revoke, key rotation) and per-agent permission
+management (grant with selected actions, revoke with confirmation). Tools support registration and
+enable/disable. Light and dark themes are both defined in `frontend/src/app/globals.css`, with a
+theme switcher in the header; a test checks text/background contrast in both themes.
+
+The CI/CD demo describes the M4.1 mock simulator and shows the gateway decisions recorded for a
+chosen agent. It does not run the simulator. Tools in that demo are mocks, so the page never claims
+production interception.
+
+On `main`, `frontend/` contains only the foundation page. This section describes the branch, not `main`.
 
 ### PostgreSQL Database
 
