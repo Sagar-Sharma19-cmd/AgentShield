@@ -4,6 +4,7 @@ import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { SecurityAlertFeedCard } from "@/components/alerts/security-alert-feed-card";
 import { dashboardKeys } from "@/lib/queries/dashboard";
 import { DecisionBreakdownCard } from "./decision-breakdown-card";
 import { OverviewStats } from "./overview-stats";
@@ -37,6 +38,8 @@ export function OverviewDashboard() {
       </header>
 
       <OverviewStats />
+
+      <SecurityAlertFeedCard />
 
       <div className="grid gap-4 lg:grid-cols-5">
         <div className="lg:col-span-2">

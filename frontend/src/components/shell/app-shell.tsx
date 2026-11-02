@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SecurityAlertsMonitor } from "@/components/alerts/security-alerts-monitor";
+import { SecurityAlertsProvider } from "@/components/alerts/security-alerts-context";
 import { useAdminKey } from "@/lib/auth/admin-key";
 import { cn } from "@/lib/utils";
 import { AdminUnlockPanel } from "./admin-unlock-panel";
@@ -59,7 +61,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-dvh flex-1 flex-col md:flex-row">
       <Sidebar />
       <main id="main" className="min-w-0 flex-1">
-        {children}
+        <SecurityAlertsProvider>
+          <SecurityAlertsMonitor />
+          {children}
+        </SecurityAlertsProvider>
       </main>
     </div>
   );
