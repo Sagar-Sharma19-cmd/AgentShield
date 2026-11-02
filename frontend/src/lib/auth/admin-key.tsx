@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 /**
  * Dev-only admin session. The backend has no session/JWT layer for operators (see
@@ -32,9 +33,13 @@ function subscribeToStoredKey(onChange: () => void) {
   };
 }
 
+/** An empty or missing stored value means "no key", so it can never unlock the console. */
+export function normalizeStoredKey(raw: string | null): string | null {
+  return raw || null;
+}
+
 function readStoredKey(): string | null {
-  // An empty stored value is treated as "no key", so it can never unlock the console.
-  return window.sessionStorage.getItem(STORAGE_KEY) || null;
+  return normalizeStoredKey(window.sessionStorage.getItem(STORAGE_KEY));
 }
 
 function notifyStoredKeyChanged() {
@@ -46,20 +51,28 @@ const getClientReady = () => true;
 const getServerReady = () => false;
 
 export function AdminKeyProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient();
   // Server render and hydration report "not ready" and "no key", so the locked state is never
   // flashed before the stored key is read on the client.
   const adminKey = useSyncExternalStore(subscribeToStoredKey, readStoredKey, () => null);
   const hydrated = useSyncExternalStore(subscribeNoop, getClientReady, getServerReady);
 
-  const setAdminKey = useCallback((key: string) => {
-    window.sessionStorage.setItem(STORAGE_KEY, key);
-    notifyStoredKeyChanged();
-  }, []);
+  // Every key change drops all cached server data. Cached responses belong to the previous key, and
+  // lock paths that run from an error state (which keep old data) would otherwise leave it visible.
+  const setAdminKey = useCallback(
+    (key: string) => {
+      queryClient.removeQueries();
+      window.sessionStorage.setItem(STORAGE_KEY, key);
+      notifyStoredKeyChanged();
+    },
+    [queryClient],
+  );
 
   const clearAdminKey = useCallback(() => {
+    queryClient.removeQueries();
     window.sessionStorage.removeItem(STORAGE_KEY);
     notifyStoredKeyChanged();
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<AdminKeyContextValue>(
     () => ({

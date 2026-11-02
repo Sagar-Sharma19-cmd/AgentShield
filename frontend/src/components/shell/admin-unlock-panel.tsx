@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +9,6 @@ import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/
 import { ApiError } from "@/lib/api/client";
 import { auditApi } from "@/lib/api/endpoints";
 import { useAdminKey } from "@/lib/auth/admin-key";
-import { auditKeys } from "@/lib/queries/audit";
 
 /**
  * Admin key entry. The key is checked against the backend (a one-row audit read) before it is
@@ -20,7 +18,6 @@ export function AdminUnlockPanel() {
   const inputId = useId();
   const errorId = useId();
   const { setAdminKey } = useAdminKey();
-  const queryClient = useQueryClient();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -37,7 +34,6 @@ export function AdminUnlockPanel() {
     setError(null);
     try {
       await auditApi.search({ size: 1 }, { adminKey: candidate });
-      queryClient.removeQueries({ queryKey: auditKeys.all });
       setAdminKey(candidate);
       setValue("");
     } catch (err) {

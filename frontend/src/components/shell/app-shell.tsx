@@ -2,12 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { Activity, Bot, KeyRound, LogOut, ShieldCheck, ShieldAlert, Wrench, type LucideIcon } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  KeyRound,
+  LayoutDashboard,
+  LogOut,
+  ShieldCheck,
+  ShieldAlert,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminKey } from "@/lib/auth/admin-key";
-import { auditKeys } from "@/lib/queries/audit";
 import { cn } from "@/lib/utils";
 import { AdminUnlockPanel } from "./admin-unlock-panel";
 
@@ -20,6 +28,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Overview", href: "/", icon: LayoutDashboard, available: true },
   { label: "Activity", href: "/activity", icon: Activity, available: true },
   { label: "Reviews", href: "/reviews", icon: ShieldAlert, available: false },
   { label: "Agents", href: "/agents", icon: Bot, available: false },
@@ -111,12 +120,6 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
 
 function SessionControl() {
   const { clearAdminKey } = useAdminKey();
-  const queryClient = useQueryClient();
-
-  function handleSignOut() {
-    queryClient.removeQueries({ queryKey: auditKeys.all });
-    clearAdminKey();
-  }
 
   return (
     <div className="mt-auto flex items-center justify-between gap-2 border-t border-sidebar-border px-4 py-3">
@@ -124,7 +127,7 @@ function SessionControl() {
         <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-success" />
         <span className="truncate">Admin session</span>
       </div>
-      <Button variant="ghost" size="icon-sm" onClick={handleSignOut} aria-label="Lock console">
+      <Button variant="ghost" size="icon-sm" onClick={clearAdminKey} aria-label="Lock console">
         <LogOut aria-hidden="true" />
       </Button>
     </div>

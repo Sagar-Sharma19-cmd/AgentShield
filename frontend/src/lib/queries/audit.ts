@@ -14,7 +14,7 @@ export const auditKeys = {
 };
 
 /** Auth failures are not retried (they will not succeed on retry). Network and 5xx errors are. */
-function retryTransientFailures(failureCount: number, error: Error): boolean {
+export function retryTransientFailures(failureCount: number, error: Error): boolean {
   if (error instanceof ApiError && error.status < 500) return false;
   return failureCount < 2;
 }
