@@ -5,10 +5,17 @@ import { AUTHORIZATION_RESULTS, DECISION_TYPES } from "@/lib/labels";
 /** Rows per page. Must stay within the backend's AuditController limits (1..100). */
 export const ACTIVITY_PAGE_SIZE = 20;
 
+/**
+ * UTC instant in the shape Date.toISOString() produces (optional fractional seconds, trailing Z).
+ * The filter bar only ever writes this shape, so other offsets are dropped rather than forwarded.
+ */
+const UTC_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?Z$/;
+
 /** Unparseable or out-of-range URL values are dropped rather than sent to the backend. */
 const isoInstant = z
   .string()
-  .refine((value) => !Number.isNaN(Date.parse(value)), "Must be an ISO-8601 instant");
+  .regex(UTC_INSTANT_PATTERN, "Must be a UTC ISO-8601 instant")
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Must be a real calendar date");
 
 const activityUrlStateSchema = z.object({
   agentId: z.string().trim().min(1).max(200).optional().catch(undefined),

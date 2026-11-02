@@ -31,12 +31,13 @@ export function ActivityExplorer({ state }: ActivityExplorerProps) {
     from: state.from,
     to: state.to,
   };
-  const page = state.page ?? 0;
   const query = useAuditList(toAuditSearchParams(state));
   const data = query.data;
   // keepPreviousData shows the last page's result while the next one loads. That result is not this page's, so it is not rendered.
   const isTransitioning = query.isPlaceholderData;
   const filtered = hasActiveFilters(applied);
+  // A page can only be past the end when the filters still match events somewhere. Zero matches is a different state.
+  const emptyReason = data && data.totalElements > 0 ? "page" : filtered ? "filtered" : "none";
 
   /** Every navigation is a URL change, so back/forward and shared links behave as expected. */
   function navigate(next: ActivityUrlState) {
@@ -89,10 +90,10 @@ export function ActivityExplorer({ state }: ActivityExplorerProps) {
 
       {!isTransitioning && data && data.content.length === 0 && (
         <ActivityEmpty
-          reason={page > 0 ? "page" : filtered ? "filtered" : "none"}
+          reason={emptyReason}
           onAction={() => {
-            if (page > 0) navigate({ ...applied });
-            else if (filtered) navigate({});
+            if (emptyReason === "page") navigate({ ...applied });
+            else if (emptyReason === "filtered") navigate({});
             else query.refetch();
           }}
         />

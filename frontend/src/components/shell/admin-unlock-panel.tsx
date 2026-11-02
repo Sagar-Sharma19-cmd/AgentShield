@@ -101,5 +101,5 @@ function describeUnlockError(err: unknown): string {
   if (err instanceof ApiError) {
     return err.message;
   }
-  return "Could not reach the AgentShield backend. Check that it is running and that BACKEND_URL points to it.";
+  return "Could not reach AgentShield. Check that the service is running, then try again.";
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore } from "react";
 
 /**
  * Dev-only admin session. The backend has no session/JWT layer for operators (see
@@ -21,24 +21,44 @@ interface AdminKeyContextValue {
 
 const AdminKeyContext = createContext<AdminKeyContextValue | null>(null);
 
-export function AdminKeyProvider({ children }: { children: React.ReactNode }) {
-  const [adminKey, setAdminKeyState] = useState<string | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+// Minimal external store: sessionStorage is the source of truth, and in-tab writes notify
+// subscribers. useSyncExternalStore reads it without copying it into component state.
+const storageListeners = new Set<() => void>();
 
-  useEffect(() => {
-    const stored = window.sessionStorage.getItem(STORAGE_KEY);
-    if (stored) setAdminKeyState(stored);
-    setHydrated(true);
-  }, []);
+function subscribeToStoredKey(onChange: () => void) {
+  storageListeners.add(onChange);
+  return () => {
+    storageListeners.delete(onChange);
+  };
+}
+
+function readStoredKey(): string | null {
+  // An empty stored value is treated as "no key", so it can never unlock the console.
+  return window.sessionStorage.getItem(STORAGE_KEY) || null;
+}
+
+function notifyStoredKeyChanged() {
+  storageListeners.forEach((listener) => listener());
+}
+
+const subscribeNoop = () => () => {};
+const getClientReady = () => true;
+const getServerReady = () => false;
+
+export function AdminKeyProvider({ children }: { children: React.ReactNode }) {
+  // Server render and hydration report "not ready" and "no key", so the locked state is never
+  // flashed before the stored key is read on the client.
+  const adminKey = useSyncExternalStore(subscribeToStoredKey, readStoredKey, () => null);
+  const hydrated = useSyncExternalStore(subscribeNoop, getClientReady, getServerReady);
 
   const setAdminKey = useCallback((key: string) => {
     window.sessionStorage.setItem(STORAGE_KEY, key);
-    setAdminKeyState(key);
+    notifyStoredKeyChanged();
   }, []);
 
   const clearAdminKey = useCallback(() => {
     window.sessionStorage.removeItem(STORAGE_KEY);
-    setAdminKeyState(null);
+    notifyStoredKeyChanged();
   }, []);
 
   const value = useMemo<AdminKeyContextValue>(

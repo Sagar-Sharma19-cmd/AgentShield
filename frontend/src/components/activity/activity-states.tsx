@@ -51,7 +51,7 @@ export function ActivityEmpty({ reason, onAction }: ActivityEmptyProps) {
 const EMPTY_COPY: Record<ActivityEmptyProps["reason"], { title: string; body: string; action: string }> = {
   none: {
     title: "No runtime activity yet",
-    body: "Each request an agent makes through POST /api/v1/gateway/evaluate is audited here, including denied and held requests.",
+    body: "Each request an agent makes through the AgentShield gateway is recorded here, including denied and held requests.",
     action: "Refresh",
   },
   filtered: {
@@ -74,36 +74,46 @@ interface ActivityErrorProps {
 export function ActivityError({ error, onRetry }: ActivityErrorProps) {
   const { clearAdminKey } = useAdminKey();
   const rejected = error instanceof ApiError && (error.status === 401 || error.status === 403);
+  // A 404 means the record does not exist. Retrying cannot change that, so no retry action is offered.
+  const notFound = error instanceof ApiError && error.status === 404;
 
   return (
     <div role="alert" className="flex flex-col gap-4 rounded-lg border border-danger/30 bg-danger/5 p-5">
       <div className="flex items-start gap-3">
         <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger-text" />
         <div className="flex flex-col gap-1">
-          <h2 className="text-sm font-medium text-danger-text">
-            {rejected ? "AgentShield rejected the admin key" : "Could not load runtime activity"}
-          </h2>
+          <h2 className="text-sm font-medium text-danger-text">{errorTitle(rejected, notFound)}</h2>
           <p className="text-sm text-muted-foreground">
             {rejected
               ? "The key may be wrong or revoked. Lock the console and unlock it with a valid admin key."
-              : describeError(error)}
+              : notFound
+                ? "No audit event matches this request ID. Close this panel and choose another event."
+                : describeError(error)}
           </p>
         </div>
       </div>
-      <div className="flex gap-2">
-        {rejected ? (
-          <Button variant="outline" size="sm" onClick={clearAdminKey}>
-            Lock console
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" onClick={onRetry}>
-            <RotateCw aria-hidden="true" />
-            Try again
-          </Button>
-        )}
-      </div>
+      {!notFound && (
+        <div className="flex gap-2">
+          {rejected ? (
+            <Button variant="outline" size="sm" onClick={clearAdminKey}>
+              Lock console
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={onRetry}>
+              <RotateCw aria-hidden="true" />
+              Try again
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function errorTitle(rejected: boolean, notFound: boolean): string {
+  if (rejected) return "AgentShield rejected the admin key";
+  if (notFound) return "Audit event not found";
+  return "Could not load runtime activity";
 }
 
 function describeError(error: Error): string {
