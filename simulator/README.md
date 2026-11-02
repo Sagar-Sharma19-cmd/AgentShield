@@ -1,24 +1,205 @@
-# AgentShield Simulator
+# AgentShield CI/CD Runtime Security Simulator (M4.1)
 
-Simulates AI agent tool requests for testing the security gateway end-to-end.
+A Python simulator that behaves like an AI DevOps agent inside a CI/CD pipeline. Every mock tool
+operation is sent to the AgentShield gateway first. A mock tool runs **only** when the gateway
+decision is `ALLOW`.
 
-## Status
+**Enforcement model: cooperative tool adapter.** The agent (here, this simulator) must call
+AgentShield before acting. AgentShield does not intercept network traffic, and it cannot stop an
+agent that calls Docker, Kubernetes or Jenkins directly. See [Limitations](#limitations).
 
-Placeholder — implementation planned for Phase 5.
+Standard library only (`urllib`). No new dependencies. No real infrastructure is contacted.
 
-## Planned Scenarios
+---
 
-| Scenario | Description |
-|----------|-------------|
-| `basic_read_write` | Agent reads and writes to a repository — expect ALLOW |
-| `credential_access` | Agent attempts to read `.env` — expect DENY |
-| `scope_escalation` | Agent gradually escalates from read to write to delete — expect REVIEW then DENY |
-| `rapid_fire` | Agent sends high-frequency requests — expect risk score to increase |
-| `trajectory_attack` | Agent performs a sequence that individually looks benign but is suspicious in aggregate |
+## What it does
 
-## Usage (Planned)
+- Reads configuration from environment variables only. Nothing is hardcoded and no key is printed.
+- Sends `POST /api/v1/gateway/evaluate` with the exact contract from
+  `backend/.../dto/EvaluationRequest.java`: `agentId`, `sessionId`, `action`, `resource`, `tool`.
+- Creates a traceable session ID for each run, for example `ci-deploy-staging-76bb2dbe2dd2`.
+  Every step in the run carries it.
+- Reads the **decision from the response body** (`ALLOW`, `REVIEW` or `DENY`). HTTP 200 alone is never
+  treated as permission.
+- Validates the response before trusting it. The decision must be one of the three values. The
+  echoed `action` and `resource` must match what was sent. `ALLOW` must come with
+  `authorizationResult = AUTHORIZED`. Otherwise the step fails closed.
+- Fails closed on connection errors, timeouts, non-2xx HTTP status, non-JSON bodies, and
+  contradictory bodies. No mock tool runs in any of these cases.
+- Does not retry after `REVIEW`. The backend has no agent-facing review status endpoint, so the
+  simulator reports the `reviewRequestId` and stops.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `simulator.py` | CLI entry point, output formatting, exit codes |
+| `agentshield_client.py` | HTTP client, configuration loading, strict response validation |
+| `enforcement.py` | The gate. The only code path that can call a mock executor |
+| `mock_tools.py` | Harmless mock GitHub, Jenkins, Docker, Kubernetes, Shell and filesystem tools |
+| `scenarios.py` | Demo pipelines (operations, tools, resources) |
+| `tests/` | Unit and local-socket tests (no backend required) |
+
+## Mock tools
+
+None of these contacts a network service, runs a shell command, touches a Docker daemon, or
+modifies a cluster. Each appends one line to `execution.log` in a temporary directory
+(`agentshield-sim-*`), and prints a `MOCK` description.
+
+| Tool | Operation | Action |
+|------|-----------|--------|
+| `github` | read repository build information | READ |
+| `jenkins` | trigger a simulated build | EXECUTE |
+| `docker` | build a simulated image | WRITE |
+| `docker` | push to a simulated external registry | EXTERNAL_REQUEST |
+| `kubernetes` | apply a simulated manifest | WRITE |
+| `kubernetes` | delete a simulated resource | DELETE |
+| `shell` | simulated healthcheck (no process) | EXECUTE |
+| `filesystem` | simulated file read (nothing is opened) | READ |
+
+## Scenarios
+
+Run `python3 simulator.py --list` to see them. The table lists the rule in
+`backend/.../policy/PolicyEngine.java` that applies to each step. These are what the source code
+says. **Verify them against a live run**, because registered grants and the Risk Engine can change a
+final decision.
+
+| Scenario | Steps | Rule that applies (PolicyEngine) |
+|----------|-------|----------------------------------|
+| `basic_read_write` | github READ; docker WRITE | READ and WRITE are ALLOW unless a secret, production or admin pattern matches |
+| `credential_access` | filesystem READ `.env` | Secret/credential resource is DENY, even though the grant allows READ |
+| `review_required` | jenkins EXECUTE; shell EXECUTE | Generic EXECUTE is REVIEW |
+| `deployment_pipeline` | github READ; docker WRITE; docker EXTERNAL_REQUEST; kubernetes WRITE | EXTERNAL_REQUEST is REVIEW. The pipeline halts there by default |
+| `scope_escalation` | kubernetes WRITE; kubernetes DELETE (canary) | Non-production DELETE is REVIEW |
+
+Authorization runs before policy. A step with no grant gets DENY from the PermissionEngine, and the
+policy is not evaluated.
+
+Risk Engine check: for the ALLOW steps above, the Risk Engine on `127.0.0.1:8000` returned LOW
+(scores 5 and 10) when queried directly with the same inputs. A HIGH tier would have turned an ALLOW
+into REVIEW. A live run is still the authority.
+
+---
+
+## Setup: register a local fake agent
+
+These commands **create records in the backend database**. Run them only against a local development
+database. Replace `AGENTSHIELD_BACKEND` with your backend URL. This project's local backend listens
+on **8081**; do not assume 8080.
+
+```bash
+export AGENTSHIELD_BACKEND=http://localhost:8081          # your Spring Boot backend
+# AGENTSHIELD_ADMIN_API_KEY must already be exported (from your local .env). It is never printed here.
+
+mkdir -p ~/.agentshield-sim && chmod 700 ~/.agentshield-sim
+
+# 1. Register the agent. The response contains apiKey ONCE. Store it in a 0600 file, do not echo it.
+curl -s -X POST "$AGENTSHIELD_BACKEND/api/v1/agents" \
+  -H "X-Admin-API-Key: $AGENTSHIELD_ADMIN_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"ci-devops-agent","description":"Simulated CI/CD agent (M4.1 demo)"}' \
+  > ~/.agentshield-sim/agent.json
+chmod 600 ~/.agentshield-sim/agent.json
+
+# 2. Load the key and the agent UUID into the environment without printing them.
+export AGENTSHIELD_AGENT_API_KEY="$(python3 -c 'import json,os; print(json.load(open(os.path.expanduser("~/.agentshield-sim/agent.json")))["apiKey"])')"
+AGENT_ID="$(python3 -c 'import json,os; print(json.load(open(os.path.expanduser("~/.agentshield-sim/agent.json")))["id"])')"
+
+# 3. Register the six simulated tools. Each call prints the tool's id.
+register_tool() {
+  curl -s -X POST "$AGENTSHIELD_BACKEND/api/v1/tools" \
+    -H "X-Admin-API-Key: $AGENTSHIELD_ADMIN_API_KEY" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"$1\",\"toolType\":\"$2\"}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'
+}
+GITHUB_ID=$(register_tool github SOURCE_CONTROL)
+FS_ID=$(register_tool filesystem FILESYSTEM)
+JENKINS_ID=$(register_tool jenkins OTHER)
+DOCKER_ID=$(register_tool docker OTHER)
+K8S_ID=$(register_tool kubernetes OTHER)
+SHELL_ID=$(register_tool shell SHELL)
+
+# 4. Grant only what each scenario needs (least privilege).
+grant() {
+  curl -s -o /dev/null -w "grant %{http_code}\n" -X POST "$AGENTSHIELD_BACKEND/api/v1/permissions" \
+    -H "X-Admin-API-Key: $AGENTSHIELD_ADMIN_API_KEY" -H 'Content-Type: application/json' \
+    -d "{\"agentId\":\"$AGENT_ID\",\"toolId\":\"$1\",\"allowedActions\":[$2]}"
+}
+grant "$GITHUB_ID"  '"READ"'
+grant "$FS_ID"      '"READ"'
+grant "$JENKINS_ID" '"EXECUTE"'
+grant "$SHELL_ID"   '"EXECUTE"'
+grant "$DOCKER_ID"  '"WRITE","EXTERNAL_REQUEST"'
+grant "$K8S_ID"     '"WRITE","DELETE"'
+
+export AGENTSHIELD_GATEWAY_URL="$AGENTSHIELD_BACKEND"
+export AGENTSHIELD_AGENT_ID=ci-devops-agent
+```
+
+Cleanup (the agent API has no delete endpoint): revoke the agent with
+`PATCH $AGENTSHIELD_BACKEND/api/v1/agents/$AGENT_ID/status` and body `{"status":"REVOKED"}`, then
+delete `~/.agentshield-sim/`.
+
+## Run
+
+Configuration is required from the environment. There is no default gateway URL.
+
+| Variable | Meaning |
+|----------|---------|
+| `AGENTSHIELD_GATEWAY_URL` | Gateway base URL, for example `http://localhost:8081` |
+| `AGENTSHIELD_AGENT_ID` | Registered agent name or UUID |
+| `AGENTSHIELD_AGENT_API_KEY` | The agent's API key |
 
 ```bash
 cd simulator
-python simulator.py --gateway http://localhost:8080 --scenario basic_read_write
+python3 simulator.py --list
+python3 simulator.py --scenario basic_read_write
+python3 simulator.py --scenario credential_access
+python3 simulator.py --scenario review_required
+python3 simulator.py --scenario deployment_pipeline                  # halts at the registry push
+python3 simulator.py --scenario deployment_pipeline --continue-on-block   # evaluate every step
 ```
+
+Exit codes: `0` every step was allowed and executed; `1` the pipeline halted or some steps did not
+execute; `2` configuration error.
+
+## Tests
+
+```bash
+cd simulator
+python3 -W error::ResourceWarning -m unittest discover -s tests -t .
+```
+
+The suite covers:
+- ALLOW executes the mock tool once.
+- REVIEW never executes the mock tool, and shows the review ID.
+- DENY never executes the mock tool, even over a real HTTP 200.
+- Gateway unavailable, connection reset, timeouts (direct and wrapped), HTTP 401 and HTTP 500 never
+  execute.
+- Malformed responses never execute: non-JSON, JSON array, missing or unknown decision, lowercase
+  decision, echoed action or resource mismatch, ALLOW without AUTHORIZED, missing requestId, boolean
+  riskScore, empty body.
+- A pipeline halts at the first REVIEW, and later steps are not sent to the gateway.
+- The request body matches the contract, and the key is sent only in `X-Agent-API-Key`.
+- The API key never appears in configuration output, error messages, or the step output.
+- Real local-socket tests against an in-process stub on `127.0.0.1` cover the real `urllib`
+  status-code and timeout paths. This stub is not the AgentShield backend.
+
+Result at the time of writing: **43 tests, all passing**, with `ResourceWarning` treated as an error.
+
+## Limitations
+
+- **Cooperative enforcement only.** AgentShield decides, and the simulator complies. A real agent
+  that calls Docker, Jenkins or Kubernetes directly bypasses AgentShield. Real enforcement needs the
+  tool or network path to require an ALLOW, which is not built.
+- **Mock tools only.** Nothing is executed, so no real side effect is tested.
+- **No review completion.** After REVIEW the run stops. The backend has no agent-facing status or
+  approval endpoint, so the simulator cannot resume a paused pipeline.
+- **Metadata not sent.** `EvaluationRequest.metadata` is accepted by the backend but never stored or
+  used. Traceability is the session ID, which is stored in `audit_logs.session_id`.
+- **Session identity is client-supplied.** The session ID is chosen by the client, so it proves a
+  run, not who started it.
+- **Live demo not run.** The demo commands above were not run against the live backend in this
+  milestone. The tests and the stub-gateway run cover the simulator's behaviour. The decisions for
+  a live backend are derived from source and must be confirmed.
+- **Temporary logs are kept.** Each run leaves its `agentshield-sim-*` directory in the system
+  temporary directory for inspection.
