@@ -45,7 +45,7 @@ PolicyEngine               Only reached if PermissionEngine returned AUTHORIZED.
 AuditService                Writes one audit_logs row per evaluated request (claimed agentId AND the
   │                          authenticated registeredAgentId, so impersonation attempts are visible)
   ▼
-PostgreSQL                  Flyway-managed schema (V1–V3), ddl-auto=validate everywhere including tests
+PostgreSQL                  Flyway-managed schema (V1–V6), ddl-auto=validate everywhere including tests
 ```
 
 ### What is actually working today (verified)
@@ -62,7 +62,7 @@ PostgreSQL                  Flyway-managed schema (V1–V3), ddl-auto=validate e
 
 ### What is explicitly NOT working today (do not assume otherwise)
 
-- No risk engine integration — the Python service is a stub returning a fixed score and is never called by the Java backend
+- Risk engine: resolved. The Python service scores deterministically (`risk-engine/scoring.py`) and the Java gateway calls it as an escalation-only signal (see `docs/architecture.md`). No trained or ML scoring exists.
 - No frontend — `frontend/` contains only a README
 - No simulator — `simulator/simulator.py` only prints "not yet implemented"
 - No prompt-injection, secret-detection, or any AI-specific content inspection — `PolicyEngine` only pattern-matches resource/action *strings*, it does not inspect tool-call payloads, agent reasoning, or external content
@@ -81,7 +81,7 @@ A realistic target for AgentShield: **a developer-focused runtime security gatew
 | **2. Tool registration** | What can an agent even reach? | Already strong (keep as-is). Target adds: tool-level default risk tier, tool-specific resource patterns (e.g. a `filesystem` tool's sensitive-path list), tool health/connectivity status. |
 | **3. Fine-grained permissions** | Least privilege per agent, per tool. | Already strong at (agent, tool, action) granularity. Target adds resource-path scoping (e.g. "READ only under `src/`") and time-boxed/temporary grants. |
 | **4. Policy enforcement** | Deterministic, explainable "is this action within bounds." | Already working as static rules. Target makes policy **data-driven** (stored, editable, versioned) instead of hard-coded in Java, without changing the decision hierarchy. |
-| **5. Risk scoring** | A single number that summarizes "how dangerous is this," usable for REVIEW routing and dashboards. | Currently a stub. Target: a real deterministic, explainable, multi-factor risk score (Part 6), later augmented by ML. |
+| **5. Risk scoring** | A single number that summarizes "how dangerous is this," usable for REVIEW routing and dashboards. | Implemented (Phases 1–2): a deterministic, explainable, multi-factor score (Part 6). Not ML-based. The frequency and history factors are not implemented. |
 | **6. Secret detection** | Agents must never read/exfiltrate credentials, even ones a policy author didn't anticipate by filename. | Not implemented. Target: pattern/entropy-based scanning of resource identifiers and (where available) tool-call arguments/results for secret-shaped content. |
 | **7. Prompt injection detection** | Untrusted content (web pages, files, tool outputs) can hijack agent behavior. | Not implemented. Target: heuristic detection of injection-style instructions in content an agent is about to act on, feeding risk score and audit — not a silver bullet (see Part 7). |
 | **8. Tool-call security** | Catch dangerous calls regardless of which named tool they go through. | Partially implemented (action/resource substring rules). Target: structured inspection of tool-call arguments (not just a resource string), command/argument allow-lists for `SHELL`/`EXECUTE`. |
@@ -187,9 +187,9 @@ User (agent) → requests e.g. non-prod DELETE or an EXTERNAL_REQUEST
 → Action: ambiguous/sensitive-but-not-forbidden action
 → System processing: PolicyEngine matches a REVIEW rule
 → Decision: `REVIEW`, riskScore 60–75
-→ Result: response says `REVIEW` — **today nothing routes this anywhere; there is no queue, so in practice an integration must decide itself what "REVIEW" means operationally**
+→ Result: response says `REVIEW` and a `review_requests` row is created. The backend review endpoints (`/api/v1/reviews`: start, approve, reject) let an admin act on it. There are no notifications and no per-reviewer identity; the admin key is shared
 → Audit event: `decision=REVIEW`, `actionOutcome=REVIEW_REQUIRED`
-→ **Gap this journey exposes:** this is exactly why Part 8 (Review Workflow) is needed — REVIEW is currently a dead end.
+→ **Remaining gap:** the backend review workflow now exists (see the row in the gap table below). What is still missing is notification of reviewers, per-reviewer identity, and an audit trail for admin review decisions. The operator console for reviews exists only on `feature/frontend`, not on `main`.
 
 ### Journey 8 — A secret is detected **[TARGET]**
 User (agent) → attempts to read or pass along content containing secret-shaped data
@@ -251,10 +251,10 @@ Complexity and value are qualitative (Low/Medium/High), not numeric scores.
 
 | Feature | Problem | User | Description | Dependencies | Security considerations | Complexity | Expected value |
 |---|---|---|---|---|---|---|---|
-| Real Risk Engine (deterministic, Part 6) | Risk score is currently a stub constant | Developer, security engineer | Multi-factor deterministic score computed from resource sensitivity, action type, frequency, pattern match | Backend must call it; needs a defined failure mode | Must fail closed (treat engine-down as elevated risk, not zero risk) | Medium | High |
+| Real Risk Engine (deterministic, Part 6) | Implemented: deterministic factor score (resource sensitivity, action type, production/admin match); frequency and history factors are not implemented | Developer, security engineer | Multi-factor deterministic score computed from resource sensitivity, action type, frequency, pattern match | Backend must call it; needs a defined failure mode | Must fail closed (treat engine-down as elevated risk, not zero risk) | Medium | High |
 | Data-driven PolicyEngine | Rules are hard-coded in Java; changing a rule requires a redeploy | Security engineer | Move substring/resource rules into a stored, versioned policy table/config | New `Policy` entity | Must preserve the existing decision hierarchy (authorization still wins) | Medium | High |
 | Resource-path-scoped permissions | Grants are (agent, tool, action) only — no path scoping (e.g. "READ only under `src/`") | Developer, security engineer | Optional pattern/path constraint per grant | Existing `AgentToolPermission` | Pattern matching must fail closed on ambiguous patterns | Medium | Medium |
-| Review workflow (Part 8) | `REVIEW` decisions are currently a dead end | Security engineer | Persisted review queue + human decision feeding back into the audit trail | Audit read API | Reviewer identity needs the same accountability as admin actions | Medium | High |
+| Review workflow (Part 8) | Backend implemented: `review_requests` are created on REVIEW and started, approved or rejected under `/api/v1/reviews`. Still missing: notifications, per-reviewer identity, and an audit trail for review decisions made by admins | Security engineer | Reviewer identity and notifications; admin action audit | Audit read API | Reviewer identity needs the same accountability as admin actions | Medium | High |
 | Minimal dashboard (Overview, Agents, Tools, Permissions, Audit Logs) | No UI exists at all | Developer, administrator | Read/manage views over existing admin + audit APIs | Audit read API | Dashboard auth must not reuse raw admin API key in browser storage long-term | High | High |
 
 ### P2 — Advanced Security
@@ -288,8 +288,8 @@ Complexity and value are qualitative (Low/Medium/High), not numeric scores.
 ### CURRENT
 
 - A FastAPI service (`risk-engine/main.py`) exposing `GET /health` and `POST /score`.
-- `POST /score` is a **stub**: it ignores its input and always returns `{"riskScore": 0, "factors": ["stub — scoring not yet implemented"]}`.
-- The Spring Boot backend has a configured URL (`agentshield.risk-engine.url`) but **no code anywhere calls it** — `GatewayService` only talks to `PermissionEngine` and `PolicyEngine`.
+- `POST /score` returns a deterministic, factor-based score and tier (`risk-engine/scoring.py`). It is not ML.
+- The Spring Boot backend calls it through `RiskEngineClient` for authorized ALLOW/REVIEW requests (`GatewayService`), and falls back safely when it is unavailable.
 - There is no ML of any kind in the repository today.
 
 ### TARGET
@@ -439,7 +439,7 @@ Agent Request
 ### Risk
 | Method | Path | Purpose | Auth | AuthZ | Request concept | Response concept |
 |---|---|---|---|---|---|---|
-| POST | `/score` (risk-engine, internal) | **[CURRENT — stub only]** Compute a risk score | Internal network only | — | agentId, action, resource, metadata | riskScore, factors (currently a fixed stub value) |
+| POST | `/score` (risk-engine, internal) | **[CURRENT — implemented]** Compute a deterministic risk score and tier | Internal network only | — | action, resource, resource_sensitivity (optional) | risk_score, risk_tier, factors, reason |
 | GET | `/api/v1/risk/factors` | **[TARGET]** Expose scoring factor definitions for dashboard explainability | Admin key | ROLE_ADMIN | — | factor list with weights |
 
 ### Security Events
@@ -653,8 +653,8 @@ Agent Request
 
 ### What is included
 - Everything in **Phase 1** (audit read API, admin action audit, basic rate limiting, per-operator admin identity) — makes the existing, already-solid authorization engine *operable* by a human instead of only queryable via SQL.
-- **Phase 2**'s deterministic Risk Engine — replaces the stub with real, explainable scoring, which is the single most credible missing piece relative to the project's own stated purpose.
-- **Phase 4**'s review workflow — closes the "REVIEW is a dead end" gap (Journey 7), which is the most visible functional hole in the current product.
+- **Phase 2**'s deterministic Risk Engine — replaced the stub with real, explainable scoring (now implemented; see `docs/risk-engine.md`).
+- **Phase 4**'s review workflow — the backend part is implemented (`review_requests`, `/api/v1/reviews`). It addresses the "REVIEW has no handling" gap (Journey 7). Reviewer notifications and per-reviewer identity are still missing; the review console is on `feature/frontend` only.
 - A minimal slice of **Phase 5** — just Overview, Agents, Audit Logs, and Review Queue pages, enough to demo the full loop visually.
 - A minimal slice of **Phase 6** — just the `credential_access` and `scope_escalation` scenarios from `simulator/README.md`, enough to prove the gateway blocks what it claims to.
 

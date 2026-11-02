@@ -240,6 +240,14 @@ GatewayService
   |       +--> Static risk/policy rules
   |       +--> ALLOW / REVIEW / DENY
   |
+  +--> RiskEngineClient --> Risk Engine (Python, POST /score)
+  |       Only for ALLOW/REVIEW policy outcomes. Deterministic rules, not ML.
+  |       Failure falls back to HIGH with engineAvailable=false (fails safe).
+  |
+  +--> DecisionEscalator     Escalate-only combination. Never grants access.
+  |
+  +--> ReviewRequestService  Only when the final decision is REVIEW.
+  |
   +--> AuditService
   |
   v
@@ -247,10 +255,12 @@ PostgreSQL
 
 Authentication is enforced by Spring Security filter chains before the protected
 gateway/admin endpoints are reached (agent API key -> ROLE_AGENT on `/api/v1/gateway/**`;
-admin API key -> ROLE_ADMIN on `/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`).
+admin API key -> ROLE_ADMIN on `/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`,
+`/api/v1/reviews/**`, `/api/v1/audit/**`).
 
-The Python Risk Engine currently exists only as a stub (`POST /score` returns a
-placeholder score) and is NOT integrated into the Gateway — GatewayService never calls it.
+The Python Risk Engine is implemented (deterministic factor scoring in `risk-engine/scoring.py`)
+and is integrated into the Gateway as an escalation-only signal (`GatewayService` calls
+`RiskEngineClient`). See `docs/architecture.md`, "Risk Engine Integration".
 
 The exact architecture may evolve as implementation progresses.
 
@@ -277,6 +287,11 @@ IMPLEMENTED:
 - Admin API-key authentication
 - HMAC-SHA256 + pepper key hashing
 - Audit logging (AuditService)
+- Audit read API (`GET /api/v1/audit/{requestId}`, `GET /api/v1/audit`, admin only)
+- Risk Engine: deterministic factor scoring service (`risk-engine/`) integrated into the gateway
+  as an escalation-only signal, with fail-safe fallback and persistence to `risk_assessments`
+- Human review workflow (backend): `review_requests` created on REVIEW; start, approve and reject
+  endpoints under `/api/v1/reviews` (admin key; no notifications, no per-reviewer identity)
 - Flyway migrations
 - PostgreSQL persistence
 - Backend unit tests
@@ -285,13 +300,19 @@ IMPLEMENTED:
 - Security scanning workflow (security-checks.yml)
 - Docker Compose PostgreSQL environment
 
+BRANCH-ONLY (not merged to `main`): the `feature/frontend` branch contains Next.js workspaces
+for Dashboard, Reviews, Agents and Activity, plus agent lifecycle controls (M3.3, committed as
+81fa2357). `main` contains only the frontend foundation page. Do not describe the frontend as
+merged or released.
+
 NOT IMPLEMENTED / INCOMPLETE:
 
-- Production Risk Engine integration (current Risk Engine is a stub; not called by the backend)
-- ML-based risk/anomaly detection
-- Agent behaviour / trajectory analysis
-- Frontend application
-- Review queue / UI
+- ML-based risk/anomaly detection (the Risk Engine is rule-based; there is no trained model)
+- Agent behaviour / trajectory analysis: NOT implemented. `session_id` is stored on each audit row,
+  but no code analyses sessions or sequences of requests
+- Resource inventory, resource relationships and resource-impact / blast-radius analysis: design
+  only (M3.4 Stage 0, `docs/resource-impact-design.md`). No tables, endpoints or gateway logic exist
+- Admin action audit trail: admin actions (agent, tool, permission, review changes) are not audited
 - Simulator
 - Prompt injection defense
 - Indirect prompt injection defense
@@ -307,7 +328,7 @@ NOT IMPLEMENTED / INCOMPLETE:
 ## Authentication architecture (current)
 
 - Agent API-key authentication protects gateway endpoints (`/api/v1/gateway/**`) and grants `ROLE_AGENT`.
-- Admin API-key authentication protects management endpoints (`/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`) and grants `ROLE_ADMIN`.
+- Admin API-key authentication protects management endpoints (`/api/v1/agents/**`, `/api/v1/tools/**`, `/api/v1/permissions/**`, `/api/v1/reviews/**`, `/api/v1/audit/**`) and grants `ROLE_ADMIN`.
 - Enforced by Spring Security filter chains, stateless (no sessions or cookies).
 - Keys are hashed with HMAC-SHA256 + a server-side pepper; plaintext keys are never stored or logged.
 - Do not replace or redesign this authentication architecture unless a future task explicitly requires it.
@@ -316,11 +337,12 @@ NOT IMPLEMENTED / INCOMPLETE:
 
 The Gateway currently follows:
 
-Authentication -> PermissionEngine -> PolicyEngine -> AuditService
+Authentication -> PermissionEngine -> PolicyEngine -> RiskEngine (ALLOW/REVIEW only) -> DecisionEscalator -> AuditService -> ReviewRequest (REVIEW only)
 
 - PermissionEngine performs the documented deterministic authorization checks (agent identity, agent status, tool registry, AgentToolPermission grant, action authorization).
 - Authorization denial short-circuits PolicyEngine evaluation and records riskScore = 100.
 - PolicyEngine runs only for authorized requests and can only narrow an ALLOW toward REVIEW/DENY — it can never override a missing permission.
+- The Risk Engine is consulted only for an authorized request whose policy decision is ALLOW or REVIEW. It can only escalate that decision.
 
 ---
 
@@ -408,9 +430,10 @@ Do not move business logic into the Python service merely because it is convenie
 
 Clearly define communication between Java and Python services.
 
-Current status: a FastAPI stub only. `POST /score` returns a placeholder risk score,
-and the backend does NOT call the Risk Engine. Do not describe ML-based or weighted
-risk scoring as implemented — treat it as future work.
+Current status: implemented. `POST /score` (`risk-engine/main.py`, `scoring.py`) returns a
+deterministic factor-based score, and the backend calls it through `RiskEngineClient` for
+authorized ALLOW/REVIEW requests. It is an escalation-only signal with a fail-safe fallback.
+Do not describe the Risk Engine as ML-based. Trained or ML-based scoring remains future work.
 
 ---
 
@@ -569,18 +592,24 @@ Avoid exposing unnecessary sensitive information in responses.
 
 # 17. RISK SCORING
 
-Current implementation: `PolicyEngine` uses deterministic substring-based rules
-against the resource/action strings, each mapped to a fixed risk score. Examples:
+Two deterministic components exist. Neither is a trained ML model.
 
-- `.env` / secret resources -> DENY (90)
-- production DELETE -> DENY (95)
-- non-production DELETE -> REVIEW (60)
-- EXECUTE -> REVIEW
-- EXTERNAL_REQUEST -> REVIEW
-- READ -> ALLOW (10)
-- WRITE -> ALLOW (20)
+1. `PolicyEngine` (Java, `policy/PolicyEngine.java`): substring rules against the resource and
+   action strings, each mapped to a fixed decision and risk score. Examples:
+   - secret/credential resource -> DENY (90)
+   - production DELETE -> DENY (95)
+   - non-production DELETE -> REVIEW (60)
+   - admin/protected EXECUTE -> REVIEW (75); other EXECUTE -> REVIEW (60)
+   - EXTERNAL_REQUEST -> REVIEW (75 for production/admin resources, else 60)
+   - READ -> ALLOW (10); WRITE -> ALLOW (20)
+   - fallback when no rule matches -> DENY (85) (default deny; not reachable with the current five action types)
+2. Risk Engine (Python, `risk-engine/scoring.py`): fixed-weight factors summed and capped at 100.
+   Factors are resource sensitivity (+50), production/admin pattern (+40), action base
+   (READ 5, WRITE 10, DELETE 30, EXECUTE 30, EXTERNAL_REQUEST 25), and a compounding term (+20
+   for DELETE or EXECUTE with a production/admin match). Tiers: LOW 0–29, MEDIUM 30–59,
+   HIGH 60–79, CRITICAL 80–100. It is a weighted rule model, not a trained model.
 
-This is NOT a trained ML model or a weighted risk model. Do not describe it as one.
+Do not describe either component as ML, and do not claim accuracy figures for either.
 
 Future risk scoring (not yet implemented) should be explainable. Whenever possible,
 identify:

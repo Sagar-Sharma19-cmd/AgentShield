@@ -1,6 +1,9 @@
 # Threat Model
 
-> **Status:** Placeholder — to be developed alongside policy engine implementation.
+> **Status:** Partial. This document lists threats and planned controls. Only some controls exist.
+> Implemented controls are described in `docs/architecture.md`. Trajectory evaluation is planned
+> and is NOT implemented. Resource-impact analysis is designed (`docs/resource-impact-design.md`)
+> and is NOT implemented.
 
 ---
 
@@ -44,7 +47,8 @@ An adversarial input causes the agent to attempt reading `.env` or credential fi
 ### 2. Scope Creep
 An agent authorised to read a repository gradually attempts to write to it, then delete files.
 
-**AgentShield control:** Policy permits READ only. WRITE/DELETE actions are DENIED.
+**Planned intent:** Policy permits READ only, and WRITE/DELETE would be DENIED.
+**Current behaviour (not this planned control):** PolicyEngine returns ALLOW for WRITE (score 20) and REVIEW for non-production DELETE (60). Production DELETE is DENIED (95). A WRITE to a non-secret resource is limited only by the `AgentToolPermission` grant, and secret/credential resources are DENIED by a separate rule. See `docs/architecture.md`.
 
 ### 3. Data Exfiltration via API Call
 An agent attempts to POST internal data to an external HTTP endpoint not on the allow-list.

@@ -115,11 +115,16 @@ deterministic, explainable risk score (0–100) and tier from an `action`/`resou
 [Risk Engine Integration](#risk-engine-integration) below. No ML or trajectory/behavioral
 analysis is implemented in either service.
 
-### Frontend (Next.js) — planned
+### Frontend (Next.js) — implemented on `feature/frontend`, not merged to `main`
+
+On `feature/frontend`, the Next.js operator console has four workspaces (Dashboard, Reviews,
+Agents, Activity) and agent lifecycle controls (M3.3). On `main`, `frontend/` contains only the
+foundation page. This section describes the branch, not `main`.
 
 ### PostgreSQL Database
 
-Stores agents, tools, permission grants and audit logs. The schema is owned by **Flyway**
+Stores agents, tools, permission grants, audit logs, risk assessments (`risk_assessments`) and
+human review requests (`review_requests`). The schema is owned by **Flyway**
 migrations in `backend/src/main/resources/db/migration`; Hibernate runs with
 `ddl-auto=validate` and never changes the schema (see [Database Migrations](#database-migrations-flyway)).
 
@@ -528,6 +533,9 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 ## Future Roadmap
 
+0. Resource inventory, resource relationships and resource-impact (blast-radius) analysis, behind
+   a default-OFF flag. **Design only** — see `docs/resource-impact-design.md`. Nothing in that
+   design is implemented.
 1. Audit authentication failures and admin actions; rate limiting on authentication failures.
 2. Per-operator admin identities with RBAC (e.g. OIDC for humans), replacing the shared admin key.
 3. Key expiry and overlapping rotation (two valid keys during a grace period); optional mTLS for agents.

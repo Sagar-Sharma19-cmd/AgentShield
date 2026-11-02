@@ -25,7 +25,7 @@ AgentShield Security Gateway
     ├─ Tool Registry       (WHAT tool? registered and ACTIVE?)
     ├─ Permission Engine   (is this agent explicitly allowed this action on this tool?)
     ├─ Policy Evaluation   (is this resource/action dangerous?)
-    ├─ Risk Evaluation     (how dangerous is this action?)            [planned]
+    ├─ Risk Evaluation     (deterministic score; escalation only)     [implemented]
     └─ Behaviour Analysis  (does this fit the agent's normal pattern?) [planned]
     │
     ▼
@@ -55,13 +55,13 @@ See [`docs/architecture.md`](docs/architecture.md) for the full model.
 
 ---
 
-## Architecture (Planned)
+## Architecture
 
 | Component | Technology | Responsibility |
 |-----------|-----------|----------------|
-| `backend` | Java 17, Spring Boot 3, Maven | Core security gateway — policy engine, request routing, audit logging |
-| `frontend` | Next.js 14, TypeScript | Dashboard — live request monitoring, policy management, audit trail |
-| `risk-engine` | Python 3.11, FastAPI, scikit-learn | Risk scoring service — analyses request metadata and assigns a numeric risk score |
+| `backend` | Java 17, Spring Boot 3, Maven | Security gateway — authorization, policy evaluation, risk escalation, human review and audit logging |
+| `frontend` | Next.js, TypeScript | Operator console. Workspaces (Dashboard, Reviews, Agents, Activity) are on `feature/frontend`; `main` has only the foundation page |
+| `risk-engine` | Python, FastAPI, Pydantic | Deterministic, rule-based risk scoring service (weighted factors, no ML). Called by the gateway as an escalation-only signal |
 | `simulator` | Python | Simulates AI-agent tool requests for testing and demonstration |
 | `docs` | Markdown | Architecture, threat model, API design, and research notes |
 | `tests` | JUnit, pytest, REST-Assured | Backend unit/integration tests and risk-engine tests |
@@ -123,7 +123,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 2b | ✅ Complete | Agent identity, tool registry & fine-grained agent-tool permissions (`PermissionEngine`) |
 | Phase 2c | ✅ Complete | Agent API key authentication, admin API protection, Flyway database migrations |
 | Phase 3 | ✅ Complete | Risk engine — deterministic Python/FastAPI scoring service, integrated into the Spring Boot gateway as an escalation-only risk signal |
-| Phase 4 | 🔲 Planned | Frontend dashboard — Next.js monitoring UI |
+| Phase 4 | 🔲 In progress (branch) | Frontend console — Next.js workspaces (Dashboard, Reviews, Agents, Activity) exist on `feature/frontend` and are not yet merged to `main` |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
 | Phase 6 | 🔲 Planned | Behaviour analysis and trajectory evaluation |
 | Phase 7 | 🔲 Planned | Full Docker Compose local deployment |
