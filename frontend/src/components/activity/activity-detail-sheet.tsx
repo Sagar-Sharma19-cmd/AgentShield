@@ -12,6 +12,13 @@ import {
   SENSITIVITY_LABELS,
 } from "@/lib/labels";
 import { formatTimestamp } from "@/lib/format";
+import {
+  ESCALATION_COPY,
+  escalationAttribution,
+  formatTrajectoryScore,
+  TRAJECTORY_TIER_LABELS,
+  trajectoryEvidence,
+} from "@/lib/trajectory/model";
 import type { AuditLogResponse } from "@/types/api";
 import { ActivityError } from "./activity-states";
 
@@ -100,6 +107,10 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
         </div>
       </DetailSection>
 
+      <DetailSection title="Trajectory">
+        <TrajectoryDetail event={event} />
+      </DetailSection>
+
       <DetailSection title="Outcome">
         <div className="flex flex-col gap-2">
           <p className="text-sm">{OUTCOME_LABELS[event.actionOutcome]}</p>
@@ -131,6 +142,43 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
         </dl>
       </DetailSection>
     </>
+  );
+}
+
+/**
+ * Session-history signal, kept apart from the policy score above. Trajectory never changes the policy
+ * risk score. The escalation line says which stage set the decision, and null means not recorded.
+ */
+function TrajectoryDetail({ event }: { event: AuditLogResponse }) {
+  const evidence = trajectoryEvidence(event);
+  const attribution = escalationAttribution(event.escalatedBy);
+
+  return (
+    <div className="flex flex-col gap-3">
+      {evidence.kind === "evaluated" ? (
+        <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
+          <Field label="Trajectory score">
+            <span className="font-mono tabular-nums">{formatTrajectoryScore(evidence.score)}</span>
+          </Field>
+          <Field label="Tier">{evidence.tier ? TRAJECTORY_TIER_LABELS[evidence.tier] : "Not reported"}</Field>
+          <Field label="Reason">
+            <span className="leading-relaxed">{evidence.reason ?? "Not reported"}</span>
+          </Field>
+        </dl>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Not evaluated or unavailable. No trajectory signal was recorded for this request.
+        </p>
+      )}
+      <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
+        <Field label="Escalation">
+          <span className="leading-relaxed">{ESCALATION_COPY[attribution]}</span>
+        </Field>
+      </dl>
+      <p className="text-xs text-muted-foreground">
+        A session-history signal, separate from the policy risk score. It can only escalate an ALLOW to review.
+      </p>
+    </div>
   );
 }
 

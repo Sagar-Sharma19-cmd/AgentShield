@@ -12,6 +12,8 @@ import type { SecurityAlert } from "@/lib/alerts/model";
 import { ALERT_POLL_MS } from "@/lib/alerts/tracker";
 import { formatTimestamp } from "@/lib/format";
 import { ACTION_LABELS } from "@/lib/labels";
+import { trajectoryEvidence } from "@/lib/trajectory/model";
+import { TrajectoryEscalationBadge, TrajectorySummary } from "@/components/trajectory/trajectory-evidence";
 import { useSecurityAlertFeed } from "@/lib/queries/alerts";
 import { ApiError } from "@/lib/api/client";
 
@@ -99,6 +101,7 @@ function AlertRow({ alert, unread }: { alert: SecurityAlert; unread: boolean }) 
                 New
               </span>
             ) : null}
+            <TrajectoryEscalationBadge escalatedBy={alert.escalatedBy} />
           </div>
           <time dateTime={alert.timestamp} className="font-mono text-xs tabular-nums text-muted-foreground">
             {formatTimestamp(alert.timestamp)}
@@ -117,6 +120,13 @@ function AlertRow({ alert, unread }: { alert: SecurityAlert; unread: boolean }) 
             <RiskScore score={alert.policyRiskScore} />
           </div>
         ) : null}
+        <TrajectorySummary
+          evidence={trajectoryEvidence({
+            trajectoryScore: alert.trajectoryScore,
+            trajectoryTier: alert.trajectoryTier,
+            trajectoryReason: alert.trajectoryReason,
+          })}
+        />
       </Link>
     </li>
   );

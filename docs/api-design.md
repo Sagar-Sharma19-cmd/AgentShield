@@ -106,13 +106,19 @@ An invalid transition (e.g. `approve` before `start`, or any transition from `AP
   "originalDecision": "REVIEW",
   "status": "PENDING",
   "reason": "DELETE action on non-production resource requires human review.",
+  "trajectoryScore": null,
+  "trajectoryTier": null,
+  "trajectoryReason": null,
   "createdAt": "2026-09-13T22:50:00Z",
   "updatedAt": "2026-09-13T22:50:00Z",
   "reviewedAt": null
 }
 ```
-`riskScore`/`riskTier` here are the Risk Engine's own assessment (unlike `EvaluationResponse`,
-where `riskScore` is PolicyEngine's static score — see the Gateway response notes above).
+`riskScore`/`riskTier` here are the **effective** values: the higher of the Risk Engine assessment and
+the trajectory assessment (unlike `EvaluationResponse`, where `riskScore` is PolicyEngine's static score
+— see the Gateway response notes above). `trajectoryScore`, `trajectoryTier` and `trajectoryReason` are
+the trajectory signal on its own (added in V8). They are `null` when trajectory analysis did not run.
+A `null` means "not evaluated", not a score of 0.
 `originalDecision` is the PolicyEngine decision before risk escalation (`ALLOW` or `REVIEW` —
 never `DENY`, since a DENY never reaches the review workflow).
 
@@ -155,9 +161,19 @@ returns `400`.
   "registeredToolId": "0b8e7f6a-1d2c-4e3f-8a9b-7c6d5e4f3a21",
   "authorizationResult": "AUTHORIZED",
   "authorizationReason": "Agent 'coding-agent-01' is permitted to perform READ with tool 'filesystem'.",
+  "trajectoryScore": null,
+  "trajectoryTier": null,
+  "trajectoryReason": null,
+  "escalatedBy": "NONE",
   "timestamp": "2026-09-13T22:50:00Z"
 }
 ```
+
+Trajectory fields (V9). `trajectoryScore` (0–100), `trajectoryTier` and `trajectoryReason` are `null` when
+trajectory was not evaluated, which covers disabled analysis, skipped DENY decisions and failures. `escalatedBy`
+is `NONE`, `RISK_ENGINE` or `TRAJECTORY`, which says which stage changed the decision. It is `null` only on rows
+written before V9 ("not recorded", not `NONE`). `TRAJECTORY` means trajectory changed an ALLOW to REVIEW. See
+`docs/architecture.md`, Trajectory Analysis.
 
 **Response body (`GET /audit`, `AuditLogPageResponse`):**
 ```json
@@ -268,6 +284,13 @@ This combination (`riskScore: 20`, `riskTier: "HIGH"`, `decision: "REVIEW"`) is 
 `riskScore` is always PolicyEngine's own 0-100 score for the resource/action pair, unaffected by
 the Risk Engine's escalation; `riskTier` is the *separate* Risk Engine signal that drove the
 escalation. Always read `riskTier` (not `riskScore`) to understand why a decision was escalated.
+
+**Trajectory escalation.** `EvaluationResponse` has no trajectory fields. A request that trajectory
+analysis escalated from ALLOW to REVIEW shows up as `decision: "REVIEW"`, a `reason` that ends with
+`Escalated to REVIEW by trajectory analysis (score N, TIER): <reason>`, and a non-null
+`reviewRequestId`. Its `riskScore` and `riskTier` are unchanged. The trajectory score and tier are
+visible in the audit record and the review record (see those sections). Trajectory never produces
+`DENY`, and a trajectory escalation is never recorded on a request that was already `REVIEW` or `DENY`.
 
 **Response body (REVIEW, escalated to DENY by the Risk Engine):**
 ```json

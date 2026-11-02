@@ -8,6 +8,7 @@ import com.agentshield.model.DecisionType;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * correlation, covering test categories A and B), and the strict state machine.
  */
 @DataJpaTest
+@org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase(replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
 @Import(ReviewRequestService.class)
 @ActiveProfiles("test")
 class ReviewRequestServiceTest {
@@ -39,6 +41,16 @@ class ReviewRequestServiceTest {
 
     @Autowired
     private ReviewRequestRepository reviewRequestRepository;
+
+    /**
+     * Counts in this class are table-wide. On a shared PostgreSQL database, rows committed by other
+     * test classes would otherwise leak into these counts. Each test here is rolled back, so clearing
+     * the table first is safe.
+     */
+    @BeforeEach
+    void clearReviewRequests() {
+        reviewRequestRepository.deleteAll();
+    }
 
     @Test
     @DisplayName("A. createReviewRequest persists a PENDING row with the given requestId and risk data")

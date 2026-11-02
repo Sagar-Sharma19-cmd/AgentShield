@@ -4,7 +4,9 @@ import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
+import com.agentshield.model.RiskTier;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -81,13 +83,34 @@ public class AuditLog {
     @Column(length = 1000)
     private String authorizationReason;
 
+    /** Trajectory score (0-100). NULL means trajectory was not evaluated. Additive (V9). */
+    @Column(name = "trajectory_score")
+    private Integer trajectoryScore;
+
+    /** Trajectory tier. NULL means trajectory was not evaluated. Additive (V9). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trajectory_tier", length = 20)
+    private RiskTier trajectoryTier;
+
+    /** Trajectory reasons. NULL means trajectory was not evaluated. Additive (V9). */
+    @Column(name = "trajectory_reason", length = 1000)
+    private String trajectoryReason;
+
+    /**
+     * Which signal changed the decision. NULL only on rows written before V9 (not recorded),
+     * otherwise NONE, RISK_ENGINE or TRAJECTORY.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "escalated_by", length = 20)
+    private EscalationSource escalatedBy;
+
     @Column(nullable = false, updatable = false)
     private Instant timestamp;
 
     public AuditLog() {
     }
 
-    public AuditLog(UUID id, UUID requestId, String agentId, String sessionId, String tool, ActionType action, String resource, ResourceSensitivity resourceSensitivity, DecisionType decision, int riskScore, String reason, ActionOutcome actionOutcome, UUID registeredAgentId, UUID registeredToolId, AuthorizationResult authorizationResult, String authorizationReason, Instant timestamp) {
+    public AuditLog(UUID id, UUID requestId, String agentId, String sessionId, String tool, ActionType action, String resource, ResourceSensitivity resourceSensitivity, DecisionType decision, int riskScore, String reason, ActionOutcome actionOutcome, UUID registeredAgentId, UUID registeredToolId, AuthorizationResult authorizationResult, String authorizationReason, Integer trajectoryScore, RiskTier trajectoryTier, String trajectoryReason, EscalationSource escalatedBy, Instant timestamp) {
         this.id = id;
         this.requestId = requestId;
         this.agentId = agentId;
@@ -104,6 +127,10 @@ public class AuditLog {
         this.registeredToolId = registeredToolId;
         this.authorizationResult = authorizationResult;
         this.authorizationReason = authorizationReason;
+        this.trajectoryScore = trajectoryScore;
+        this.trajectoryTier = trajectoryTier;
+        this.trajectoryReason = trajectoryReason;
+        this.escalatedBy = escalatedBy;
         this.timestamp = timestamp;
     }
 
@@ -235,6 +262,38 @@ public class AuditLog {
         this.authorizationReason = authorizationReason;
     }
 
+    public Integer getTrajectoryScore() {
+        return trajectoryScore;
+    }
+
+    public void setTrajectoryScore(Integer trajectoryScore) {
+        this.trajectoryScore = trajectoryScore;
+    }
+
+    public RiskTier getTrajectoryTier() {
+        return trajectoryTier;
+    }
+
+    public void setTrajectoryTier(RiskTier trajectoryTier) {
+        this.trajectoryTier = trajectoryTier;
+    }
+
+    public String getTrajectoryReason() {
+        return trajectoryReason;
+    }
+
+    public void setTrajectoryReason(String trajectoryReason) {
+        this.trajectoryReason = trajectoryReason;
+    }
+
+    public EscalationSource getEscalatedBy() {
+        return escalatedBy;
+    }
+
+    public void setEscalatedBy(EscalationSource escalatedBy) {
+        this.escalatedBy = escalatedBy;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -264,6 +323,10 @@ public class AuditLog {
         private UUID registeredToolId;
         private AuthorizationResult authorizationResult;
         private String authorizationReason;
+        private Integer trajectoryScore;
+        private RiskTier trajectoryTier;
+        private String trajectoryReason;
+        private EscalationSource escalatedBy;
         private Instant timestamp;
 
         public Builder id(UUID id) {
@@ -346,13 +409,33 @@ public class AuditLog {
             return this;
         }
 
+        public Builder trajectoryScore(Integer trajectoryScore) {
+            this.trajectoryScore = trajectoryScore;
+            return this;
+        }
+
+        public Builder trajectoryTier(RiskTier trajectoryTier) {
+            this.trajectoryTier = trajectoryTier;
+            return this;
+        }
+
+        public Builder trajectoryReason(String trajectoryReason) {
+            this.trajectoryReason = trajectoryReason;
+            return this;
+        }
+
+        public Builder escalatedBy(EscalationSource escalatedBy) {
+            this.escalatedBy = escalatedBy;
+            return this;
+        }
+
         public Builder timestamp(Instant timestamp) {
             this.timestamp = timestamp;
             return this;
         }
 
         public AuditLog build() {
-            return new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, timestamp);
+            return new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, trajectoryScore, trajectoryTier, trajectoryReason, escalatedBy, timestamp);
         }
     }
 }

@@ -4,6 +4,7 @@ import com.agentshield.audit.AuditService;
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.dto.EvaluationResponse;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.RiskTier;
 import com.agentshield.permission.AuthorizationDecision;
@@ -16,10 +17,14 @@ import com.agentshield.riskengine.RiskAssessment;
 import com.agentshield.riskengine.RiskAssessmentService;
 import com.agentshield.riskengine.RiskEngineClient;
 import com.agentshield.security.AuthenticatedAgent;
+import com.agentshield.trajectory.TrajectoryEvaluation;
+import com.agentshield.trajectory.TrajectoryEvent;
+import com.agentshield.trajectory.TrajectoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -54,11 +59,13 @@ public class GatewayService {
     private final DecisionEscalator decisionEscalator;
     private final RiskAssessmentService riskAssessmentService;
     private final ReviewRequestService reviewRequestService;
+    private final TrajectoryService trajectoryService;
 
     @Autowired
     public GatewayService(PermissionEngine permissionEngine, PolicyEngine policyEngine, AuditService auditService,
                           RiskEngineClient riskEngineClient, DecisionEscalator decisionEscalator,
-                          RiskAssessmentService riskAssessmentService, ReviewRequestService reviewRequestService) {
+                          RiskAssessmentService riskAssessmentService, ReviewRequestService reviewRequestService,
+                          TrajectoryService trajectoryService) {
         this.permissionEngine = permissionEngine;
         this.policyEngine = policyEngine;
         this.auditService = auditService;
@@ -66,6 +73,7 @@ public class GatewayService {
         this.decisionEscalator = decisionEscalator;
         this.riskAssessmentService = riskAssessmentService;
         this.reviewRequestService = reviewRequestService;
+        this.trajectoryService = trajectoryService;
     }
 
     public EvaluationResponse evaluateRequest(EvaluationRequest request, AuthenticatedAgent caller) {
@@ -98,23 +106,75 @@ public class GatewayService {
                 request.getAction(), request.getResource(), policyResult.getResourceSensitivity());
         riskAssessmentService.persist(requestId, riskAssessment, timestamp);
 
-        DecisionType finalDecision = decisionEscalator.combine(policyResult.getDecision(), riskAssessment.riskTier());
-        PolicyEvaluationResult finalResult = withEscalatedDecision(policyResult, finalDecision, riskAssessment);
+        DecisionType riskDecision = decisionEscalator.combine(policyResult.getDecision(), riskAssessment.riskTier());
+        PolicyEvaluationResult riskResult = withEscalatedDecision(policyResult, riskDecision, riskAssessment);
 
-        // 4. Audit the final (possibly escalated) decision
-        auditService.recordEvaluation(request, requestId, finalResult, authorization, timestamp);
+        // 3b. Trajectory analysis is a second, escalate-only signal over this session's recent history.
+        //     It only runs when the decision is not already DENY, and it never produces DENY.
+        //     Empty means not evaluated (no verified agent, or the history query failed). The decision is then unchanged.
+        Optional<TrajectoryEvaluation> trajectory = riskDecision == DecisionType.DENY
+                ? Optional.empty()
+                : trajectoryService.evaluate(requestId, request.getSessionId(), authorization.agentId(),
+                        TrajectoryEvent.candidate(timestamp, request.getAction(), request.getTool(),
+                                policyResult.getResourceSensitivity(), policyResult.getDecision()));
+        DecisionType finalDecision = trajectory
+                .map(t -> decisionEscalator.combineTrajectory(riskDecision, t.tier()))
+                .orElse(riskDecision);
+        PolicyEvaluationResult finalResult = withTrajectoryEscalation(riskResult, finalDecision, trajectory.orElse(null));
+
+        // 4. Audit the final (possibly escalated) decision, with its trajectory result and attribution
+        auditService.recordEvaluation(request, requestId, finalResult, authorization, timestamp,
+                trajectory.orElse(null), escalationSource(policyResult.getDecision(), riskDecision, finalDecision));
 
         // 5. Final decision REVIEW -> persist a human review request (Phase 3). ALLOW/DENY never do.
+        //    The Risk Engine's score and tier are passed unchanged. The review row stores the effective
+        //    values and the trajectory signal separately.
         UUID reviewRequestId = null;
         if (finalDecision == DecisionType.REVIEW) {
             ReviewRequest reviewRequest = reviewRequestService.createReviewRequest(requestId, request,
                     policyResult.getResourceSensitivity(), riskAssessment.riskScore(), riskAssessment.riskTier(),
-                    policyResult.getDecision(), finalResult.getReason(), timestamp);
+                    policyResult.getDecision(), finalResult.getReason(), timestamp, trajectory.orElse(null));
             reviewRequestId = reviewRequest.getId();
         }
 
         return buildResponse(requestId, request, finalResult, authorization,
                 riskAssessment.riskTier(), riskAssessment.engineAvailable(), reviewRequestId, timestamp);
+    }
+
+    /**
+     * Attributes the final decision to the signal that changed it. Each stage can only escalate:
+     * a change from the policy decision is the Risk Engine's; a change from an ALLOW to REVIEW
+     * after that is trajectory's. Any REVIEW or DENY that already existed is never attributed to
+     * trajectory.
+     */
+    static EscalationSource escalationSource(DecisionType policyDecision, DecisionType riskDecision,
+                                             DecisionType finalDecision) {
+        if (riskDecision != policyDecision) {
+            return EscalationSource.RISK_ENGINE;
+        }
+        if (riskDecision == DecisionType.ALLOW && finalDecision == DecisionType.REVIEW) {
+            return EscalationSource.TRAJECTORY;
+        }
+        return EscalationSource.NONE;
+    }
+
+    /**
+     * Records a trajectory escalation in the reason. The risk score is left unchanged, so the
+     * policy and Risk Engine values in the response stay as they were.
+     */
+    private PolicyEvaluationResult withTrajectoryEscalation(PolicyEvaluationResult base, DecisionType finalDecision,
+                                                             TrajectoryEvaluation trajectory) {
+        if (trajectory == null || finalDecision == base.getDecision()) {
+            return base;
+        }
+        String escalationNote = " Escalated to " + finalDecision + " by trajectory analysis (score "
+                + trajectory.score() + ", " + trajectory.tier() + "): " + trajectory.reason();
+        return PolicyEvaluationResult.builder()
+                .decision(finalDecision)
+                .reason(base.getReason() + escalationNote)
+                .riskScore(base.getRiskScore())
+                .resourceSensitivity(base.getResourceSensitivity())
+                .build();
     }
 
     private PolicyEvaluationResult withEscalatedDecision(PolicyEvaluationResult policyResult,

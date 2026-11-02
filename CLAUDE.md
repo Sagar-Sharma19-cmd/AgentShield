@@ -246,6 +246,11 @@ GatewayService
   |
   +--> DecisionEscalator     Escalate-only combination. Never grants access.
   |
+  +--> TrajectoryService     Session-history signal (last 10 audit rows, same session and
+  |       |                  verified agent). Deterministic, not ML. Escalates ALLOW -> REVIEW
+  |       |                  at HIGH/CRITICAL only. Never DENY. Kill switch:
+  |       |                  agentshield.trajectory.enabled (AGENTSHIELD_TRAJECTORY_ENABLED, default true).
+  |
   +--> ReviewRequestService  Only when the final decision is REVIEW.
   |
   +--> AuditService
@@ -290,9 +295,12 @@ IMPLEMENTED:
 - Audit read API (`GET /api/v1/audit/{requestId}`, `GET /api/v1/audit`, admin only)
 - Risk Engine: deterministic factor scoring service (`risk-engine/`) integrated into the gateway
   as an escalation-only signal, with fail-safe fallback and persistence to `risk_assessments`
+- Trajectory analysis (backend, M4.3): deterministic, escalate-only session-history signal with
+  per-row attribution (`audit_logs.escalated_by`) and a kill switch. Escalates an ALLOW to REVIEW only
+  at HIGH/CRITICAL. Never produces DENY. Failures are logged and leave the decision unchanged.
 - Human review workflow (backend): `review_requests` created on REVIEW; start, approve and reject
   endpoints under `/api/v1/reviews` (admin key; no notifications, no per-reviewer identity)
-- Flyway migrations
+- Flyway migrations V1–V9 (V7–V9 are the trajectory migrations; V10–V12 are reserved for M3.4 and not written)
 - PostgreSQL persistence
 - Backend unit tests
 - Backend integration tests
@@ -308,12 +316,13 @@ merged or released.
 NOT IMPLEMENTED / INCOMPLETE:
 
 - ML-based risk/anomaly detection (the Risk Engine is rule-based; there is no trained model)
-- Agent behaviour / trajectory analysis: NOT implemented. `session_id` is stored on each audit row,
-  but no code analyses sessions or sequences of requests
+- ML-based behaviour analysis and learned trajectory models: NOT implemented. Deterministic trajectory
+  analysis over the last 10 requests of a session is implemented (see the Trajectory section in
+  `docs/architecture.md`). It is not calibrated against labelled data, and no accuracy is claimed
 - Resource inventory, resource relationships and resource-impact / blast-radius analysis: design
   only (M3.4 Stage 0, `docs/resource-impact-design.md`). No tables, endpoints or gateway logic exist
 - Admin action audit trail: admin actions (agent, tool, permission, review changes) are not audited
-- Simulator
+- Simulator (M4.1 CI/CD simulator is not part of this branch; its tools are mocks and do not execute infrastructure operations)
 - Prompt injection defense
 - Indirect prompt injection defense
 - AI output secret detection
@@ -337,12 +346,13 @@ NOT IMPLEMENTED / INCOMPLETE:
 
 The Gateway currently follows:
 
-Authentication -> PermissionEngine -> PolicyEngine -> RiskEngine (ALLOW/REVIEW only) -> DecisionEscalator -> AuditService -> ReviewRequest (REVIEW only)
+Authentication -> PermissionEngine -> PolicyEngine -> RiskEngine (ALLOW/REVIEW only) -> DecisionEscalator -> TrajectoryService (not DENY only) -> AuditService -> ReviewRequest (REVIEW only)
 
 - PermissionEngine performs the documented deterministic authorization checks (agent identity, agent status, tool registry, AgentToolPermission grant, action authorization).
 - Authorization denial short-circuits PolicyEngine evaluation and records riskScore = 100.
 - PolicyEngine runs only for authorized requests and can only narrow an ALLOW toward REVIEW/DENY — it can never override a missing permission.
 - The Risk Engine is consulted only for an authorized request whose policy decision is ALLOW or REVIEW. It can only escalate that decision.
+- Trajectory analysis runs only when the decision is not already DENY. It can only escalate an ALLOW to REVIEW. It never produces DENY and never changes a REVIEW or DENY. The trajectory score is stored separately from the policy and Risk Engine scores.
 
 ---
 
@@ -592,7 +602,7 @@ Avoid exposing unnecessary sensitive information in responses.
 
 # 17. RISK SCORING
 
-Two deterministic components exist. Neither is a trained ML model.
+Three deterministic components exist. None is a trained ML model.
 
 1. `PolicyEngine` (Java, `policy/PolicyEngine.java`): substring rules against the resource and
    action strings, each mapped to a fixed decision and risk score. Examples:
@@ -608,8 +618,14 @@ Two deterministic components exist. Neither is a trained ML model.
    (READ 5, WRITE 10, DELETE 30, EXECUTE 30, EXTERNAL_REQUEST 25), and a compounding term (+20
    for DELETE or EXECUTE with a production/admin match). Tiers: LOW 0–29, MEDIUM 30–59,
    HIGH 60–79, CRITICAL 80–100. It is a weighted rule model, not a trained model.
+3. `TrajectoryEvaluator` (Java, `trajectory/`): session-history factors over the last 10 audit rows
+   for the same session and verified agent. DENIAL_DENSITY (10 per DENY, cap 30), SENSITIVE_READ_THEN_EGRESS
+   (+40), ACTION_ESCALATION (+20), TOOL_FAN_OUT (+15), BURST_RATE (+15). Capped at 100. Tiers use the same
+   bands as the Risk Engine. It is stored as `trajectory_score`, separate from `risk_score`. It is an
+   escalate-only signal (ALLOW to REVIEW at HIGH/CRITICAL). It is not ML. Its points and thresholds are
+   fixed constants that have not been calibrated.
 
-Do not describe either component as ML, and do not claim accuracy figures for either.
+Do not describe any component as ML, and do not claim accuracy figures for either.
 
 Future risk scoring (not yet implemented) should be explainable. Whenever possible,
 identify:

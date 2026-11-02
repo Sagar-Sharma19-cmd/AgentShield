@@ -43,4 +43,23 @@ public class DecisionEscalator {
         // LOW or MEDIUM: risk does not change an existing ALLOW or REVIEW.
         return existingDecision;
     }
+
+    /**
+     * Second, independent escalation signal from trajectory analysis (session history).
+     *
+     * Trajectory can only ever escalate an ALLOW to REVIEW, and only at HIGH or CRITICAL. It
+     * never produces DENY and never downgrades. A decision that already reached DENY or REVIEW
+     * stays as it is. Heuristic history patterns must not block on their own.
+     *
+     * @param trajectoryTier may be {@code null} when trajectory was not evaluated; the existing decision is returned unchanged
+     */
+    public DecisionType combineTrajectory(DecisionType existingDecision, RiskTier trajectoryTier) {
+        if (existingDecision != DecisionType.ALLOW || trajectoryTier == null) {
+            return existingDecision;
+        }
+        if (trajectoryTier == RiskTier.HIGH || trajectoryTier == RiskTier.CRITICAL) {
+            return DecisionType.REVIEW;
+        }
+        return existingDecision;
+    }
 }

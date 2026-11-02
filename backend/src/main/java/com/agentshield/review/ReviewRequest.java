@@ -87,13 +87,27 @@ public class ReviewRequest {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
+    /** Trajectory score (0-100); null when trajectory analysis did not run. Additive (V8). */
+    @Column(name = "trajectory_score")
+    private Integer trajectoryScore;
+
+    /** Trajectory tier; null when trajectory analysis did not run. Additive (V8). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "trajectory_tier", length = 20)
+    private RiskTier trajectoryTier;
+
+    /** Human-readable trajectory reasons; null when trajectory analysis did not run. Additive (V8). */
+    @Column(name = "trajectory_reason", length = 1000)
+    private String trajectoryReason;
+
     public ReviewRequest() {
     }
 
     public ReviewRequest(UUID id, UUID requestId, String agentId, String sessionId, String tool, ActionType action,
                           String resource, ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
                           DecisionType originalDecision, ReviewStatus status, String reason, Instant createdAt,
-                          Instant updatedAt, Instant reviewedAt) {
+                          Instant updatedAt, Instant reviewedAt, Integer trajectoryScore, RiskTier trajectoryTier,
+                          String trajectoryReason) {
         this.id = id;
         this.requestId = requestId;
         this.agentId = agentId;
@@ -110,6 +124,9 @@ public class ReviewRequest {
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.reviewedAt = reviewedAt;
+        this.trajectoryScore = trajectoryScore;
+        this.trajectoryTier = trajectoryTier;
+        this.trajectoryReason = trajectoryReason;
     }
 
     public UUID getId() {
@@ -240,6 +257,30 @@ public class ReviewRequest {
         this.reviewedAt = reviewedAt;
     }
 
+    public Integer getTrajectoryScore() {
+        return trajectoryScore;
+    }
+
+    public void setTrajectoryScore(Integer trajectoryScore) {
+        this.trajectoryScore = trajectoryScore;
+    }
+
+    public RiskTier getTrajectoryTier() {
+        return trajectoryTier;
+    }
+
+    public void setTrajectoryTier(RiskTier trajectoryTier) {
+        this.trajectoryTier = trajectoryTier;
+    }
+
+    public String getTrajectoryReason() {
+        return trajectoryReason;
+    }
+
+    public void setTrajectoryReason(String trajectoryReason) {
+        this.trajectoryReason = trajectoryReason;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -261,6 +302,9 @@ public class ReviewRequest {
         private Instant createdAt;
         private Instant updatedAt;
         private Instant reviewedAt;
+        private Integer trajectoryScore;
+        private RiskTier trajectoryTier;
+        private String trajectoryReason;
 
         public Builder id(UUID id) {
             this.id = id;
@@ -342,9 +386,25 @@ public class ReviewRequest {
             return this;
         }
 
+        public Builder trajectoryScore(Integer trajectoryScore) {
+            this.trajectoryScore = trajectoryScore;
+            return this;
+        }
+
+        public Builder trajectoryTier(RiskTier trajectoryTier) {
+            this.trajectoryTier = trajectoryTier;
+            return this;
+        }
+
+        public Builder trajectoryReason(String trajectoryReason) {
+            this.trajectoryReason = trajectoryReason;
+            return this;
+        }
+
         public ReviewRequest build() {
             return new ReviewRequest(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity,
-                    riskScore, riskTier, originalDecision, status, reason, createdAt, updatedAt, reviewedAt);
+                    riskScore, riskTier, originalDecision, status, reason, createdAt, updatedAt, reviewedAt,
+                    trajectoryScore, trajectoryTier, trajectoryReason);
         }
     }
 }

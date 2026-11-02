@@ -25,6 +25,9 @@ export type DecisionType = "ALLOW" | "REVIEW" | "DENY";
 
 export type RiskTier = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
+/** What changed the decision after the policy stage. Null on audit rows written before V9. */
+export type EscalationSource = "NONE" | "RISK_ENGINE" | "TRAJECTORY";
+
 export type AuthorizationResult =
   | "AUTHORIZED"
   | "UNAUTHORIZED"
@@ -162,6 +165,13 @@ export interface ReviewRequestResponse {
   originalDecision: DecisionType;
   status: ReviewStatus;
   reason: string;
+  /**
+   * Trajectory signal alone. Null when trajectory analysis did not run. The riskScore/riskTier above are the
+   * effective values: the higher of the Risk Engine and trajectory assessments.
+   */
+  trajectoryScore: number | null;
+  trajectoryTier: RiskTier | null;
+  trajectoryReason: string | null;
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
@@ -188,6 +198,12 @@ export interface AuditLogResponse {
   registeredToolId: string | null;
   authorizationResult: AuthorizationResult;
   authorizationReason: string;
+  /** Trajectory signal, 0-100. Null when trajectory analysis did not run for this request. */
+  trajectoryScore: number | null;
+  trajectoryTier: RiskTier | null;
+  trajectoryReason: string | null;
+  /** Null on rows written before escalation tracking existed (not recorded). */
+  escalatedBy: EscalationSource | null;
   timestamp: string;
 }
 

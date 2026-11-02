@@ -1,9 +1,10 @@
-import type { ActionType, AuthorizationResult, DecisionType } from "@/types/api";
+import type { ActionType, AuthorizationResult, DecisionType, EscalationSource, RiskTier } from "@/types/api";
+import { parseEscalationSource, parseRiskTier, parseTrajectoryReason, parseTrajectoryScore } from "@/lib/trajectory/model";
 
 /**
  * Decisions that raise a security alert. ALLOW is routine traffic and never alerts.
- * HIGH and CRITICAL risk are NOT alert triggers: the audit API does not return a risk tier
- * (only the PolicyEngine's numeric riskScore), so tier-based alerting is not possible yet.
+ * Risk tier is NOT an alert trigger, and no tier is derived from the policy score. The only tier
+ * shown is the trajectory tier, and it is displayed but does not change which alerts exist.
  */
 export const ALERT_DECISIONS = ["DENY", "REVIEW"] as const satisfies readonly DecisionType[];
 export type AlertDecision = (typeof ALERT_DECISIONS)[number];
@@ -24,9 +25,15 @@ export interface SecurityAlert {
   action: ActionType | null;
   resource: string;
   reason: string;
-  /** PolicyEngine score, 0-100. Not a Risk Engine tier. */
+  /** PolicyEngine score, 0-100. Not a Risk Engine tier, and not a trajectory score. */
   policyRiskScore: number | null;
   authorizationResult: AuthorizationResult | null;
+  /** Trajectory signal, 0-100. Null when trajectory was not evaluated or the row is legacy. */
+  trajectoryScore: number | null;
+  trajectoryTier: RiskTier | null;
+  trajectoryReason: string | null;
+  /** Null when not recorded (legacy row). TRAJECTORY means trajectory raised an ALLOW to REVIEW. */
+  escalatedBy: EscalationSource | null;
 }
 
 const ALERT_DECISION_SET: ReadonlySet<string> = new Set(ALERT_DECISIONS);
@@ -69,6 +76,10 @@ export function toAlert(raw: unknown): SecurityAlert | null {
     reason: asString(row.reason),
     policyRiskScore: asFiniteNumber(row.riskScore),
     authorizationResult: authorizationResult === "" ? null : (authorizationResult as AuthorizationResult),
+    trajectoryScore: parseTrajectoryScore(row.trajectoryScore),
+    trajectoryTier: parseRiskTier(row.trajectoryTier),
+    trajectoryReason: parseTrajectoryReason(row.trajectoryReason),
+    escalatedBy: parseEscalationSource(row.escalatedBy),
   };
 }
 

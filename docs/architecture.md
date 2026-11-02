@@ -53,7 +53,12 @@ Milestone 1C makes the **WHO** verifiable: every gateway request must be authent
 │   │  only — see below)    │               │                   │
 │   └──────────┬────────────┘               │                   │
 │              ▼                            │                   │
-│   DecisionEscalator.combine(…)            │                   │
+│   DecisionEscalator.combine(…)            │
+│              │                            │
+│              ▼                            │
+│   TrajectoryService (escalate-only,       │
+│    ALLOW→REVIEW at HIGH/CRITICAL; kill    │
+│    switch agentshield.trajectory.enabled) │                   │
 │      ALLOW / REVIEW / DENY                │                   │
 │              └──────────────┬─────────────┘                   │
 │                             ▼                                 │
@@ -282,12 +287,14 @@ Authentication happens first, in the Spring Security filter. Authorization is th
 | 9 | Policy: dangerous resource/action (secrets, prod DELETE) | `AUTHORIZED` | **DENY** (Risk Engine not consulted) |
 | 10 | Policy: potentially risky (non-prod DELETE, EXECUTE, EXTERNAL_REQUEST) | `AUTHORIZED` | **REVIEW** → Risk Engine may escalate to DENY |
 | 11 | Otherwise | `AUTHORIZED` | **ALLOW** → Risk Engine may escalate to REVIEW/DENY |
-| 12 | Final decision (after risk escalation) is REVIEW | `AUTHORIZED` | A `review_requests` row is created (PENDING) — see [Human Review Workflow](#human-review-workflow) |
+| 12 | Final decision is not DENY: trajectory tier HIGH/CRITICAL on an ALLOW | `AUTHORIZED` | **ALLOW → REVIEW** (trajectory escalation; never DENY). See [Trajectory Analysis](#trajectory-analysis) |
+| 13 | Final decision (after risk and trajectory escalation) is REVIEW | `AUTHORIZED` | A `review_requests` row is created (PENDING) — see [Human Review Workflow](#human-review-workflow) |
 
 Key properties:
 
 - **The PolicyEngine is never consulted for unauthorized requests**, so it cannot override a missing permission. It can only tighten (REVIEW / DENY) what authorization already permitted.
 - **The Risk Engine is never consulted after a DENY** (from either PermissionEngine or PolicyEngine) — see [Risk Engine Integration](#risk-engine-integration). It can only escalate an ALLOW or REVIEW, never grant or downgrade.
+- **Trajectory analysis is also escalate-only.** It runs after the Risk Engine, only when the decision is not already DENY. It can change an ALLOW to REVIEW and nothing else. It never produces DENY and never downgrades a decision. See [Trajectory Analysis](#trajectory-analysis).
 - **Authorization denials** are returned with `riskScore = 100` and recorded with `resourceSensitivity = CRITICAL` (fail-closed maximum). These values describe the authorization failure; the resource itself was not classified.
 - Every response includes `authorizationResult`, and every decision — authorization, policy, or risk-escalated — is written to `audit_logs`.
 - **Impersonation is blocked and audited:** an agent that authenticates with its own key but claims another agent's `agentId` gets `AGENT_IDENTITY_MISMATCH`. It can never borrow the other agent's permissions.
@@ -341,8 +348,127 @@ final decision ── audited (audit_logs, unchanged schema) ── risk assessm
   `risk_assessments` (id, request_id, risk_score, risk_tier, factors as JSON text, reason,
   engine_available, created_at), correlated with the `audit_logs` row for the same request via
   `request_id`. The factor breakdown lives only here, not duplicated into `audit_logs`.
-- **Out of scope for this integration:** ML/anomaly detection, trajectory/session analysis,
-  caching, retries, and async processing — all future work, not implemented.
+- **Out of scope for this integration:** ML/anomaly detection, caching, retries, and async
+  processing — all future work, not implemented. Session-history analysis is a separate gateway
+  stage (see [Trajectory Analysis](#trajectory-analysis)), not part of the Risk Engine.
+
+## Trajectory Analysis
+
+Trajectory analysis looks at a session's recent history and raises the decision when the sequence
+of requests looks like a risky pattern. It is a deterministic, rule-based signal implemented in
+`backend/.../trajectory/` (`TrajectoryEvaluator`, `TrajectoryService`). It is **not** machine
+learning, and its thresholds and points are fixed constants, not values tuned on data.
+
+**Inputs.** For each gateway evaluation that reaches this stage, `TrajectoryService` reads the
+most recent **10** `audit_logs` rows (`HISTORY_WINDOW = 10`) with the same `session_id` and the same
+`registered_agent_id`, newest first. The second filter uses the **authenticated** agent, not the
+`agentId` claimed in the body, so one agent's requests cannot be counted in another agent's history.
+The lookup is served by the V7 index `idx_audit_logs_session_agent_timestamp`. The candidate is the
+current request (action, tool, resource sensitivity, and the policy decision).
+
+**Factors.** Each factor is independent. The score is the sum of triggered factors, capped at 100.
+
+| Factor | Condition | Points |
+|--------|-----------|--------|
+| `DENIAL_DENSITY` | At least 2 prior DENY decisions in the window | 10 per denial, capped at 30 |
+| `SENSITIVE_READ_THEN_EGRESS` | Candidate is `EXTERNAL_REQUEST` and the window contains a READ of a SENSITIVE or CRITICAL resource | 40 |
+| `ACTION_ESCALATION` | Candidate is DELETE, EXECUTE or EXTERNAL_REQUEST, the window is non-empty, and no earlier event in the window was DELETE, EXECUTE or EXTERNAL_REQUEST | 20 |
+| `TOOL_FAN_OUT` | At least 4 distinct tools across the window plus the candidate | 15 |
+| `BURST_RATE` | At least 5 window events in the 60 seconds before the candidate | 15 |
+
+**Tiers.** LOW 0–29, MEDIUM 30–59, HIGH 60–79, CRITICAL 80–100 (`trajectory_tier` uses the same
+labels as the Risk Engine, but it is a separate score and is stored in separate columns).
+
+**Decision rule (escalate-only).** `DecisionEscalator.combineTrajectory` changes a decision only when
+all of the following are true:
+
+- the decision before trajectory is ALLOW, and
+- the trajectory tier is HIGH or CRITICAL.
+
+The result is REVIEW. Trajectory never produces DENY, never changes a REVIEW or DENY, and never changes
+a DENY back. The policy and risk scores are not modified: `riskScore` on the response and in the audit
+row stays what PolicyEngine and the Risk Engine computed. The trajectory score is stored separately.
+
+**Where it does not run.**
+
+- The decision is already DENY (from authorization, policy, or the Risk Engine): trajectory is skipped
+  and recorded as not evaluated.
+- No verified registered agent: skipped and recorded as not evaluated.
+- Kill switch off: skipped, with no history read.
+
+**Attribution (`audit_logs.escalated_by`).** Each audit row records which stage changed the decision:
+
+| Value | Meaning |
+|-------|---------|
+| `NONE` | Nothing changed the decision after the policy stage. A REVIEW or DENY that already existed is recorded as `NONE` and is never attributed to trajectory. |
+| `RISK_ENGINE` | The Risk Engine changed the decision. |
+| `TRAJECTORY` | Trajectory changed an ALLOW to REVIEW. Requires a non-null `trajectory_tier` (a database CHECK enforces this). |
+| `NULL` | Not recorded. The row was written before V9. This is not the same as `NONE`. |
+
+**Storage.** `audit_logs` has `trajectory_score`, `trajectory_tier`, `trajectory_reason` and
+`escalated_by` (V9). `review_requests` has `trajectory_score`, `trajectory_tier` and
+`trajectory_reason` (V8). A NULL trajectory field means "not evaluated", and a score of 0 means
+"evaluated, no signal". The two are different.
+
+**Failure handling.** A failure in the history lookup or the evaluator is caught and logged at ERROR
+with the `requestId`. The request is recorded as not evaluated, and the existing decision is kept. Only
+`RuntimeException` is caught. `Error`, including fatal JVM errors, is never swallowed, so a fatal error
+fails the request rather than producing a silent decision.
+
+**Kill switch.** `agentshield.trajectory.enabled`, set from the environment variable
+`AGENTSHIELD_TRAJECTORY_ENABLED`. The default is `true`.
+
+- `true` (default): trajectory analysis runs as described above.
+- `false`: `TrajectoryService.evaluate` returns "not evaluated" immediately. It performs no history
+  read and no evaluation. Decisions are exactly what they would be without trajectory analysis, so
+  existing decisions are preserved. Audit rows record NULL trajectory fields, and `escalated_by` is
+  `NONE` or `RISK_ENGINE`.
+
+**Limitations.**
+
+- **Cooperative enforcement.** The gateway is the only path AgentShield controls. A tool that the
+  agent calls directly, without going through `/api/v1/gateway/evaluate`, is not seen by trajectory
+  analysis or by any other gateway check.
+- **Bounded window.** Only the last 10 audit rows for the session are considered. Older behaviour
+  is invisible, and a sequence longer than 10 requests can be missed.
+- **Client-supplied session identity.** `sessionId` comes from the request body. Each agent chooses
+  its own sessions, so an agent that rotates session IDs starts with an empty history. This is
+  per-agent containment, not an identity guarantee. History is scoped to the verified agent, so
+  other agents' sessions are never read.
+- **Deterministic rules, not ML.** The factors, points and thresholds are fixed constants. They have
+  not been calibrated against labelled data, and no accuracy or false-positive rate is claimed.
+- **Concurrency.** Requests in the same session that run at the same time may not see each other's
+  audit rows, so their history can be incomplete.
+- **Escalation only.** Trajectory can raise an ALLOW to REVIEW, which a human then decides. It cannot
+  block a request on its own.
+- **Audit coverage.** Requests rejected with 401 are not audited (see [Audit](#audit)), so they never
+  enter a session's history.
+
+### Verification
+
+- **Unit:** `TrajectoryEvaluatorTest` (each factor, tier boundaries, cap at 100), `EscalationSourceTest`
+  (attribution rules), `TrajectoryServiceTest` (failure handling: lookup and evaluator failures are caught,
+  `Error` propagates).
+- **Gateway:** `TrajectoryAttributionGatewayTest`, `TrajectoryKillSwitchGatewayTest`,
+  `TrajectoryFailureGatewayTest`, `TrajectoryKillSwitchTest`.
+- **Persistence:** `AuditTrajectoryConstraintTest` and `ReviewTrajectoryConstraintTest` exercise the V8 and
+  V9 CHECK constraints with raw SQL. `AuditSessionHistoryRepositoryTest` checks session and agent isolation
+  and the V7 index. `DatabaseMigrationTest` checks that V1–V9 apply and that none are pending.
+- **API:** `AuditTrajectoryApiTest` and `ReviewTrajectoryApiTest` check the serialized fields and the
+  null-versus-zero distinction.
+- **Frontend:** `frontend/src/lib/trajectory/model.test.ts` and `frontend/src/lib/alerts/model.test.ts`
+  cover attribution, legacy NULL rows and invalid values. Component rendering was checked in a browser
+  against mocked API data, not by unit tests.
+
+Most backend tests run on the in-memory H2 profile. The PostgreSQL-only test
+`AgentLifecycleConcurrencyIntegrationTest` is skipped unless `AGENTSHIELD_PG_TEST_URL` is set. To run the
+backend suite against PostgreSQL, point the Spring datasource (`SPRING_DATASOURCE_URL`, `_USERNAME`,
+`_PASSWORD`, `_DRIVER_CLASS_NAME`, `SPRING_JPA_DATABASE_PLATFORM`, `SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT`)
+at a disposable database, and set `AGENTSHIELD_PG_TEST_URL`, `AGENTSHIELD_PG_TEST_USER` and
+`AGENTSHIELD_PG_TEST_PASSWORD`. `PostgresTestDatabaseGuard` refuses any database whose name does not end
+in `_test`. Each Spring context opens its own connection pool, so a PostgreSQL server with the default
+`max_connections` of 100 can refuse connections during a full run. Raise `max_connections` on the
+disposable server before running the full suite.
 
 ## Human Review Workflow
 
@@ -390,11 +516,13 @@ GatewayService: final decision (after DecisionEscalator)
   that triggered the review; `risk_assessments` records the Risk Engine's factor breakdown that
   may have driven the escalation; `review_requests` records the human workflow's own lifecycle
   on top of that already-decided `REVIEW`. None of the three duplicates the others' detail.
-- **`riskScore`/`riskTier` on `ReviewRequest`** are the Risk Engine's own assessment (the same
-  values returned on `EvaluationResponse.riskTier`), not PolicyEngine's static score — so a
-  human reviewer sees one internally consistent risk signal, rather than the PolicyEngine/
-  Risk-Engine score split that `EvaluationResponse.riskScore` intentionally preserves for API
-  backward compatibility (see [Risk Engine Integration](#risk-engine-integration)).
+- **`riskScore`/`riskTier` on `ReviewRequest`** are the **effective** values: the higher of the
+  Risk Engine assessment and the trajectory assessment (`max` of the scores, the higher tier). They
+  are not PolicyEngine's static score, so a reviewer sees one risk signal. A trajectory escalation
+  can therefore raise a review's stored score above the Risk Engine's own score. The Risk Engine's
+  own record stays in `risk_assessments`, and the trajectory signal is stored separately in
+  `trajectory_score`, `trajectory_tier` and `trajectory_reason`, so the reviewer can see what caused
+  the escalation (see [Trajectory Analysis](#trajectory-analysis)).
   `originalDecision` is the PolicyEngine decision *before* risk escalation (`ALLOW` or
   `REVIEW` — never `DENY`), so a reviewer can tell at a glance whether this item reached REVIEW
   by direct policy rule or by risk escalation of an otherwise-ALLOWed action.
@@ -420,6 +548,8 @@ Each gateway evaluation writes one `audit_logs` row containing the original requ
 | `registered_tool_id` | UUID of the resolved tool (null if unknown or not reached) |
 | `authorization_result` | `AuthorizationResult` value |
 | `authorization_reason` | Human-readable reason from `PermissionEngine` |
+| `trajectory_score` / `trajectory_tier` / `trajectory_reason` | Trajectory signal (V9). NULL means not evaluated. See [Trajectory Analysis](#trajectory-analysis) |
+| `escalated_by` | `NONE`, `RISK_ENGINE` or `TRAJECTORY` (V9). NULL means not recorded (rows written before V9) |
 
 The new columns are nullable, so rows written before Milestone 1B remain valid. No credentials or secrets are stored.
 
@@ -491,6 +621,11 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 | V4 | `V4__add_risk_assessments.sql` | New `risk_assessments` table (Risk Engine Phase 2 integration): `id`, `request_id`, `risk_score`, `risk_tier`, `factors` (JSON text), `reason`, `engine_available`, `created_at`, plus an index on `request_id` |
 | V5 | `V5__add_review_requests.sql` | New `review_requests` table (Human Review Workflow, Phase 3): `id`, `request_id` (unique), `agent_id`, `session_id`, `tool`, `action`, `resource`, `resource_sensitivity`, `risk_score`, `risk_tier`, `original_decision`, `status`, `reason`, `created_at`, `updated_at`, `reviewed_at`, plus indexes on `status` and `created_at` |
 | V6 | `V6__add_audit_logs_indexes.sql` | Audit Read API (Phase 4): adds indexes on `audit_logs.request_id`, `audit_logs.agent_id` and `audit_logs.timestamp` — no schema/column changes, `audit_logs` previously had no indexes beyond its primary key |
+| V7 | `V7__add_audit_logs_session_agent_index.sql` | Trajectory analysis (M4.3): composite index `idx_audit_logs_session_agent_timestamp` on `audit_logs (session_id, registered_agent_id, timestamp)` for the 10-row history lookup. Additive only |
+| V8 | `V8__add_review_request_trajectory.sql` | Trajectory analysis: `review_requests.trajectory_score` (0–100 CHECK), `trajectory_tier` (CHECK), `trajectory_reason` (VARCHAR 1000). All NULL on existing rows |
+| V9 | `V9__add_audit_logs_trajectory.sql` | Trajectory analysis: `audit_logs.trajectory_score`, `trajectory_tier`, `trajectory_reason`, `escalated_by` with CHECKs. Also a CHECK that a `TRAJECTORY` escalation has a non-null tier. Existing rows keep NULL in all four columns |
+
+- **Reserved:** V10–V12 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0). They are design only, and no migration file exists for them yet.
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.
@@ -526,6 +661,12 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 - No retries or caching around the Risk Engine call; a failure always takes the fallback path
   rather than retrying (a retry could exceed the timeout budget).
 - Risk Engine integration runs synchronously in the request path; no async processing or queue.
+- Trajectory analysis is cooperative and deterministic. It sees only requests that reach the gateway,
+  uses the last 10 audit rows per session, trusts the client-supplied `sessionId` within an
+  authenticated agent, and is not ML. It can escalate ALLOW to REVIEW and cannot block by itself. See
+  [Trajectory Analysis](#trajectory-analysis).
+- The live alert feed (M4.2, frontend) polls `GET /api/v1/audit` every 10 seconds. It is pull-based,
+  not push-based, so alerts can be up to one poll interval late.
 - The human review workflow (Phase 3) has no notifications, review queue UI, reviewer identity/
   RBAC (it reuses the single shared admin key), SLA/expiry on pending reviews, or automatic
   action on approval/rejection — approving a review records a human decision but does not
@@ -540,9 +681,9 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 2. Per-operator admin identities with RBAC (e.g. OIDC for humans), replacing the shared admin key.
 3. Key expiry and overlapping rotation (two valid keys during a grace period); optional mTLS for agents.
 4. Resource-scoped permissions (path / pattern constraints per grant).
-5. Trajectory / session analysis and ML-based anomaly detection as additional, explainable-adjacent
-   Risk Engine factors (deterministic Risk Engine gateway integration is implemented — see
-   [Risk Engine Integration](#risk-engine-integration)).
+5. ML-based anomaly detection. Deterministic trajectory / session analysis is implemented as a
+   separate gateway stage (see [Trajectory Analysis](#trajectory-analysis)). Any ML model, and
+   calibration of the trajectory thresholds against labelled data, remain future work.
 6. Review queue UI and the frontend dashboard, built on the Phase 3 `review_requests` data
    (persistent human review workflow — PENDING/IN_REVIEW/APPROVED/REJECTED — is implemented;
    see [Human Review Workflow](#human-review-workflow)); notifications and reviewer RBAC.

@@ -7,6 +7,7 @@ import com.agentshield.model.DecisionType;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
+import com.agentshield.trajectory.TrajectoryEvaluation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,22 @@ public class ReviewRequestService {
     public ReviewRequest createReviewRequest(UUID requestId, EvaluationRequest request,
                                               ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
                                               DecisionType originalDecision, String reason, Instant timestamp) {
+        return createReviewRequest(requestId, request, resourceSensitivity, riskScore, riskTier, originalDecision,
+                reason, timestamp, null);
+    }
+
+    /**
+     * As above, plus the trajectory signal. {@code riskScore}/{@code riskTier} are the Risk Engine's
+     * values. The stored risk_score/risk_tier are the EFFECTIVE values: the higher of the Risk Engine
+     * and trajectory assessments. The Risk Engine's own record stays in risk_assessments. The
+     * trajectory score, tier and reason are stored separately. A null trajectory means it was not
+     * evaluated.
+     */
+    @Transactional
+    public ReviewRequest createReviewRequest(UUID requestId, EvaluationRequest request,
+                                              ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
+                                              DecisionType originalDecision, String reason, Instant timestamp,
+                                              TrajectoryEvaluation trajectory) {
         return reviewRequestRepository.findByRequestId(requestId)
                 .orElseGet(() -> {
                     ReviewRequest reviewRequest = ReviewRequest.builder()
@@ -54,16 +71,23 @@ public class ReviewRequestService {
                             .action(request.getAction())
                             .resource(request.getResource())
                             .resourceSensitivity(resourceSensitivity)
-                            .riskScore(riskScore)
-                            .riskTier(riskTier)
+                            .riskScore(trajectory == null ? riskScore : Math.max(riskScore, trajectory.score()))
+                            .riskTier(trajectory == null ? riskTier : higherTier(riskTier, trajectory.tier()))
                             .originalDecision(originalDecision)
                             .status(ReviewStatus.PENDING)
                             .reason(reason)
+                            .trajectoryScore(trajectory == null ? null : trajectory.score())
+                            .trajectoryTier(trajectory == null ? null : trajectory.tier())
+                            .trajectoryReason(trajectory == null ? null : trajectory.reason())
                             .createdAt(timestamp)
                             .updatedAt(timestamp)
                             .build();
                     return reviewRequestRepository.save(reviewRequest);
                 });
+    }
+
+    private static RiskTier higherTier(RiskTier a, RiskTier b) {
+        return a.compareTo(b) >= 0 ? a : b;
     }
 
     @Transactional(readOnly = true)

@@ -26,7 +26,7 @@ AgentShield Security Gateway
     ├─ Permission Engine   (is this agent explicitly allowed this action on this tool?)
     ├─ Policy Evaluation   (is this resource/action dangerous?)
     ├─ Risk Evaluation     (deterministic score; escalation only)     [implemented]
-    └─ Behaviour Analysis  (does this fit the agent's normal pattern?) [planned]
+    └─ Trajectory Analysis (session history; ALLOW→REVIEW only)       [implemented, branch]
     │
     ▼
  ALLOW / REVIEW / DENY  ──►  Audit log (PostgreSQL)
@@ -49,8 +49,12 @@ Authentication runs first, authorization runs **before** policy, and policy can 
    - dangerous resource/action (secrets, production DELETE) → **DENY**
    - potentially risky (non-production DELETE, EXECUTE, external requests) → **REVIEW**
    - otherwise → **ALLOW**
+5. Final decision is not DENY → **Trajectory analysis**: a deterministic session-history signal from the
+   last 10 requests of the same session. It can only change an ALLOW to **REVIEW**, and only at HIGH or
+   CRITICAL tier. It never produces DENY. It is not machine learning.
 
-Every decision is audited with the agent, tool, authorization result and reason.
+Every decision is audited with the agent, tool, authorization result and reason. Each audit row also
+records the trajectory signal and which stage (`NONE`, `RISK_ENGINE` or `TRAJECTORY`) changed the decision.
 See [`docs/architecture.md`](docs/architecture.md) for the full model.
 
 ---
@@ -125,7 +129,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 3 | ✅ Complete | Risk engine — deterministic Python/FastAPI scoring service, integrated into the Spring Boot gateway as an escalation-only risk signal |
 | Phase 4 | 🔲 In progress (branch) | Frontend console — Next.js workspaces (Dashboard, Reviews, Agents, Activity) exist on `feature/frontend` and are not yet merged to `main` |
 | Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
-| Phase 6 | 🔲 Planned | Behaviour analysis and trajectory evaluation |
+| Phase 6 | 🟡 Implemented on `feature/trajectory-integration` (not merged) | Deterministic trajectory analysis over the last 10 requests of a session, escalate-only, with a kill switch. Not ML, not calibrated against labelled data |
 | Phase 7 | 🔲 Planned | Full Docker Compose local deployment |
 
 ---
@@ -155,6 +159,7 @@ The backend **refuses to start** without two secrets (each ≥ 32 characters), s
 |----------|---------|
 | `AGENTSHIELD_API_KEY_PEPPER` | Server-side key used to HMAC agent API keys before storage. Changing it invalidates all agent keys. |
 | `AGENTSHIELD_ADMIN_API_KEY` | Value required in the `X-Admin-API-Key` header for admin APIs |
+| `AGENTSHIELD_TRAJECTORY_ENABLED` | Optional. Trajectory analysis kill switch, default `true`. `false` skips trajectory evaluation; existing decisions are unchanged by it (see [Trajectory Analysis](docs/architecture.md#trajectory-analysis)) |
 
 ```bash
 # Current: PostgreSQL in Docker + backend via Maven
@@ -203,10 +208,12 @@ docker compose up --build
 
 ## Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — System architecture overview
+- [`docs/architecture.md`](docs/architecture.md) — System architecture overview (including Trajectory Analysis)
 - [`docs/threat-model.md`](docs/threat-model.md) — Threat model and attack scenarios
 - [`docs/api-design.md`](docs/api-design.md) — REST API contract
 - [`docs/risk-engine.md`](docs/risk-engine.md) — Risk scoring design
+- [`docs/product-requirements.md`](docs/product-requirements.md) — Product requirements and status
+- [`docs/resource-impact-design.md`](docs/resource-impact-design.md) — Resource-impact design (design only, not implemented)
 - [`docs/research-notes.md`](docs/research-notes.md) — Research references and notes
 
 ---

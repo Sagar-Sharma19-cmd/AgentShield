@@ -31,4 +31,10 @@ public interface AuditRepository extends JpaRepository<AuditLog, UUID>, JpaSpeci
 
     /** One audit row is written per gateway request — see GatewayService.evaluateRequest. */
     Optional<AuditLog> findByRequestId(UUID requestId);
+
+    /**
+     * The 10 most recent audit rows for one session, scoped to one verified agent (newest first).
+     * Served by idx_audit_logs_session_agent_timestamp (V7). Used by TrajectoryService.
+     */
+    List<AuditLog> findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(String sessionId, UUID registeredAgentId);
 }

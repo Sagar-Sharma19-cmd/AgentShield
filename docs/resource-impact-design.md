@@ -168,7 +168,7 @@ the simulator plan. The classification below was checked against the contract.
 
 ## 4. Resource inventory model
 
-Planned table `resources` (Flyway V7, not yet written):
+Planned table `resources` (Flyway V10, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -192,7 +192,7 @@ inventoried.
 
 ## 5. Resource relationship model
 
-Planned table `resource_relationships` (Flyway V8, not yet written):
+Planned table `resource_relationships` (Flyway V11, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -437,7 +437,7 @@ be updated with the endpoints, not before.
 
 ## 10. Persistence and audit correlation
 
-### 10.1 `impact_assessments` (planned, Flyway V9)
+### 10.1 `impact_assessments` (planned, Flyway V12)
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -474,9 +474,15 @@ This is listed as a risk (section 13).
 
 | Migration | Content | Dependency |
 |---|---|---|
-| V7 | `resources` table, its unique constraint and indexes | none |
-| V8 | `resource_relationships` table, constraints and indexes | V7 |
-| V9 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
+| V10 | `resources` table, its unique constraint and indexes | none |
+| V11 | `resource_relationships` table, constraints and indexes | V10 |
+| V12 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
+
+> **Renumbering (M4.3).** This plan was originally written as V7–V9. Those numbers are now used by the
+> trajectory-analysis migrations (V7 `audit_logs` session/agent index, V8 `review_requests` trajectory
+> columns, V9 `audit_logs` trajectory columns and `escalated_by`), so the M3.4 migrations move to V10–V12
+> in the same order and with the same dependencies. No table, column, constraint or behaviour changes.
+> No M3.4 migration file exists yet; Stage 0 is design only.
 
 Rules for all three:
 - Additive only. No existing table is altered. No existing data is changed.
@@ -544,7 +550,7 @@ Rules for all three:
 - **Staleness.** Names in the admin view reflect the inventory at read time, not at decision time.
 - **Weights.** All weights are experimental and unvalidated. They are not a measure of real risk.
 - **Scope.** Impact does not consider the agent's history, its session, or the sequence of its
-  requests. Trajectory analysis is not implemented and is not part of M3.4.
+  requests. Trajectory analysis is a separate stage (M4.3, see `docs/architecture.md`) and is not part of M3.4.
 - **Not ML.** Nothing here is a learned model.
 
 ---
@@ -576,7 +582,7 @@ Confirm that no combination can produce DENY from REVIEW or ALLOW.
 - Canary test: a resource name placed in the inventory must not appear anywhere in the gateway
   response body.
 
-**Persistence and migrations.** `DatabaseMigrationTest` for V7–V9. Repository tests for the unique
+**Persistence and migrations.** `DatabaseMigrationTest` for V10–V12. Repository tests for the unique
 constraints and the self-loop CHECK. Run the same tests on PostgreSQL 16 (a disposable container, as
 in M3.3), not only on H2.
 
@@ -593,9 +599,9 @@ and 404 or 403 for an unknown path under the admin matcher.
 |---|---|---|
 | 0 | This document. Documentation corrections. No code. | Review |
 | 1 | Canonicalizer (pure function) and its unit tests. No persistence. | Canonicalizer matrix passes |
-| 2 | V7 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
-| 3 | V8 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
-| 4 | V9 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
+| 2 | V10 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
+| 3 | V11 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
+| 4 | V12 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
 | 5 | Admin impact endpoint under `/api/v1/audit/{requestId}/impact` | Names appear only in the admin view |
 | 6 | Frontend impact panel (branch) | Browser checks |
 

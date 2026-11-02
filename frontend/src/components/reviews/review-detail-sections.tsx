@@ -15,6 +15,14 @@ import {
 } from "@/lib/labels";
 import { useAuditEvent } from "@/lib/queries/audit";
 import { useAgentGrants } from "@/lib/queries/agents";
+import {
+  ESCALATION_COPY,
+  escalationAttribution,
+  formatTrajectoryScore,
+  TRAJECTORY_TIER_LABELS,
+  trajectoryEvidence,
+} from "@/lib/trajectory/model";
+import { TrajectoryEscalationBadge } from "@/components/trajectory/trajectory-evidence";
 import type { ReviewRequestResponse } from "@/types/api";
 import type { AgentResolution } from "@/lib/reviews/model";
 
@@ -107,9 +115,40 @@ export function RequestSection({ review }: { review: ReviewRequestResponse }) {
         </Field>
       </dl>
       <div className="flex flex-col gap-1">
-        <p className="text-xs text-muted-foreground">Risk Engine score</p>
+        <p className="text-xs text-muted-foreground">Effective risk score (higher of Risk Engine and trajectory)</p>
         <RiskScore score={review.riskScore} />
       </div>
+    </section>
+  );
+}
+
+/**
+ * Trajectory signal recorded on the review. The effective risk score above is the higher of the Risk Engine
+ * and trajectory values, so a trajectory escalation can raise it. A null value means trajectory was not
+ * evaluated, not that it scored zero.
+ */
+export function TrajectorySection({ review }: { review: ReviewRequestResponse }) {
+  const evidence = trajectoryEvidence(review);
+
+  return (
+    <section aria-labelledby="review-trajectory-heading" className="flex flex-col gap-3">
+      <SectionHeading id="review-trajectory-heading">Trajectory evidence</SectionHeading>
+      {evidence.kind === "evaluated" ? (
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Trajectory score">
+            <span className="font-mono text-xs tabular-nums">{formatTrajectoryScore(evidence.score)}</span>
+          </Field>
+          <Field label="Tier">{evidence.tier ? TRAJECTORY_TIER_LABELS[evidence.tier] : "Not reported"}</Field>
+          <Field label="Reason">{evidence.reason ?? "Not reported"}</Field>
+        </dl>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Not evaluated or unavailable for this request.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Session-history signal. Approving or rejecting does not change it or the effective risk score.
+      </p>
     </section>
   );
 }
@@ -185,6 +224,12 @@ export function AuditSection({ requestId }: { requestId: string }) {
             <RiskScore score={query.data.riskScore} />
           </Field>
           <Field label="Authorization">{AUTHORIZATION_LABELS[query.data.authorizationResult]}</Field>
+          <Field label="Escalation">
+            <span className="flex flex-col items-start gap-1">
+              <span>{ESCALATION_COPY[escalationAttribution(query.data.escalatedBy)]}</span>
+              <TrajectoryEscalationBadge escalatedBy={query.data.escalatedBy} />
+            </span>
+          </Field>
           <Field label="Outcome">{OUTCOME_LABELS[query.data.actionOutcome]}</Field>
           <Field label="Policy reason">{query.data.reason}</Field>
           <Field label="Authorization reason">{query.data.authorizationReason}</Field>

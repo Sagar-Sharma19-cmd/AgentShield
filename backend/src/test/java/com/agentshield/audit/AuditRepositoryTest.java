@@ -6,6 +6,7 @@ import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.ResourceSensitivity;
 import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * (migration/entity compatibility).
  */
 @DataJpaTest
+@org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase(replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
 @ActiveProfiles("test")
 class AuditRepositoryTest {
 
@@ -38,6 +40,16 @@ class AuditRepositoryTest {
 
     @Autowired
     private EntityManager entityManager;
+
+    /**
+     * Ordering and count assertions here are table-wide. Other test classes commit audit rows to the shared
+     * database (H2 in-memory or PostgreSQL), so each test starts from an empty table. This class is a
+     * rolled-back DataJpaTest, so the clear does not persist.
+     */
+    @BeforeEach
+    void clearAuditLogs() {
+        auditRepository.deleteAll();
+    }
 
     @Test
     @DisplayName("findByRequestId returns the persisted row")
@@ -89,15 +101,30 @@ class AuditRepositoryTest {
     @Test
     @DisplayName("V6 migration created the expected indexes on audit_logs")
     void testV6IndexesExist() {
-        @SuppressWarnings("unchecked")
-        List<String> indexNames = entityManager.createNativeQuery(
-                        "SELECT INDEX_NAME FROM INFORMATION_SCHEMA.INDEXES WHERE UPPER(TABLE_NAME) = 'AUDIT_LOGS'")
-                .getResultList();
+        List<String> indexNames = indexNames("audit_logs");
 
         List<String> upper = indexNames.stream().map(String::toUpperCase).toList();
         assertTrue(upper.stream().anyMatch(n -> n.contains("REQUEST_ID")), "expected an index on request_id: " + upper);
         assertTrue(upper.stream().anyMatch(n -> n.contains("AGENT_ID")), "expected an index on agent_id: " + upper);
         assertTrue(upper.stream().anyMatch(n -> n.contains("TIMESTAMP")), "expected an index on timestamp: " + upper);
+    }
+
+    /** Portable index-name lookup via JDBC metadata (works on H2 and PostgreSQL). */
+    private List<String> indexNames(String table) {
+        return entityManager.unwrap(org.hibernate.Session.class).doReturningWork(conn -> {
+            var md = conn.getMetaData();
+            String name = md.storesUpperCaseIdentifiers() ? table.toUpperCase() : table.toLowerCase();
+            List<String> names = new java.util.ArrayList<>();
+            try (var rs = md.getIndexInfo(null, null, name, false, false)) {
+                while (rs.next()) {
+                    String index = rs.getString("INDEX_NAME");
+                    if (index != null && !names.contains(index)) {
+                        names.add(index);
+                    }
+                }
+            }
+            return names;
+        });
     }
 
     private AuditLog sample(UUID requestId, String agentId, DecisionType decision, Instant timestamp) {

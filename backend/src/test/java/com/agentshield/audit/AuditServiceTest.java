@@ -26,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * filterable search backing GET /api/v1/audit.
  */
 @DataJpaTest
+@org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase(replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
 @Import(AuditService.class)
 @ActiveProfiles("test")
 class AuditServiceTest {

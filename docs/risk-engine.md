@@ -5,8 +5,10 @@
 > remains a standalone, independently runnable and testable service with the same `POST
 > /score` contract. The Java side now calls it; see **Gateway Integration (Phase 2)** below
 > and `docs/architecture.md`'s "Risk Engine Integration" section for the full design.
-> ML-based scoring and trajectory/behavioral analysis are future phases and are explicitly
-> **not** implemented.
+> ML-based scoring is a future phase and is explicitly **not** implemented. Session-history
+> analysis is implemented separately, as the gateway's trajectory stage, and is not part of this
+> Risk Engine (see `docs/architecture.md`, Trajectory Analysis). Its score is stored separately and is
+> not a Risk Engine factor.
 
 ---
 
@@ -236,8 +238,9 @@ Integration".
 - ML-based anomaly detection (e.g. isolation forest) trained on audit history,
   as an additional, explainable-adjacent factor — never a black-box override
   of the deterministic factors.
-- Context-aware / trajectory-based risk signals (agent history, session
-  behavior).
+- Session-history signals as Risk Engine factors. Trajectory analysis is implemented as a
+  separate gateway stage (see `docs/architecture.md`), so this item would only mean blending that
+  signal into the Risk Engine score, which is not planned.
 - Reconciling caller-supplied `resource_sensitivity` with Factor A.
 
 ---

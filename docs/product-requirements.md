@@ -270,9 +270,9 @@ Complexity and value are qualitative (Low/Medium/High), not numeric scores.
 
 | Feature | Problem | User | Description | Dependencies | Security considerations | Complexity | Expected value |
 |---|---|---|---|---|---|---|---|
-| Agent behaviour / trajectory analysis | Individually-benign actions can be dangerous in sequence (named in threat model as "out of scope — current phase") | Security engineer, researcher | Windowed analysis of an agent's recent actions per session to flag suspicious sequences | Audit data, session modeling | Must not retroactively block already-completed actions; advisory/REVIEW only at first | High | Medium (High research value) |
+| Agent behaviour / trajectory analysis | Individually-benign actions can be dangerous in sequence (named in threat model as "out of scope — current phase") | Security engineer, researcher | Windowed analysis of an agent's recent actions per session to flag suspicious sequences. **Status (M4.3, branch `feature/trajectory-integration`, not merged):** a deterministic baseline is implemented. It reads the last 10 requests of the same session and verified agent, is escalate-only (ALLOW to REVIEW at HIGH/CRITICAL), and is not ML. See `docs/architecture.md`, Trajectory Analysis, and `docs/threat-model.md` for its limits | Audit data, session modeling | Must not retroactively block already-completed actions; advisory/REVIEW only at first | High | Medium (High research value) |
 | ML-based anomaly detection in Risk Engine | Deterministic rules can't capture "unusual for *this* agent" | Researcher | Supervised/unsupervised model (e.g. isolation forest) trained on audit history, as an additional risk factor | Deterministic Risk Engine must exist first; enough labeled/simulated data | Model must be explainable-adjacent (contribute a factor, not a black-box override) and never the sole basis for DENY | High | Medium (High research value) |
-| Context-aware risk scoring | Same action can be risky or not depending on session history, agent reputation | Researcher | Factor in agent history / trajectory signals into the risk score | Trajectory analysis | Must bound how much "history" can swing a score to avoid runaway penalization | High | Medium (High research value) |
+| Context-aware risk scoring | Same action can be risky or not depending on session history, agent reputation | Researcher | Factor in agent history / trajectory signals into the risk score. **Status (M4.3):** the trajectory signal is implemented as a separate escalate-only stage, stored in its own columns. It is deliberately not blended into `riskScore`, so the policy and Risk Engine scores keep their meaning | Trajectory analysis | Must bound how much "history" can swing a score to avoid runaway penalization | High | Medium (High research value) |
 
 ### P4 — Future SaaS
 
@@ -302,7 +302,7 @@ Complexity and value are qualitative (Low/Medium/High), not numeric scores.
   - Action type (`DELETE`/`EXECUTE` riskier than `READ`) — medium weight
   - Request frequency for this agent/session in a short window — medium weight
   - Resource pattern match against a maintained sensitive-pattern list — high weight
-  - (Deferred to a later step) agent history / trajectory — low weight initially, since it requires session-aware state
+  - Agent history / trajectory: implemented (M4.3) as a separate escalate-only stage, not as a weight inside the risk score
 - **Scoring approach:** a transparent weighted sum (or simple max-of-triggered-factors) over the signals above, each contributing a named, loggable reason — not a black box. 0–100 scale, consistent with the existing `riskScore` semantics already used by `PolicyEngine`.
 - **Output:** `{ riskScore: int, factors: [ { name, weight, contribution, detail } ] }` — an explicit breakdown, not just a number.
 - **Integration with Spring Boot:** `GatewayService` calls the Risk Engine *after* `PermissionEngine` authorizes and *alongside or feeding into* `PolicyEngine`, so that:
@@ -538,7 +538,8 @@ Agent Request
 - **Dataset/simulation requirements:** simulated multi-step agent sessions with varying legitimate task shapes.
 
 ### Agent behaviour analysis
-- **Existing problem:** `docs/threat-model.md` explicitly lists trajectory attacks as "planned analysis," not yet modeled.
+- **Status (M4.3):** a deterministic session-history baseline exists (see `docs/architecture.md`, Trajectory Analysis). The research questions below are still open. No detection rate, precision or recall has been measured.
+- **Existing problem:** `docs/threat-model.md` lists trajectory attacks as a threat. A deterministic, escalate-only baseline is now implemented (M4.3); the open question is how well it detects real attacks, which is not measured.
 - **Proposed approach:** windowed per-session action sequences as an additional risk factor (Part 5/P3).
 - **Research question:** what sequence-level signal best distinguishes a benign multi-step task from a scope-creep/trajectory attack, given only the fields already captured in `audit_logs`?
 - **What to measure:** precision/recall of trajectory-based flags against the simulator's labeled `scope_escalation` and `trajectory_attack` scenarios (already named in `simulator/README.md`).

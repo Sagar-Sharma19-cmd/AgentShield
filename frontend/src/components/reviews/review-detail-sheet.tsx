@@ -9,7 +9,13 @@ import { useReview } from "@/lib/queries/reviews";
 import { resolveAgent, type AgentLookup } from "@/lib/reviews/model";
 import type { ReviewRequestResponse } from "@/types/api";
 import { ReviewActions } from "./review-actions";
-import { AgentToolSection, AuditSection, GrantSection, RequestSection } from "./review-detail-sections";
+import {
+  AgentToolSection,
+  AuditSection,
+  GrantSection,
+  RequestSection,
+  TrajectorySection,
+} from "./review-detail-sections";
 
 interface ReviewDetailSheetProps {
   /** Selected review id from the URL. The sheet is open whenever this is set. */
@@ -77,6 +83,7 @@ function ReviewDetailBody({
         <div className="flex flex-col gap-6">
           <AgentToolSection review={review} agent={agent} />
           <RequestSection review={review} />
+          <TrajectorySection review={review} />
           <GrantSection agentId={review.agentId} tool={review.tool} />
           <AuditSection requestId={review.requestId} />
         </div>

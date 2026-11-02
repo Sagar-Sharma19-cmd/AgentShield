@@ -5,8 +5,10 @@ import com.agentshield.exception.ResourceNotFoundException;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.policy.PolicyEvaluationResult;
+import com.agentshield.trajectory.TrajectoryEvaluation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -18,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -33,12 +36,34 @@ public class AuditService {
         this.auditRepository = auditRepository;
     }
 
+    /**
+     * Records an evaluation with no trajectory result and no escalation. Used for authorization and
+     * policy denials, which never reach trajectory analysis. Trajectory fields are stored as NULL
+     * (not evaluated) and escalated_by as NONE.
+     */
     @Transactional
     public AuditLog recordEvaluation(EvaluationRequest request,
                                       UUID requestId,
                                       PolicyEvaluationResult result,
                                       AuthorizationDecision authorization,
                                       Instant timestamp) {
+        return recordEvaluation(request, requestId, result, authorization, timestamp, null, EscalationSource.NONE);
+    }
+
+    /**
+     * Records an evaluation with its trajectory result and the signal that changed the decision.
+     *
+     * @param trajectory   the trajectory result, or null when trajectory was not evaluated
+     * @param escalatedBy  the signal that changed the decision (never null)
+     */
+    @Transactional
+    public AuditLog recordEvaluation(EvaluationRequest request,
+                                      UUID requestId,
+                                      PolicyEvaluationResult result,
+                                      AuthorizationDecision authorization,
+                                      Instant timestamp,
+                                      TrajectoryEvaluation trajectory,
+                                      EscalationSource escalatedBy) {
         ActionOutcome outcome = mapOutcome(result.getDecision());
 
         AuditLog log = AuditLog.builder()
@@ -57,6 +82,10 @@ public class AuditService {
                 .registeredToolId(authorization.toolId())
                 .authorizationResult(authorization.result())
                 .authorizationReason(authorization.reason())
+                .trajectoryScore(trajectory == null ? null : trajectory.score())
+                .trajectoryTier(trajectory == null ? null : trajectory.tier())
+                .trajectoryReason(trajectory == null ? null : trajectory.reason())
+                .escalatedBy(Objects.requireNonNull(escalatedBy, "escalatedBy"))
                 .timestamp(timestamp)
                 .build();
 
