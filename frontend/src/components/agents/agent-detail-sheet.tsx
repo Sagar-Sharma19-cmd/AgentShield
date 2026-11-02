@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, RotateCw } from "lucide-react";
 import { AgentDetailSummary } from "@/components/agents/agent-detail-summary";
 import { AgentGrantsSection } from "@/components/agents/agent-grants-section";
+import { AgentLifecycleSection } from "@/components/agents/agent-lifecycle-section";
 import { AgentLoadError } from "@/components/agents/agent-load-error";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildAgentActivityHref, describeAgentDetailError, isAgentNotFound } from "@/lib/agents/detail-model";
+import {
+  isLeavingUnacknowledgedKey,
+  type RotationHold,
+  resolveSheetAgent,
+} from "@/lib/agents/rotation-hold";
 import { agentKeys, useAgent, useAgentGrants } from "@/lib/queries/agents";
 
 /** Id of the page heading. Focus lands here when no registry row for the agent is visible. */
@@ -29,14 +35,38 @@ interface AgentDetailSheetProps {
   /** Selected agent id from the URL. The sheet is open whenever this is set. */
   agentId: string | undefined;
   onClose: () => void;
+  /** Puts the URL back on an agent whose unacknowledged key the operator chose to keep. */
+  onRestoreAgent: (agentId: string) => void;
 }
 
 /**
  * Read-only detail for one agent, opened from the registry. The detail request is authoritative;
  * the registry row only fills the header while it loads. Grants load independently.
  */
-export function AgentDetailSheet({ agentId, onClose }: AgentDetailSheetProps) {
+export function AgentDetailSheet({ agentId: urlAgentId, onClose, onRestoreAgent }: AgentDetailSheetProps) {
   const queryClient = useQueryClient();
+  // Set by the lifecycle section while a key rotation is pending or its key is on screen. It keeps the
+  // sheet on the same agent and blocks dismissal, so Back or Escape cannot discard that key.
+  const [hold, setHold] = useState<RotationHold | null>(null);
+  // Set when the operator tries to leave while a key is unacknowledged (Escape, outside click, close).
+  // Back or a URL change is detected from the hold itself, so it needs no extra state.
+  const [leaveRequested, setLeaveRequested] = useState(false);
+  // Stable identity matters: the section's unmount cleanup calls the callback it was given.
+  const reportHold = useCallback((next: RotationHold | null) => {
+    setHold(next);
+    setLeaveRequested(false);
+  }, []);
+  const { shownAgentId: agentId, dismissBlocked } = resolveSheetAgent(urlAgentId, hold);
+  const leaving = isLeavingUnacknowledgedKey(urlAgentId, hold, leaveRequested);
+
+  function requestLeave() {
+    if (hold?.keyOpen) setLeaveRequested(true);
+  }
+
+  function stayOnKey() {
+    setLeaveRequested(false);
+    if (hold && urlAgentId !== hold.agentId) onRestoreAgent(hold.agentId);
+  }
   const detail = useAgent(agentId);
   const grants = useAgentGrants(agentId);
   const notFound = detail.isError && isAgentNotFound(detail.error);
@@ -60,9 +90,18 @@ export function AgentDetailSheet({ agentId, onClose }: AgentDetailSheetProps) {
   }, [notFound, queryClient]);
 
   return (
-    <Sheet open={agentId !== undefined} onOpenChange={(open) => !open && onClose()}>
+    <Sheet
+      open={agentId !== undefined}
+      onOpenChange={(open) => {
+        if (open || dismissBlocked) return;
+        // An unacknowledged key must not be dropped by a close: ask first.
+        if (hold?.keyOpen) requestLeave();
+        else onClose();
+      }}
+    >
       <SheetContent
         onCloseAutoFocus={restoreFocusAfterClose}
+        showCloseButton={!dismissBlocked}
         className="w-full overflow-y-auto data-[side=right]:w-full sm:max-w-xl data-[side=right]:sm:max-w-xl"
       >
         <SheetHeader className="pr-10">
@@ -71,12 +110,28 @@ export function AgentDetailSheet({ agentId, onClose }: AgentDetailSheetProps) {
         </SheetHeader>
 
         <div className="flex flex-col gap-6 px-4 pb-6">
+          {dismissBlocked && (
+            <p role="status" className="rounded-md border border-border bg-muted/40 p-3 text-sm">
+              Key rotation in progress. This panel stays open until AgentShield responds.
+            </p>
+          )}
           {notFound ? (
             <AgentNotFound onClose={onClose} />
           ) : (
             <>
               {detail.data ? (
-                <AgentDetailSummary agent={detail.data} refreshing={detail.isFetching} />
+                <>
+                  <AgentDetailSummary agent={detail.data} refreshing={detail.isFetching} />
+                  <AgentLifecycleSection
+                    key={detail.data.id}
+                    agent={detail.data}
+                    onHoldChange={reportHold}
+                    leaveConfirmOpen={leaving}
+                    onLeaveAttempt={requestLeave}
+                    onStayOnKey={stayOnKey}
+                    onDiscardKey={onClose}
+                  />
+                </>
               ) : detail.isError ? (
                 <AgentLoadError
                   copy={describeAgentDetailError(detail.error, "agent")}

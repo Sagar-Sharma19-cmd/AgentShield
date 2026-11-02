@@ -64,7 +64,7 @@ public class AgentService {
      */
     @Transactional
     public AgentResponse updateStatus(UUID id, AgentStatus newStatus) {
-        Agent agent = findAgent(id);
+        Agent agent = findAgentForUpdate(id);
         if (agent.getStatus() == AgentStatus.REVOKED && newStatus != AgentStatus.REVOKED) {
             throw new ConflictException("A revoked agent cannot be re-activated or suspended.");
         }
@@ -80,7 +80,7 @@ public class AgentService {
      */
     @Transactional
     public AgentCreateResponse rotateApiKey(UUID id) {
-        Agent agent = findAgent(id);
+        Agent agent = findAgentForUpdate(id);
         if (agent.getStatus() == AgentStatus.REVOKED) {
             throw new ConflictException("A revoked agent cannot be issued a new API key.");
         }
@@ -96,6 +96,15 @@ public class AgentService {
 
     private Agent findAgent(UUID id) {
         return agentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Agent not found."));
+    }
+
+    /**
+     * Locked lookup for lifecycle writes. Must run inside the caller's transaction so the row lock is
+     * held until that transaction completes. Read-only paths keep using findAgent.
+     */
+    private Agent findAgentForUpdate(UUID id) {
+        return agentRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent not found."));
     }
 }

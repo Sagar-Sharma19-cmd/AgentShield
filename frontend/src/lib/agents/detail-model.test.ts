@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import {
   buildAgentActivityHref,
+  describeAgentActionError,
   describeAgentDetailError,
   describeAgentStatusEffect,
   isAgentNotFound,
@@ -108,5 +109,60 @@ describe("describeAgentDetailError", () => {
     const copy = copyOf(new ApiError(400, null), "grants");
     expect(copy.title).toBe("The request for permission grants was rejected");
     expect(copy.action).toBe("retry");
+  });
+});
+
+describe("describeAgentActionError", () => {
+  const SECRET = "agk_live_FAKEFAKEFAKEFAKE";
+  const leaky = (status: number) =>
+    new ApiError(status, { timestamp: "", status, error: "", message: `backend said ${SECRET}`, fieldErrors: {} });
+
+  it("asks for an unlock on 401 and 403", () => {
+    expect(describeAgentActionError(new ApiError(401, null))).toContain("Lock the console and unlock it again");
+    expect(describeAgentActionError(new ApiError(403, null))).toContain("Lock the console and unlock it again");
+  });
+
+  it("explains that a revoked agent cannot be changed on 409", () => {
+    const message = describeAgentActionError(new ApiError(409, null));
+    expect(message).toContain("revoked");
+    expect(message).toContain("Revocation is permanent");
+  });
+
+  it("maps 404 to a refresh prompt", () => {
+    expect(describeAgentActionError(new ApiError(404, null))).toBe(
+      "This agent could not be found. Refresh the registry and try again.",
+    );
+  });
+
+  it("maps 5xx to a retry prompt", () => {
+    expect(describeAgentActionError(new ApiError(500, null))).toBe(
+      "AgentShield could not complete the change. Try again in a moment.",
+    );
+    expect(describeAgentActionError(new ApiError(503, null))).toBe(
+      "AgentShield could not complete the change. Try again in a moment.",
+    );
+  });
+
+  it("gives other ApiError statuses the generic not-made message", () => {
+    expect(describeAgentActionError(new ApiError(400, null))).toBe("The change was not made. Refresh and try again.");
+  });
+
+  it("describes network failures by TypeError", () => {
+    expect(describeAgentActionError(new TypeError("Failed to fetch"))).toBe(
+      "AgentShield could not be reached. Check the connection and try again.",
+    );
+  });
+
+  it("falls back to a generic message for unknown errors", () => {
+    expect(describeAgentActionError(new Error("boom"))).toBe("The change could not be completed.");
+    expect(describeAgentActionError(undefined)).toBe("The change could not be completed.");
+  });
+
+  it("never includes backend message text or key-shaped values", () => {
+    for (const status of [400, 401, 403, 404, 409, 500]) {
+      const message = describeAgentActionError(leaky(status));
+      expect(message).not.toContain(SECRET);
+      expect(message).not.toContain("backend said");
+    }
   });
 });

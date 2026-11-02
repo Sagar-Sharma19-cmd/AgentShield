@@ -115,3 +115,23 @@ export function describeAgentDetailError(error: unknown, subject: Subject): Agen
   }
   return { title: copy.unexpected, body: "Try again. If this continues, reload the page.", action: "retry" };
 }
+
+/**
+ * Toast text for a failed lifecycle change (status or key rotation). Backend messages are never shown,
+ * because they can echo request detail, and no key material can reach this text.
+ */
+export function describeAgentActionError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return "AgentShield rejected the admin key. Lock the console and unlock it again.";
+    }
+    if (error.status === 404) return "This agent could not be found. Refresh the registry and try again.";
+    if (error.status === 409) {
+      return "This agent is revoked, so it cannot be suspended, reactivated or given a new key. Revocation is permanent.";
+    }
+    if (error.status >= 500) return "AgentShield could not complete the change. Try again in a moment.";
+    return "The change was not made. Refresh and try again.";
+  }
+  if (error instanceof TypeError) return "AgentShield could not be reached. Check the connection and try again.";
+  return "The change could not be completed.";
+}

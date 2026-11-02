@@ -165,7 +165,11 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
         )}
       </DashboardCard>
 
-      <AgentDetailSheet agentId={state.agent} onClose={closeAgent} />
+      <AgentDetailSheet
+        agentId={state.agent}
+        onClose={closeAgent}
+        onRestoreAgent={(id) => navigate({ status: state.status, agent: id })}
+      />
     </div>
   );
 }
