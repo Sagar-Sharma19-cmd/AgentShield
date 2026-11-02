@@ -1,0 +1,134 @@
+import { describe, expect, it } from "vitest";
+import { ApiError } from "@/lib/api/client";
+import {
+  availableReviewActions,
+  buildReviewHref,
+  describeActionError,
+  parseReviewParams,
+  resolveAgent,
+  sortNewestFirst,
+  transitionLabel,
+} from "./model";
+
+const VALID_ID = "11111111-2222-4333-8444-555555555555";
+
+describe("availableReviewActions", () => {
+  it("only allows start from PENDING, mirroring the backend state machine", () => {
+    expect(availableReviewActions("PENDING")).toEqual(["start"]);
+  });
+
+  it("allows approve and reject only from IN_REVIEW", () => {
+    expect(availableReviewActions("IN_REVIEW")).toEqual(["approve", "reject"]);
+  });
+
+  it("offers no action from the terminal statuses", () => {
+    expect(availableReviewActions("APPROVED")).toEqual([]);
+    expect(availableReviewActions("REJECTED")).toEqual([]);
+  });
+
+  it("never offers approve from PENDING (the backend refuses it)", () => {
+    expect(availableReviewActions("PENDING")).not.toContain("approve");
+    expect(availableReviewActions("PENDING")).not.toContain("reject");
+  });
+});
+
+describe("sortNewestFirst", () => {
+  it("orders by createdAt descending without mutating the input", () => {
+    const input = [
+      { id: "a", createdAt: "2026-01-01T00:00:00Z" },
+      { id: "c", createdAt: "2026-03-01T00:00:00Z" },
+      { id: "b", createdAt: "2026-02-01T00:00:00Z" },
+    ];
+    expect(sortNewestFirst(input).map((r) => r.id)).toEqual(["c", "b", "a"]);
+    expect(input.map((r) => r.id)).toEqual(["a", "c", "b"]);
+  });
+});
+
+describe("parseReviewParams", () => {
+  it("defaults to PENDING with no selection", () => {
+    expect(parseReviewParams({})).toEqual({ status: "PENDING" });
+  });
+
+  it("accepts a valid status and review id", () => {
+    expect(parseReviewParams({ status: "IN_REVIEW", review: VALID_ID })).toEqual({
+      status: "IN_REVIEW",
+      review: VALID_ID,
+    });
+  });
+
+  it("falls back to PENDING for an unknown status and drops a malformed review id", () => {
+    expect(parseReviewParams({ status: "APPROVE_ALL", review: "not-a-uuid" })).toEqual({ status: "PENDING" });
+  });
+
+  it("takes the first value when a parameter is repeated", () => {
+    expect(parseReviewParams({ status: ["REJECTED", "PENDING"] })).toEqual({ status: "REJECTED" });
+  });
+});
+
+describe("buildReviewHref", () => {
+  it("omits the review parameter when nothing is selected", () => {
+    expect(buildReviewHref({ status: "APPROVED" })).toBe("/reviews?status=APPROVED");
+  });
+
+  it("includes the selected review id", () => {
+    expect(buildReviewHref({ status: "IN_REVIEW", review: VALID_ID })).toBe(
+      `/reviews?status=IN_REVIEW&review=${VALID_ID}`,
+    );
+  });
+});
+
+describe("transitionLabel", () => {
+  it("describes the status change for the feedback line", () => {
+    expect(transitionLabel("IN_REVIEW", "APPROVED")).toBe("In review → Approved");
+  });
+});
+
+describe("describeActionError", () => {
+  it("keeps the backend's refused-transition message and says the review was refreshed", () => {
+    const text = describeActionError(
+      new ApiError(400, { timestamp: "", status: 400, error: "Bad Request", message: "Cannot move review request from APPROVED to APPROVED.", fieldErrors: {} }),
+    );
+    expect(text).toContain("Cannot move review request from APPROVED to APPROVED.");
+    expect(text).toContain("refreshed");
+  });
+
+  it("asks the operator to re-unlock on a rejected key", () => {
+    expect(describeActionError(new ApiError(401, null))).toContain("rejected the admin key");
+  });
+
+  it("reports a missing review plainly", () => {
+    expect(describeActionError(new ApiError(404, null))).toBe("This review no longer exists.");
+  });
+
+  it("gives a generic message for network failures", () => {
+    expect(describeActionError(new TypeError("fetch failed"))).toContain("could not be saved");
+  });
+});
+
+describe("resolveAgent", () => {
+  const agent = {
+    id: "agent-1",
+    name: "Deploy bot",
+    description: null,
+    status: "ACTIVE" as const,
+    apiKeyPrefix: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("reports loading while the registry request is in flight, even if the agent is not known yet", () => {
+    expect(resolveAgent({ state: "loading" }, "agent-1")).toEqual({ kind: "loading" });
+  });
+
+  it("reports error when the registry failed, so absence is not claimed", () => {
+    expect(resolveAgent({ state: "error" }, "agent-1")).toEqual({ kind: "error" });
+  });
+
+  it("reports absent only when the registry loaded and does not contain the agent", () => {
+    expect(resolveAgent({ state: "ready", agents: [agent] }, "agent-2")).toEqual({ kind: "absent" });
+  });
+
+  it("returns the agent when the registry loaded and contains it", () => {
+    expect(resolveAgent({ state: "ready", agents: [agent] }, "agent-1")).toEqual({ kind: "found", agent });
+  });
+});
