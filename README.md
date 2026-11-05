@@ -83,22 +83,22 @@ Admin APIs need `X-Admin-API-Key`; the gateway needs the agent's own key in `X-A
 ADMIN="X-Admin-API-Key: $AGENTSHIELD_ADMIN_API_KEY"
 
 # 1. Register an agent — the response contains its API key ONCE ("apiKey"); store it securely
-curl -s -X POST localhost:8080/api/v1/agents -H "$ADMIN" -H 'Content-Type: application/json' \
+curl -s -X POST localhost:8081/api/v1/agents -H "$ADMIN" -H 'Content-Type: application/json' \
      -d '{"name":"research-agent","description":"Reads source code"}'
 
 # 2. Register a tool and grant READ on it (use the ids returned above)
-curl -s -X POST localhost:8080/api/v1/tools -H "$ADMIN" -H 'Content-Type: application/json' \
+curl -s -X POST localhost:8081/api/v1/tools -H "$ADMIN" -H 'Content-Type: application/json' \
      -d '{"name":"filesystem","toolType":"FILESYSTEM"}'
-curl -s -X POST localhost:8080/api/v1/permissions -H "$ADMIN" -H 'Content-Type: application/json' \
+curl -s -X POST localhost:8081/api/v1/permissions -H "$ADMIN" -H 'Content-Type: application/json' \
      -d '{"agentId":"<agent-id>","toolId":"<tool-id>","allowedActions":["READ"]}'
 
 # 3. The agent evaluates an action with its own key
-curl -s -X POST localhost:8080/api/v1/gateway/evaluate \
+curl -s -X POST localhost:8081/api/v1/gateway/evaluate \
      -H "X-Agent-API-Key: <agent-api-key>" -H 'Content-Type: application/json' \
      -d '{"agentId":"research-agent","sessionId":"s-1","tool":"filesystem","action":"READ","resource":"src/Main.java"}'
 
 # Lost or leaked key? Issue a new one — the old key stops working immediately
-curl -s -X POST localhost:8080/api/v1/agents/<agent-id>/rotate-key -H "$ADMIN"
+curl -s -X POST localhost:8081/api/v1/agents/<agent-id>/rotate-key -H "$ADMIN"
 ```
 
 ```json
@@ -167,7 +167,7 @@ docker compose up -d postgres
 
 export AGENTSHIELD_API_KEY_PEPPER="$(openssl rand -base64 48)"   # keep stable across restarts
 export AGENTSHIELD_ADMIN_API_KEY="$(openssl rand -base64 48)"
-cd backend && mvn spring-boot:run      # http://localhost:8080 — Flyway migrates the schema on startup
+cd backend && mvn spring-boot:run      # http://localhost:8081 — Flyway migrates the schema on startup
 
 cd backend && mvn clean test package   # run the test suite (H2 + Flyway, no Docker or secrets needed)
 ```
@@ -182,7 +182,7 @@ Planned full stack:
 # Start all services
 docker compose up --build
 
-# Backend will be available at:  http://localhost:8080
+# Backend will be available at:  http://localhost:8081
 # Frontend will be available at: http://localhost:3000
 # Risk engine will be at:        http://localhost:8000
 ```

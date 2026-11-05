@@ -703,7 +703,7 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 | Service | Port |
 |---------|------|
-| Backend (Spring Boot) | 8080 |
+| Backend (Spring Boot) | 8081 |
 | Risk Engine (FastAPI) | 8000 |
 | Frontend (Next.js) | 3000 |
 | PostgreSQL | 5434 (host) → 5432 (container) |

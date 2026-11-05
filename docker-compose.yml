@@ -45,7 +45,7 @@ services:
   #   container_name: agentshield-backend
   #   restart: unless-stopped
   #   ports:
-  #     - "8080:8080"
+  #     - "8081:8081"
   #   environment:
   #     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-agentshield}
   #     SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-agentshield_user}
@@ -83,7 +83,7 @@ services:
   #   ports:
   #     - "3000:3000"
   #   environment:
-  #     NEXT_PUBLIC_API_URL: http://localhost:8080
+  #     BACKEND_URL: http://backend:8081
 
 volumes:
   postgres_data:

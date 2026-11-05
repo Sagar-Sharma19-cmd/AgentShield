@@ -28,7 +28,7 @@ uvicorn main:app --host 127.0.0.1 --port 8000
 cd ~/Developer/AgentShield/backend
 set -a && source ~/Developer/AgentShield/.env && set +a
 mvn clean package -DskipTests
-SERVER_PORT=8081 java -jar target/*-SNAPSHOT.jar
+java -jar target/*-SNAPSHOT.jar        # listens on 8081 by default
 ```
 Wait for `Started AgentShieldApplication`.
 
