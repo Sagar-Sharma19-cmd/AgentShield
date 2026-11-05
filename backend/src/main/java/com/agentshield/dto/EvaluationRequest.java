@@ -3,27 +3,39 @@ package com.agentshield.dto;
 import com.agentshield.model.ActionType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.util.Map;
 
 /**
  * Incoming request payload submitted by an AI agent for security evaluation.
+ *
+ * Size limits match the audit_logs / review_requests columns (V1, V5). Without them an oversized
+ * value failed the audit insert after the decision was computed, so the request was answered with
+ * a 409 and never audited. Now it is rejected up front with a 400.
  */
 public class EvaluationRequest {
 
+    public static final int MAX_ID_LENGTH = 255;
+    public static final int MAX_RESOURCE_LENGTH = 1024;
+
     @NotBlank(message = "agentId is required")
+    @Size(max = MAX_ID_LENGTH, message = "agentId must be at most " + MAX_ID_LENGTH + " characters")
     private String agentId;
 
     @NotBlank(message = "sessionId is required")
+    @Size(max = MAX_ID_LENGTH, message = "sessionId must be at most " + MAX_ID_LENGTH + " characters")
     private String sessionId;
 
     @NotNull(message = "action is required")
     private ActionType action;
 
     @NotBlank(message = "resource is required")
+    @Size(max = MAX_RESOURCE_LENGTH, message = "resource must be at most " + MAX_RESOURCE_LENGTH + " characters")
     private String resource;
 
     @NotBlank(message = "tool is required")
+    @Size(max = MAX_ID_LENGTH, message = "tool must be at most " + MAX_ID_LENGTH + " characters")
     private String tool;
 
     private Map<String, Object> metadata;
