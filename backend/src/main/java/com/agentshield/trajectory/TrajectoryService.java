@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -53,7 +54,14 @@ public class TrajectoryService {
      * @return the evaluation, or empty when it could not be computed (no verified agent, or the
      *         history query failed). Empty is "not evaluated", which is distinct from a score of 0.
      */
-    @Transactional(readOnly = true)
+    /*
+     * NOT_SUPPORTED: the history read runs outside the caller's transaction. A failed query inside a
+     * transaction marks it rollback-only, and catching the exception does not undo that mark, so the
+     * commit would later throw UnexpectedRollbackException and turn "keep the decision" into an
+     * HTTP 500. Outside a transaction the failure stays local and the fail-safe path below holds.
+     * The read only needs committed history, so no transaction is required.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Optional<TrajectoryEvaluation> evaluate(UUID requestId, String sessionId, UUID registeredAgentId,
                                                    TrajectoryEvent candidate) {
         if (!enabled) {

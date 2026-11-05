@@ -16,7 +16,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import jakarta.persistence.EntityManagerFactory;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.orm.jpa.EntityManagerFactoryUtils;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -84,6 +88,34 @@ class TrajectoryFailureGatewayTest extends AbstractTrajectoryGatewayTest {
         UUID requestId = requestIdOf(send("fail-lookup", "filesystem", "READ", "src/Main.java")
                 .andExpect(jsonPath("$.decision").value("ALLOW"))
                 .andExpect(jsonPath("$.reviewRequestId").doesNotExist()));
+
+        assertNotCompletedWithTrajectory(requestId, DecisionType.ALLOW);
+        assertErrorLoggedFor(requestId, "history lookup failed");
+    }
+
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
+
+    /**
+     * Same failure as above, but as a real JPA repository produces it: a failed query inside an active
+     * transaction marks that transaction rollback-only before the exception reaches TrajectoryService.
+     * Catching the exception does not clear the mark, so if the history read ran inside a transaction,
+     * the commit would throw UnexpectedRollbackException and the request would fail with 500.
+     */
+    @Test
+    @DisplayName("History lookup failure that marks the transaction rollback-only still keeps the decision")
+    void rollbackMarkingHistoryFailureStillKeepsTheDecision() throws Exception {
+        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(any(), any()))
+                .thenAnswer(invocation -> {
+                    if (TransactionSynchronizationManager.isActualTransactionActive()) {
+                        EntityManagerFactoryUtils.getTransactionalEntityManager(entityManagerFactory)
+                                .getTransaction().setRollbackOnly();
+                    }
+                    throw new DataAccessResourceFailureException("history unavailable");
+                });
+
+        UUID requestId = requestIdOf(send("fail-rollback", "filesystem", "READ", "src/Main.java")
+                .andExpect(jsonPath("$.decision").value("ALLOW")));
 
         assertNotCompletedWithTrajectory(requestId, DecisionType.ALLOW);
         assertErrorLoggedFor(requestId, "history lookup failed");
