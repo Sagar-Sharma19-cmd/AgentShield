@@ -22,6 +22,7 @@ import com.agentshield.trajectory.TrajectoryEvent;
 import com.agentshield.trajectory.TrajectoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.Optional;
@@ -76,6 +77,13 @@ public class GatewayService {
         this.trajectoryService = trajectoryService;
     }
 
+    /**
+     * One transaction for the whole write path: the risk assessment, the audit row and (for REVIEW) the
+     * review request are committed together or not at all, so a failure part-way never leaves a risk
+     * assessment or audit row without the rest. A request that fails is answered with an error, never a
+     * decision. Trajectory's history read deliberately runs outside this transaction (see TrajectoryService).
+     */
+    @Transactional
     public EvaluationResponse evaluateRequest(EvaluationRequest request, AuthenticatedAgent caller) {
         UUID requestId = UUID.randomUUID();
         Instant timestamp = Instant.now();
@@ -88,7 +96,7 @@ public class GatewayService {
             // Permission denial is authoritative: the Risk Engine is never called.
             PolicyEvaluationResult denial = authorizationDenial(authorization);
             auditService.recordEvaluation(request, requestId, denial, authorization, timestamp);
-            return buildResponse(requestId, request, denial, authorization, null, null, null, timestamp);
+            return buildResponse(requestId, request, denial, authorization, null, null, null, null, null, timestamp);
         }
 
         // 2. Evaluate security policy rules for the authorized request
@@ -98,7 +106,7 @@ public class GatewayService {
             // Policy denial is authoritative: the Risk Engine cannot downgrade it, so it is
             // not consulted.
             auditService.recordEvaluation(request, requestId, policyResult, authorization, timestamp);
-            return buildResponse(requestId, request, policyResult, authorization, null, null, null, timestamp);
+            return buildResponse(requestId, request, policyResult, authorization, null, null, null, null, null, timestamp);
         }
 
         // 3. Risk Engine is an escalation-only signal for ALLOW/REVIEW policy outcomes.
@@ -138,7 +146,8 @@ public class GatewayService {
         }
 
         return buildResponse(requestId, request, finalResult, authorization,
-                riskAssessment.riskTier(), riskAssessment.engineAvailable(), reviewRequestId, timestamp);
+                riskAssessment.riskTier(), riskAssessment.engineAvailable(), riskAssessment.riskScore(),
+                trajectory.map(TrajectoryEvaluation::score).orElse(null), reviewRequestId, timestamp);
     }
 
     /**
@@ -197,7 +206,8 @@ public class GatewayService {
 
     private EvaluationResponse buildResponse(UUID requestId, EvaluationRequest request, PolicyEvaluationResult result,
                                               AuthorizationDecision authorization, RiskTier riskTier,
-                                              Boolean riskEngineAvailable, UUID reviewRequestId, Instant timestamp) {
+                                              Boolean riskEngineAvailable, Integer riskEngineScore,
+                                              Integer trajectoryScore, UUID reviewRequestId, Instant timestamp) {
         return EvaluationResponse.builder()
                 .requestId(requestId)
                 .agentId(request.getAgentId())
@@ -210,6 +220,8 @@ public class GatewayService {
                 .authorizationResult(authorization.result())
                 .riskTier(riskTier)
                 .riskEngineAvailable(riskEngineAvailable)
+                .riskEngineScore(riskEngineScore)
+                .trajectoryScore(trajectoryScore)
                 .reviewRequestId(reviewRequestId)
                 .timestamp(timestamp)
                 .build();
