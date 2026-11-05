@@ -221,6 +221,10 @@ Content-Type: application/json
 `riskEngineAvailable` describe the separate Risk Engine assessment that may have escalated
 `decision` (see `docs/architecture.md`'s "Risk Engine Integration"); both are `null` when the
 Risk Engine was not consulted, i.e. whenever `decision` was already DENY before it could run.
+`riskEngineScore` is the Risk Engine's score (`null` when it was not consulted; 65 when it was
+unavailable and the gateway failed safe). `trajectoryScore` is the session-history score (`null`
+when trajectory was not evaluated). `effectiveRiskScore` is the highest of `riskScore`,
+`riskEngineScore` and `trajectoryScore`: the number to show next to the final decision.
 `reviewRequestId` is set only when the final `decision` is `REVIEW` (Phase 3 human review
 workflow — see `docs/architecture.md`'s "Human Review Workflow"); `null` for `ALLOW`/`DENY`.
 

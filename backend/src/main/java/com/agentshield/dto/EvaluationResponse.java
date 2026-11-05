@@ -17,6 +17,11 @@ import java.util.UUID;
  * the Risk Engine was not consulted (the request was already denied by authorization or
  * policy before the Risk Engine would have been called).
  *
+ * {@code riskEngineScore} is the Risk Engine's score ({@code null} when it was not consulted),
+ * {@code trajectoryScore} the session-history score ({@code null} when trajectory was not evaluated),
+ * and {@code effectiveRiskScore} the highest of the policy, Risk Engine and trajectory scores: the
+ * single number to show next to the final decision. {@code riskScore} keeps its original meaning.
+ *
  * {@code reviewRequestId} is set only when the final {@code decision} is REVIEW (Phase 3
  * human review workflow); it is {@code null} for ALLOW and DENY, which never create a
  * review request.
@@ -34,6 +39,9 @@ public class EvaluationResponse {
     private AuthorizationResult authorizationResult;
     private RiskTier riskTier;
     private Boolean riskEngineAvailable;
+    private Integer riskEngineScore;
+    private Integer trajectoryScore;
+    private int effectiveRiskScore;
     private UUID reviewRequestId;
     private Instant timestamp;
 
@@ -160,6 +168,30 @@ public class EvaluationResponse {
         this.timestamp = timestamp;
     }
 
+    public Integer getRiskEngineScore() {
+        return riskEngineScore;
+    }
+
+    public void setRiskEngineScore(Integer riskEngineScore) {
+        this.riskEngineScore = riskEngineScore;
+    }
+
+    public Integer getTrajectoryScore() {
+        return trajectoryScore;
+    }
+
+    public void setTrajectoryScore(Integer trajectoryScore) {
+        this.trajectoryScore = trajectoryScore;
+    }
+
+    public int getEffectiveRiskScore() {
+        return effectiveRiskScore;
+    }
+
+    public void setEffectiveRiskScore(int effectiveRiskScore) {
+        this.effectiveRiskScore = effectiveRiskScore;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -176,6 +208,8 @@ public class EvaluationResponse {
         private AuthorizationResult authorizationResult;
         private RiskTier riskTier;
         private Boolean riskEngineAvailable;
+        private Integer riskEngineScore;
+        private Integer trajectoryScore;
         private UUID reviewRequestId;
         private Instant timestamp;
 
@@ -244,8 +278,32 @@ public class EvaluationResponse {
             return this;
         }
 
+        public Builder riskEngineScore(Integer riskEngineScore) {
+            this.riskEngineScore = riskEngineScore;
+            return this;
+        }
+
+        public Builder trajectoryScore(Integer trajectoryScore) {
+            this.trajectoryScore = trajectoryScore;
+            return this;
+        }
+
+        /** effectiveRiskScore is derived: the highest of riskScore, riskEngineScore and trajectoryScore. */
         public EvaluationResponse build() {
-            return new EvaluationResponse(requestId, agentId, sessionId, action, resource, decision, reason, riskScore, authorizationResult, riskTier, riskEngineAvailable, reviewRequestId, timestamp);
+            EvaluationResponse response = new EvaluationResponse(requestId, agentId, sessionId, action, resource,
+                    decision, reason, riskScore, authorizationResult, riskTier, riskEngineAvailable, reviewRequestId,
+                    timestamp);
+            response.setRiskEngineScore(riskEngineScore);
+            response.setTrajectoryScore(trajectoryScore);
+            int effective = riskScore;
+            if (riskEngineScore != null) {
+                effective = Math.max(effective, riskEngineScore);
+            }
+            if (trajectoryScore != null) {
+                effective = Math.max(effective, trajectoryScore);
+            }
+            response.setEffectiveRiskScore(effective);
+            return response;
         }
     }
 }

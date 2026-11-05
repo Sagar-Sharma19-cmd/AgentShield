@@ -143,6 +143,12 @@ export interface EvaluationResponse {
   authorizationResult: AuthorizationResult;
   riskTier: RiskTier | null;
   riskEngineAvailable: boolean | null;
+  /** Risk Engine score; null when it was not consulted. */
+  riskEngineScore: number | null;
+  /** Session-history score; null when trajectory was not evaluated. */
+  trajectoryScore: number | null;
+  /** Highest of riskScore, riskEngineScore and trajectoryScore. */
+  effectiveRiskScore: number;
   reviewRequestId: string | null;
   timestamp: string;
 }

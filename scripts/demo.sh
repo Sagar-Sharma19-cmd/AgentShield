@@ -106,7 +106,7 @@ evaluate() { # session action tool resource
   | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
-print(f\"  {'$2':<17}{'$3':<11}{'$4':<34}{d.get('decision','?'):<8} risk={d.get('riskScore','?'):<4} {d.get('reason','')[:70]}\")"
+print(f\"  {'$2':<17}{'$3':<11}{'$4':<34}{d.get('decision','?'):<8} risk={d.get('effectiveRiskScore',d.get('riskScore','?')):<4} {d.get('reason','')[:70]}\")"
 }
 
 cmd_trajectory() {
