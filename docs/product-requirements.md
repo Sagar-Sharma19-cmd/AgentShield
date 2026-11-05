@@ -189,7 +189,7 @@ User (agent) → requests e.g. non-prod DELETE or an EXTERNAL_REQUEST
 → Decision: `REVIEW`, riskScore 60–75
 → Result: response says `REVIEW` and a `review_requests` row is created. The backend review endpoints (`/api/v1/reviews`: start, approve, reject) let an admin act on it. There are no notifications and no per-reviewer identity; the admin key is shared
 → Audit event: `decision=REVIEW`, `actionOutcome=REVIEW_REQUIRED`
-→ **Remaining gap:** the backend review workflow now exists (see the row in the gap table below). What is still missing is notification of reviewers, per-reviewer identity, and an audit trail for admin review decisions. The operator console for reviews exists only on `feature/frontend`, not on `main`.
+→ **Remaining gap:** the backend review workflow now exists (see the row in the gap table below). What is still missing is notification of reviewers, per-reviewer identity, and an audit trail for admin review decisions. The operator console for reviews is implemented (Reviews workspace).
 
 ### Journey 8 — A secret is detected **[TARGET]**
 User (agent) → attempts to read or pass along content containing secret-shaped data
@@ -270,7 +270,7 @@ Complexity and value are qualitative (Low/Medium/High), not numeric scores.
 
 | Feature | Problem | User | Description | Dependencies | Security considerations | Complexity | Expected value |
 |---|---|---|---|---|---|---|---|
-| Agent behaviour / trajectory analysis | Individually-benign actions can be dangerous in sequence (named in threat model as "out of scope — current phase") | Security engineer, researcher | Windowed analysis of an agent's recent actions per session to flag suspicious sequences. **Status (M4.3, branch `feature/trajectory-integration`, not merged):** a deterministic baseline is implemented. It reads the last 10 requests of the same session and verified agent, is escalate-only (ALLOW to REVIEW at HIGH/CRITICAL), and is not ML. See `docs/architecture.md`, Trajectory Analysis, and `docs/threat-model.md` for its limits | Audit data, session modeling | Must not retroactively block already-completed actions; advisory/REVIEW only at first | High | Medium (High research value) |
+| Agent behaviour / trajectory analysis | Individually-benign actions can be dangerous in sequence (named in threat model as "out of scope — current phase") | Security engineer, researcher | Windowed analysis of an agent's recent actions per session to flag suspicious sequences. **Status (M4.3, implemented):** a deterministic baseline is implemented. It reads the last 10 requests of the same session and verified agent, is escalate-only (ALLOW to REVIEW at HIGH/CRITICAL), and is not ML. See `docs/architecture.md`, Trajectory Analysis, and `docs/threat-model.md` for its limits | Audit data, session modeling | Must not retroactively block already-completed actions; advisory/REVIEW only at first | High | Medium (High research value) |
 | ML-based anomaly detection in Risk Engine | Deterministic rules can't capture "unusual for *this* agent" | Researcher | Supervised/unsupervised model (e.g. isolation forest) trained on audit history, as an additional risk factor | Deterministic Risk Engine must exist first; enough labeled/simulated data | Model must be explainable-adjacent (contribute a factor, not a black-box override) and never the sole basis for DENY | High | Medium (High research value) |
 | Context-aware risk scoring | Same action can be risky or not depending on session history, agent reputation | Researcher | Factor in agent history / trajectory signals into the risk score. **Status (M4.3):** the trajectory signal is implemented as a separate escalate-only stage, stored in its own columns. It is deliberately not blended into `riskScore`, so the policy and Risk Engine scores keep their meaning | Trajectory analysis | Must bound how much "history" can swing a score to avoid runaway penalization | High | Medium (High research value) |
 
@@ -655,7 +655,7 @@ Agent Request
 ### What is included
 - Everything in **Phase 1** (audit read API, admin action audit, basic rate limiting, per-operator admin identity) — makes the existing, already-solid authorization engine *operable* by a human instead of only queryable via SQL.
 - **Phase 2**'s deterministic Risk Engine — replaced the stub with real, explainable scoring (now implemented; see `docs/risk-engine.md`).
-- **Phase 4**'s review workflow — the backend part is implemented (`review_requests`, `/api/v1/reviews`). It addresses the "REVIEW has no handling" gap (Journey 7). Reviewer notifications and per-reviewer identity are still missing; the review console is on `feature/frontend` only.
+- **Phase 4**'s review workflow — the backend part is implemented (`review_requests`, `/api/v1/reviews`). It addresses the "REVIEW has no handling" gap (Journey 7). Reviewer notifications and per-reviewer identity are still missing; the review console is implemented.
 - A minimal slice of **Phase 5** — just Overview, Agents, Audit Logs, and Review Queue pages, enough to demo the full loop visually.
 - A minimal slice of **Phase 6** — just the `credential_access` and `scope_escalation` scenarios from `simulator/README.md`, enough to prove the gateway blocks what it claims to.
 

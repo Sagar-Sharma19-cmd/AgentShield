@@ -117,12 +117,12 @@ A standalone, independently runnable and testable service (`risk-engine/`) that 
 deterministic, explainable risk score (0–100) and tier from an `action`/`resource` pair — see
 `docs/risk-engine.md` for the scoring design. The Spring Boot backend now calls it via
 `RiskEngineClient` for every request PolicyEngine has already ALLOWed or REVIEWed; see
-[Risk Engine Integration](#risk-engine-integration) below. No ML or trajectory/behavioral
-analysis is implemented in either service.
+[Risk Engine Integration](#risk-engine-integration) below. No ML is implemented in either service.
+Deterministic trajectory analysis runs in the backend (see [Trajectory Analysis](#trajectory-analysis)).
 
-### Frontend (Next.js) — implemented on `feature/frontend`, not merged to `main`
+### Frontend (Next.js)
 
-On `feature/frontend`, the Next.js operator console has these routes: Overview, Activity, Reviews,
+The Next.js operator console has these routes: Overview, Activity, Reviews,
 Agents, Tools and a CI/CD demo (`/pipeline`). Agents support registration with a one-time API key
 display, lifecycle controls (suspend, reactivate, revoke, key rotation) and per-agent permission
 management (grant with selected actions, revoke with confirmation). Tools support registration and
@@ -132,8 +132,6 @@ theme switcher in the header; a test checks text/background contrast in both the
 The CI/CD demo describes the M4.1 mock simulator and shows the gateway decisions recorded for a
 chosen agent. It does not run the simulator. Tools in that demo are mocks, so the page never claims
 production interception.
-
-On `main`, `frontend/` contains only the foundation page. This section describes the branch, not `main`.
 
 ### PostgreSQL Database
 

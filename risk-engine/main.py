@@ -4,9 +4,10 @@ AgentShield Risk Engine
 A FastAPI service that receives an agent action context and returns a
 deterministic, explainable risk assessment.
 
-Status: Phase 1 — deterministic, rule-based scoring only.
-Not yet integrated with the Spring Boot gateway. ML-based and
-trajectory/behavioral risk analysis are future phases; see docs/risk-engine.md.
+Status: deterministic, rule-based scoring only (no ML).
+Integrated with the Spring Boot gateway as an escalation-only signal
+(HttpRiskEngineClient). Trajectory analysis runs in the backend, not here;
+see docs/risk-engine.md and docs/architecture.md.
 
 This service is a RISK SIGNAL. It does not authorize or deny actions and
 must never be treated as an authorization or permission engine.

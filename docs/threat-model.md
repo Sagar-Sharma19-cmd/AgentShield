@@ -2,7 +2,7 @@
 
 > **Status:** Partial. This document lists threats and planned controls. Only some controls exist.
 > Implemented controls are described in `docs/architecture.md`. Deterministic trajectory analysis is
-> implemented on the `feature/trajectory-integration` branch (not merged). It is escalate-only, not ML,
+> implemented. It is escalate-only, not ML,
 > and has the limits in [Trajectory Analysis: What It Does and Does Not Stop](#trajectory-analysis-what-it-does-and-does-not-stop).
 > Resource-impact analysis is designed (`docs/resource-impact-design.md`) and is NOT implemented.
 
@@ -106,7 +106,7 @@ Implemented in `backend/.../trajectory/` and described in `docs/architecture.md`
 - **Unauthenticated requests are not audited.** A 401 never enters any session's history.
 - **Alert delivery is pull-based.** The admin console learns of escalations by polling the audit API
   every 10 seconds. There is no push delivery, so the console can lag.
-- **Simulator tools are mocks.** Any scenario run through the M4.1 simulator (not part of this branch)
+- **Simulator tools are mocks.** Any scenario run through the M4.1 simulator
   uses mock tools. Nothing it does touches real infrastructure, so it proves the gateway's decisions,
   not the effect of a real tool call.
 

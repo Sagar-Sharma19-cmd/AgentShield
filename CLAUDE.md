@@ -308,10 +308,12 @@ IMPLEMENTED:
 - Security scanning workflow (security-checks.yml)
 - Docker Compose PostgreSQL environment
 
-BRANCH-ONLY (not merged to `main`): the `feature/frontend` branch contains Next.js workspaces
-for Dashboard, Reviews, Agents and Activity, plus agent lifecycle controls (M3.3, committed as
-81fa2357). `main` contains only the frontend foundation page. Do not describe the frontend as
-merged or released.
+ALSO IMPLEMENTED (on `main` since 5 Nov 2026):
+
+- Next.js operator console: Overview, Activity, Reviews, Agents (registration, one-time key, lifecycle,
+  grants), Tools, CI/CD demo page, live alerts, light/dark theme
+- M4.1 CI/CD simulator (`simulator/`): mock tools only, a tool runs only on ALLOW, fails closed otherwise
+- Demo tooling: `scripts/demo.sh`, `docs/demo-guide.md`
 
 NOT IMPLEMENTED / INCOMPLETE:
 
@@ -322,7 +324,7 @@ NOT IMPLEMENTED / INCOMPLETE:
 - Resource inventory, resource relationships and resource-impact / blast-radius analysis: design
   only (M3.4 Stage 0, `docs/resource-impact-design.md`). No tables, endpoints or gateway logic exist
 - Admin action audit trail: admin actions (agent, tool, permission, review changes) are not audited
-- Simulator (M4.1 CI/CD simulator is not part of this branch; its tools are mocks and do not execute infrastructure operations)
+- Real tool integrations: simulator tools are mocks and do not execute infrastructure operations
 - Prompt injection defense
 - Indirect prompt injection defense
 - AI output secret detection

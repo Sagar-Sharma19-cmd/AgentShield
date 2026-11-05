@@ -7,9 +7,9 @@
 #
 # Current status:
 #   - postgres   : configured (ready to use)
-#   - backend    : placeholder (not yet implemented)
-#   - risk-engine: placeholder (not yet implemented)
-#   - frontend   : placeholder (not yet implemented)
+#   - backend    : implemented, Dockerfile exists; service not enabled here yet
+#   - risk-engine: implemented, Dockerfile exists; service not enabled here yet
+#   - frontend   : implemented; Dockerfile and service not added yet
 # ============================================================
 
 services:

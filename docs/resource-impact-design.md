@@ -46,7 +46,7 @@ These decisions were reviewed and approved. They bind the design below.
 
 ## 2. Current state (verified, as of this design)
 
-Verified against the source on `feature/frontend`:
+Verified against the source (then on `feature/frontend`, now on `main`):
 
 - `resource` is a required, non-blank string on `EvaluationRequest` (`dto/EvaluationRequest.java`).
   No other validation applies to it.

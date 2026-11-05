@@ -26,7 +26,7 @@ AgentShield Security Gateway
     ├─ Permission Engine   (is this agent explicitly allowed this action on this tool?)
     ├─ Policy Evaluation   (is this resource/action dangerous?)
     ├─ Risk Evaluation     (deterministic score; escalation only)     [implemented]
-    └─ Trajectory Analysis (session history; ALLOW→REVIEW only)       [implemented, branch]
+    └─ Trajectory Analysis (session history; ALLOW→REVIEW only)       [implemented]
     │
     ▼
  ALLOW / REVIEW / DENY  ──►  Audit log (PostgreSQL)
@@ -64,7 +64,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full model.
 | Component | Technology | Responsibility |
 |-----------|-----------|----------------|
 | `backend` | Java 17, Spring Boot 3, Maven | Security gateway — authorization, policy evaluation, risk escalation, human review and audit logging |
-| `frontend` | Next.js, TypeScript | Operator console (Overview, Activity, Reviews, Agents, Tools, CI/CD demo) on `feature/frontend`; `main` has only the foundation page |
+| `frontend` | Next.js, TypeScript | Operator console (Overview, Activity, Reviews, Agents, Tools, CI/CD demo) |
 | `risk-engine` | Python, FastAPI, Pydantic | Deterministic, rule-based risk scoring service (weighted factors, no ML). Called by the gateway as an escalation-only signal |
 | `simulator` | Python | Simulates AI-agent tool requests for testing and demonstration |
 | `docs` | Markdown | Architecture, threat model, API design, and research notes |
@@ -127,9 +127,9 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 2b | ✅ Complete | Agent identity, tool registry & fine-grained agent-tool permissions (`PermissionEngine`) |
 | Phase 2c | ✅ Complete | Agent API key authentication, admin API protection, Flyway database migrations |
 | Phase 3 | ✅ Complete | Risk engine — deterministic Python/FastAPI scoring service, integrated into the Spring Boot gateway as an escalation-only risk signal |
-| Phase 4 | 🔲 In progress (branch) | Frontend console — Next.js workspaces (Dashboard, Reviews, Agents, Activity) exist on `feature/frontend` and are not yet merged to `main` |
-| Phase 5 | 🔲 Planned | Agent simulator — test harness for end-to-end scenarios |
-| Phase 6 | 🟡 Implemented on `feature/trajectory-integration` (not merged) | Deterministic trajectory analysis over the last 10 requests of a session, escalate-only, with a kill switch. Not ML, not calibrated against labelled data |
+| Phase 4 | ✅ Complete | Frontend console — Next.js workspaces: Overview, Activity, Reviews, Agents, Tools, CI/CD demo, live alerts, light/dark theme |
+| Phase 5 | ✅ Complete | CI/CD agent simulator (`simulator/`) — 5 scenarios, mock tools only, executes a tool only on ALLOW and fails closed otherwise |
+| Phase 6 | ✅ Complete | Deterministic trajectory analysis over the last 10 requests of a session, escalate-only, with a kill switch. Not ML, not calibrated against labelled data |
 | Phase 7 | 🔲 Planned | Full Docker Compose local deployment |
 
 ---
