@@ -9,7 +9,6 @@ import {
   mostEscalatedSession,
   riskTierForScore,
   sessionTrace,
-  type EscalatedSession,
   type TracePoint,
 } from "@/lib/checkpoint/gates";
 import { outcomePhrase } from "@/lib/checkpoint/stream";
@@ -49,13 +48,33 @@ export function SessionTrace() {
       ) : !rows || session === null ? (
         <TraceEmpty />
       ) : (
-        <Trace session={session} points={sessionTrace(rows, session.sessionId)} />
+        <SessionTraceChart
+          sessionId={session.sessionId}
+          agentId={session.agentId}
+          peakScore={session.peakScore}
+          points={sessionTrace(rows, session.sessionId)}
+        />
       )}
     </CheckpointPanel>
   );
 }
 
-function Trace({ session, points }: { session: EscalatedSession; points: TracePoint[] }) {
+export interface SessionTraceChartProps {
+  sessionId: string;
+  agentId: string;
+  /** Highest trajectory score among the points, or null when none has a score. */
+  peakScore: number | null;
+  /** Requests of the session, oldest first (sessionTrace()). */
+  points: TracePoint[];
+  /** Marks one request (for example, the one open in the Activity sheet) with a ring and "this request". */
+  highlightRequestId?: string;
+}
+
+/**
+ * The trace chart on its own: header line, SVG, legend and an sr-only table. Used by the Overview's
+ * SessionTrace and by the Activity detail sheet.
+ */
+export function SessionTraceChart({ sessionId, agentId, peakScore, points, highlightRequestId }: SessionTraceChartProps) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const plotWidth = Math.max(0, width - PAD.left - PAD.right);
   const plotHeight = HEIGHT - PAD.top - PAD.bottom;
@@ -77,21 +96,28 @@ function Trace({ session, points }: { session: EscalatedSession; points: TracePo
     penDown = true;
   });
 
-  const summary = `Line chart of trajectory score for session ${session.sessionId}, ${points.length} requests, peak ${session.peakScore} of 100. Values are listed in the table below.`;
+  const peakText = peakScore === null ? "no trajectory score" : `peak ${peakScore} of 100`;
+  const summary = `Line chart of trajectory score for session ${sessionId}, ${points.length} requests, ${peakText}. Values are listed in the table below.`;
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
         <span className="text-muted-foreground">Session</span>
-        <span className="font-mono" title={session.sessionId}>
-          {session.sessionId.length > 18 ? `${shortId(session.sessionId)}…` : session.sessionId}
+        <span className="font-mono" title={sessionId}>
+          {sessionId.length > 18 ? `${shortId(sessionId)}…` : sessionId}
         </span>
         <span className="text-muted-foreground">agent</span>
-        <span className="max-w-40 truncate font-mono">{session.agentId}</span>
+        <span className="max-w-40 truncate font-mono">{agentId}</span>
         <span className="ml-auto flex items-center gap-1.5">
           <span className="text-muted-foreground">Peak</span>
-          <span className="font-mono tabular-nums">{session.peakScore}</span>
-          <RiskTierBadge tier={riskTierForScore(session.peakScore)} />
+          {peakScore === null ? (
+            <span className="text-muted-foreground">n/a</span>
+          ) : (
+            <>
+              <span className="font-mono tabular-nums">{peakScore}</span>
+              <RiskTierBadge tier={riskTierForScore(peakScore)} />
+            </>
+          )}
         </span>
       </div>
 
@@ -135,10 +161,14 @@ function Trace({ session, points }: { session: EscalatedSession; points: TracePo
               const { icon: Icon, tone, label } = DECISION_MARKS[point.decision];
               const x = xFor(index);
               const y = point.trajectoryScore === null ? naY : yFor(point.trajectoryScore);
-              const title = `Request ${index + 1} of ${points.length}, ${formatTimestamp(point.timestamp)}. ${label}: ${outcomePhrase(point.decision, point.gate)}. Trajectory ${point.trajectoryScore === null ? "not evaluated" : `${point.trajectoryScore} of 100`}.`;
+              const highlighted = point.requestId === highlightRequestId;
+              const title = `Request ${index + 1} of ${points.length}${highlighted ? " (this request)" : ""}, ${formatTimestamp(point.timestamp)}. ${label}: ${outcomePhrase(point.decision, point.gate)}. Trajectory ${point.trajectoryScore === null ? "not evaluated" : `${point.trajectoryScore} of 100`}.`;
               return (
                 <g key={point.requestId}>
                   <title>{title}</title>
+                  {highlighted ? (
+                    <circle cx={x} cy={y} r={ICON / 2 + 5} fill="none" className="stroke-foreground" strokeWidth={1.5} />
+                  ) : null}
                   <circle cx={x} cy={y} r={ICON / 2 + 2} className="fill-card" />
                   <Icon
                     x={x - ICON / 2}
@@ -163,7 +193,7 @@ function Trace({ session, points }: { session: EscalatedSession; points: TracePo
       <DecisionLegend />
 
       <table className="sr-only">
-        <caption>Trajectory score per request in session {session.sessionId}</caption>
+        <caption>Trajectory score per request in session {sessionId}</caption>
         <thead>
           <tr>
             <th scope="col">Request</th>
@@ -175,7 +205,10 @@ function Trace({ session, points }: { session: EscalatedSession; points: TracePo
         <tbody>
           {points.map((point, index) => (
             <tr key={point.requestId}>
-              <td>{index + 1}</td>
+              <td>
+                {index + 1}
+                {point.requestId === highlightRequestId ? " (this request)" : ""}
+              </td>
               <td>{formatTimestamp(point.timestamp)}</td>
               <td>
                 {DECISION_MARKS[point.decision].label}, {outcomePhrase(point.decision, point.gate)} ({GATE_LABELS[point.gate]})

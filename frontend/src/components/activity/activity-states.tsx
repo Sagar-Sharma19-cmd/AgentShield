@@ -6,16 +6,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
 import { useAdminKey } from "@/lib/auth/admin-key";
 
-/** Placeholder rows shaped like the loaded list, so the layout does not jump when data arrives. */
+/** Placeholder rows shaped like the loaded table, so the layout does not jump when data arrives. */
 export function ActivityLoading() {
   return (
-    <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading activity">
-      {Array.from({ length: 8 }, (_, index) => (
-        <div key={index} className="flex items-center gap-4 rounded-lg border bg-card px-4 py-3">
-          <Skeleton className="h-5 w-24 rounded-md" />
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="hidden h-4 flex-1 md:block" />
-          <Skeleton className="h-4 w-20" />
+    <div className="overflow-hidden rounded-xl border border-border bg-card" aria-busy="true" aria-label="Loading activity">
+      <div className="hidden h-9 items-center gap-4 border-b border-border px-3 md:flex">
+        {[16, 20, 16, 12, 28, 14, 16].map((width, index) => (
+          <Skeleton key={index} className="h-2.5" style={{ width: `${width}%` }} />
+        ))}
+      </div>
+      {Array.from({ length: 10 }, (_, index) => (
+        <div key={index} className="flex h-10 items-center gap-4 border-b border-border/60 px-3 last:border-b-0">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="h-3 w-28" />
+          <Skeleton className="hidden h-3 w-24 md:block" />
+          <Skeleton className="hidden h-3 flex-1 md:block" />
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="ml-auto h-3 w-8" />
         </div>
       ))}
     </div>
@@ -33,13 +40,19 @@ export function ActivityEmpty({ reason, onAction }: ActivityEmptyProps) {
   const copy = EMPTY_COPY[reason];
 
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-card/60 px-6 py-12 text-center">
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card/60 px-6 py-12 text-center">
       <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Inbox aria-hidden="true" className="size-5" />
       </div>
       <div className="flex max-w-md flex-col gap-1">
         <h2 className="text-base font-medium">{copy.title}</h2>
         <p className="text-sm text-muted-foreground">{copy.body}</p>
+        {reason === "none" ? (
+          <p className="text-sm text-muted-foreground">
+            To generate sample traffic, run <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">scripts/demo.sh</code>{" "}
+            from the repository root (see docs/demo-guide.md).
+          </p>
+        ) : null}
       </div>
       <Button variant="outline" size="sm" onClick={onAction}>
         {copy.action}

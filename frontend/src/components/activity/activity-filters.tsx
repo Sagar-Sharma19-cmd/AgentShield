@@ -17,6 +17,8 @@ interface ActivityFiltersProps {
   /** Filters currently applied in the URL. */
   applied: ActivityFilters;
   onApply: (filters: ActivityFilters) => void;
+  /** Lets the page focus the agent field (the "/" shortcut). */
+  agentInputRef?: React.Ref<HTMLInputElement>;
 }
 
 interface DraftFilters {
@@ -46,7 +48,7 @@ function toInstant(localValue: string): string | undefined {
  * Filters are applied on submit, not on every keystroke, so typing an agent ID does not fire a
  * request per character. Every field maps 1:1 to a parameter of GET /api/v1/audit.
  */
-export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
+export function ActivityFilters({ applied, onApply, agentInputRef }: ActivityFiltersProps) {
   const id = useId();
   const [draft, setDraft] = useState<DraftFilters>(() => draftFrom(applied));
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -79,12 +81,19 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded-lg border bg-card p-4" aria-label="Filter activity">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3" aria-label="Filter activity">
+      <div className="grid grid-cols-1 items-end gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(10rem,1.3fr)_repeat(2,minmax(8rem,1fr))_repeat(2,minmax(11rem,1fr))_auto]">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-agent`}>Agent ID</Label>
+          <Label htmlFor={`${id}-agent`} className="flex items-center justify-between gap-2 text-xs">
+            Agent ID
+            <kbd className="rounded border border-border px-1 font-mono text-[0.625rem] text-muted-foreground" aria-hidden="true">
+              /
+            </kbd>
+          </Label>
           <Input
+            ref={agentInputRef}
             id={`${id}-agent`}
+            aria-keyshortcuts="/"
             value={draft.agentId}
             onChange={(event) => update("agentId", event.target.value)}
             placeholder="Exact match"
@@ -95,7 +104,7 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-decision`}>Decision</Label>
+          <Label htmlFor={`${id}-decision`} className="text-xs">Decision</Label>
           <Select value={draft.decision} onValueChange={(value) => update("decision", value as DraftFilters["decision"])}>
             <SelectTrigger id={`${id}-decision`} className="w-full">
               <SelectValue />
@@ -112,7 +121,7 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-authorization`}>Authorization</Label>
+          <Label htmlFor={`${id}-authorization`} className="text-xs">Authorization</Label>
           <Select
             value={draft.authorizationResult}
             onValueChange={(value) => update("authorizationResult", value as DraftFilters["authorizationResult"])}
@@ -132,7 +141,7 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-from`}>From</Label>
+          <Label htmlFor={`${id}-from`} className="text-xs">From</Label>
           <Input
             id={`${id}-from`}
             type="datetime-local"
@@ -143,7 +152,7 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`${id}-to`}>To</Label>
+          <Label htmlFor={`${id}-to`} className="text-xs">To</Label>
           <Input
             id={`${id}-to`}
             type="datetime-local"
@@ -152,21 +161,20 @@ export function ActivityFilters({ applied, onApply }: ActivityFiltersProps) {
             aria-invalid={rangeError !== null}
           />
         </div>
-      </div>
-
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p role="alert" className="min-h-5 text-sm text-danger-text">
-          {rangeError}
-        </p>
-        <div className="flex gap-2 sm:justify-end">
+        <div className="flex gap-2 sm:col-span-2 sm:justify-end lg:col-span-1">
           <Button type="button" variant="ghost" size="sm" onClick={handleReset}>
             Reset
           </Button>
           <Button type="submit" size="sm">
-            Apply filters
+            Apply
           </Button>
         </div>
       </div>
+
+      {/* Always rendered so the alert region exists before a message is added. */}
+      <p role="alert" className={rangeError ? "text-sm text-danger-text" : "sr-only"}>
+        {rangeError}
+      </p>
     </form>
   );
 }

@@ -47,3 +47,26 @@ export function useAuditEvent(requestId: string | undefined) {
     retry: retryTransientFailures,
   });
 }
+
+/** Size of the per-agent sample used for the Activity sheet's session context (backend maximum is 100). */
+export const AGENT_SAMPLE_SIZE = 100;
+
+/**
+ * The latest AGENT_SAMPLE_SIZE audit rows of one agent, newest first, for the session context in the
+ * Activity detail sheet. The caller filters these rows by sessionId. Keyed through auditKeys.list, so
+ * it shares the cache and invalidation of every other audit list.
+ */
+export function useAgentAuditSample(agentId: string | undefined) {
+  const { adminKey } = useAdminKey();
+  const params: AuditSearchParams = { agentId, page: 0, size: AGENT_SAMPLE_SIZE };
+
+  return useQuery({
+    queryKey: auditKeys.list(params),
+    queryFn: () => {
+      if (adminKey === null || agentId === undefined) throw new Error("No agent selected.");
+      return auditApi.search(params, { adminKey });
+    },
+    enabled: adminKey !== null && agentId !== undefined,
+    retry: retryTransientFailures,
+  });
+}

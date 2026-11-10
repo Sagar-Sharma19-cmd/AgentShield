@@ -20,7 +20,12 @@ import {
   trajectoryEvidence,
 } from "@/lib/trajectory/model";
 import type { AuditLogResponse } from "@/types/api";
+import { GateMark } from "@/components/checkpoint/gate-mark";
+import { gateFor } from "@/lib/checkpoint/gates";
 import { ActivityError } from "./activity-states";
+import { CopyButton } from "./copy-button";
+import { DecisionPath } from "./decision-path";
+import { SessionContext } from "./session-context";
 
 interface ActivityDetailSheetProps {
   /** Selected gateway requestId. The sheet is open whenever this is set. */
@@ -30,7 +35,8 @@ interface ActivityDetailSheetProps {
 
 /**
  * Loads one audit event by requestId, so the sheet also works for deep links to events that are
- * not on the current page. Every value shown is the backend's own text; nothing is paraphrased.
+ * not on the current page. Recorded values are shown as the backend's own text. The decision path
+ * is the one derived view, and it says where the record is silent (lib/activity/decision-path.ts).
  */
 export function ActivityDetailSheet({ requestId, onClose }: ActivityDetailSheetProps) {
   const query = useAuditEvent(requestId);
@@ -64,17 +70,35 @@ function DetailLoading() {
 }
 
 function DetailBody({ event }: { event: AuditLogResponse }) {
+  const gate = gateFor(event);
   return (
     <>
-      <DetailSection title="Decision">
-        <div className="flex flex-col gap-3">
-          <DecisionBadge decision={event.decision} className="h-7 self-start px-2.5 text-sm" />
-          <p className="text-sm leading-relaxed">{event.reason}</p>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <DecisionBadge decision={event.decision} className="h-7 px-2.5 text-sm" />
+        <span className="text-sm text-muted-foreground">
+          decided at <GateMark gate={gate} className="text-foreground" />
+        </span>
+      </div>
+
+      <DetailSection title="Decision path">
+        <DecisionPath event={event} />
+        <p className="text-xs text-muted-foreground">
+          Built from the recorded authorization result, decision and escalation source. Where the record cannot say what a
+          gate did, the step says so.
+        </p>
       </DetailSection>
 
-      <DetailSection title="What happened">
+      <DetailSection title="Request">
         <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
+          <Field label="Request ID">
+            <span className="flex items-start gap-2">
+              <span className="min-w-0 font-mono text-xs break-all">{event.requestId}</span>
+              <CopyButton value={event.requestId} label="Copy request ID" />
+            </span>
+          </Field>
+          <Field label="Session">
+            <span className="font-mono text-xs break-all">{event.sessionId}</span>
+          </Field>
           <Field label="Agent">
             <span className="font-mono text-xs break-all">{event.agentId}</span>
           </Field>
@@ -86,52 +110,27 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
             <span className="font-mono text-xs break-all">{event.resource}</span>
           </Field>
           <Field label="Sensitivity">{SENSITIVITY_LABELS[event.resourceSensitivity]}</Field>
-        </dl>
-      </DetailSection>
-
-      <DetailSection title="Authorization">
-        <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
-          <Field label="Result">{AUTHORIZATION_LABELS[event.authorizationResult]}</Field>
-          <Field label="Reason">
-            <span className="leading-relaxed">{event.authorizationReason}</span>
-          </Field>
-        </dl>
-      </DetailSection>
-
-      <DetailSection title="Risk">
-        <div className="flex flex-col gap-2">
-          <RiskScore score={event.riskScore} />
-          <p className="text-xs text-muted-foreground">
-            The policy risk score recorded for this request. Audit events do not store a risk tier.
-          </p>
-        </div>
-      </DetailSection>
-
-      <DetailSection title="Trajectory">
-        <TrajectoryDetail event={event} />
-      </DetailSection>
-
-      <DetailSection title="Outcome">
-        <div className="flex flex-col gap-2">
-          <p className="text-sm">{OUTCOME_LABELS[event.actionOutcome]}</p>
-          <p className="text-xs text-muted-foreground">
-            Derived from the decision. AgentShield does not record whether the tool call ran afterwards.
-          </p>
-        </div>
-      </DetailSection>
-
-      <DetailSection title="Identifiers">
-        <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
           <Field label="Recorded">
             <time dateTime={event.timestamp} className="tabular-nums">
               {formatTimestamp(event.timestamp)}
             </time>
           </Field>
-          <Field label="Session">
-            <span className="font-mono text-xs break-all">{event.sessionId}</span>
+          <Field label="Authorization">
+            <span className="flex flex-col gap-0.5">
+              <span>{AUTHORIZATION_LABELS[event.authorizationResult]}</span>
+              <span className="text-xs leading-relaxed text-muted-foreground">{event.authorizationReason}</span>
+            </span>
           </Field>
-          <Field label="Request">
-            <span className="font-mono text-xs break-all">{event.requestId}</span>
+          <Field label="Policy risk">
+            <RiskScore score={event.riskScore} />
+          </Field>
+          <Field label="Outcome">
+            <span className="flex flex-col gap-0.5">
+              <span>{OUTCOME_LABELS[event.actionOutcome]}</span>
+              <span className="text-xs text-muted-foreground">
+                Derived from the decision. AgentShield does not record whether the tool call ran afterwards.
+              </span>
+            </span>
           </Field>
           <Field label="Registered agent">
             <IdentifierValue value={event.registeredAgentId} />
@@ -140,6 +139,18 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
             <IdentifierValue value={event.registeredToolId} />
           </Field>
         </dl>
+        <p className="text-xs text-muted-foreground">
+          The policy risk score is the one recorded on the audit row. Audit rows do not store a risk tier or the Risk
+          Engine&apos;s own score.
+        </p>
+      </DetailSection>
+
+      <DetailSection title="Trajectory">
+        <TrajectoryDetail event={event} />
+      </DetailSection>
+
+      <DetailSection title="Session context">
+        <SessionContext event={event} />
       </DetailSection>
     </>
   );

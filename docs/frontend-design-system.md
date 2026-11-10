@@ -279,7 +279,7 @@ Import each from its own file (no barrel), so unused primitives stay out of the 
 
 ---
 
-## 5. Page-by-page redesign plan (not yet implemented)
+## 5. Page-by-page redesign plan (Shell, Overview and Activity implemented; the rest planned)
 
 Constraints for every page: no changes to API calls, query keys, React Query logic, admin-key handling or
 security semantics. Every state needs Loading, Empty, Error and Unauthorized views. The layout must work at
@@ -322,14 +322,55 @@ security semantics. Every state needs Loading, Empty, Error and Unauthorized vie
   `RecentActivityCard`. The stream and funnel replace their information for the recent sample. Their pure
   logic and tests (`lib/dashboard/metrics.ts`) are unchanged.
 
-### Activity (`components/activity/*`)
-- A full-width (`max-w-7xl`) dense table with a sticky header (`z-10`), row hover and a selected-row
-  indicator.
-- Columns: time, agent, tool, action, resource (mono, truncated with tooltip), decision badge, and policy,
-  Risk Engine and trajectory scores, each labelled.
-- Filters in a single toolbar row that wraps on mobile. On small screens the table becomes cards.
-- Detail sheet (`springs.gentle`): a decision explanation first (why: policy reason, escalation source), then
-  scores, then trajectory evidence.
+### Activity (`components/activity/*`): implemented (Phase F4)
+- **Table** (`activity-list.tsx`): a dense table, not cards, from `md` up. Columns are relative time (the exact
+  time is in the hover title and the sr-only text), agent, tool, action, resource (mono, truncated, full value
+  on hover), gate (`gateFor` + icon from `checkpoint/gate-mark.tsx`), decision (icon + label) and the policy
+  risk score. The audit row stores no Risk Engine score, so there is no column for one. The header is sticky
+  inside the table's own scroll area (`max-h-[min(70vh,52rem)]`). A page-level sticky header would not work
+  because the table also scrolls horizontally. Rows have hairline dividers and hover and focus-within fills.
+  The selected row gets a fill plus a left bar, so selection does not rely on colour alone. Below `md`, rows
+  become a compact list with the same fields.
+- **Entrance**: the list is keyed by the server page (`JSON(toAuditSearchParams)`), so rows fade in (opacity
+  only, `durations.base`, `staggerDelay`) on a page or filter change. Rows that arrive later from a refetch
+  appear instantly. There is no animation under reduced motion.
+- **Filters**: the existing draft form and URL model (`lib/activity/filters.ts`) are unchanged, laid out as one
+  compact row that wraps. Applied filters show as removable chips, with "Clear all"
+  (`activity-chips.tsx`, `activeFilterChips` / `withoutFilter`). Removing a chip goes back to page 1.
+- **Gate chips**: these narrow the CURRENT page to one deciding gate, client-side (`gateCounts` /
+  `filterByGate`). They do not change the URL or query the server, and the copy below them says so. Chips with
+  a count of 0 are disabled. The selection resets when the page changes.
+- **Keyboard** (`activityKey`, `isTypingTarget` in `lib/activity/table-model.ts`): J/K move focus between rows,
+  Enter opens the focused row, Esc closes the sheet (Radix) and "/" focuses the agent filter. Shortcuts are
+  ignored while the user types (inputs, textareas, selects, contenteditable, combobox/listbox roles), while
+  the sheet or another overlay is open, and when Ctrl, ⌘ or Alt is held. A hint row shows the keys from `md` up.
+- **Detail sheet**: decision badge and deciding gate, then:
+  - "Decision path": a vertical timeline of the six gates (see the rules below).
+  - Request facts: request ID with a copy button and a live "Copied" message, session, agent, tool, action,
+    resource, sensitivity, timestamp, authorization result and reason, policy risk, outcome and registered IDs.
+  - Trajectory evidence, as before.
+  - Session context.
+- **Session context**: this is the page's one new query, `useAgentAuditSample(agentId)`. It is keyed
+  `auditKeys.list({agentId, page: 0, size: 100})`, filtered to the session client-side and drawn with the
+  Overview's `SessionTraceChart`, with this request ringed. The UI says it covers the latest 100 requests of
+  the agent, and says when the request is older than that sample.
+- **States**: skeleton rows shaped like the table, the existing error pattern, and an empty state that points
+  to `scripts/demo.sh`.
+
+#### Decision path rules (`lib/activity/decision-path.ts`)
+Statuses: passed, decided here, checked with no change, not reached, not recorded. Exactly one step is "decided".
+- Identity or permission failure: decided there, with the authorization reason. Every later gate is not reached.
+- Policy DENY: the Risk Engine and trajectory are not reached. The Risk Engine is never consulted after a DENY,
+  and trajectory does not run on DENY.
+- Policy REVIEW: the Risk Engine is "checked, no change" (its own score is not on the audit row). If
+  `escalatedBy` is null (pre-V9 rows), it is "not recorded" instead. Trajectory is "checked, no change" if a
+  score exists, otherwise "not recorded".
+- Risk Engine REVIEW: policy passed (escalation only raises, so policy allowed it). Risk Engine DENY: policy
+  "passed", with a note that the record does not say whether policy allowed the request or held it for review.
+- Trajectory REVIEW: everything before it passed, and it is decided at trajectory.
+- ALLOW: every gate passed. The trajectory step shows its score against the HIGH threshold (60), or says that
+  no score was recorded.
+- The final "Decision" step is decided only for ALLOW. Otherwise it reads "not allowed" or "held for review".
 
 ### Reviews (`components/reviews/*`)
 - Two panes on desktop (queue left, detail right). On mobile, a queue opens a sheet.
