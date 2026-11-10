@@ -113,6 +113,23 @@ export function RequestSection({ review }: { review: ReviewRequestResponse }) {
             "Not yet decided"
           )}
         </Field>
+        <Field label="Reviewer">{review.reviewer ?? "Not yet decided"}</Field>
+        <Field label="Expires">
+          <time dateTime={review.expiresAt}>{formatTimestamp(review.expiresAt)}</time>
+          {review.expired ? <span className="ml-1.5 font-medium">(expired)</span> : null}
+        </Field>
+        <Field label="Reviewer note">
+          {review.note ? <span className="whitespace-pre-wrap">{review.note}</span> : <span className="text-muted-foreground">No note</span>}
+        </Field>
+        <Field label="Claimed by the agent">
+          {review.consumedAt ? (
+            <time dateTime={review.consumedAt}>{formatTimestamp(review.consumedAt)}</time>
+          ) : review.status === "APPROVED" ? (
+            "Not yet claimed"
+          ) : (
+            "Not applicable"
+          )}
+        </Field>
       </dl>
       <div className="flex flex-col gap-1">
         <p className="text-xs text-muted-foreground">Effective risk score (higher of Risk Engine and trajectory)</p>

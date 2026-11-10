@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -96,7 +97,8 @@ class ReviewRequestControllerIntegrationTest {
     void testApproveReview() throws Exception {
         ReviewRequest r = reviewRequestRepository.save(setStatus(persistPending(), ReviewStatus.IN_REVIEW));
 
-        mockMvc.perform(post("/api/v1/reviews/{id}/approve", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
+        mockMvc.perform(post("/api/v1/reviews/{id}/approve", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reviewer\":\"alice\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("APPROVED"))
                 .andExpect(jsonPath("$.reviewedAt").isNotEmpty());
@@ -107,7 +109,8 @@ class ReviewRequestControllerIntegrationTest {
     void testRejectReview() throws Exception {
         ReviewRequest r = reviewRequestRepository.save(setStatus(persistPending(), ReviewStatus.IN_REVIEW));
 
-        mockMvc.perform(post("/api/v1/reviews/{id}/reject", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
+        mockMvc.perform(post("/api/v1/reviews/{id}/reject", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reviewer\":\"alice\",\"note\":\"too risky\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REJECTED"))
                 .andExpect(jsonPath("$.reviewedAt").isNotEmpty());
@@ -118,7 +121,8 @@ class ReviewRequestControllerIntegrationTest {
     void testApproveWithoutStartIsInvalid() throws Exception {
         ReviewRequest r = persistPending();
 
-        mockMvc.perform(post("/api/v1/reviews/{id}/approve", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
+        mockMvc.perform(post("/api/v1/reviews/{id}/approve", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reviewer\":\"alice\"}"))
                 .andExpect(status().isBadRequest());
     }
 
@@ -155,6 +159,7 @@ class ReviewRequestControllerIntegrationTest {
                 .reason("DELETE action on non-production resource requires human review.")
                 .createdAt(now)
                 .updatedAt(now)
+                .expiresAt(now.plusSeconds(1800))
                 .build();
         return reviewRequestRepository.save(reviewRequest);
     }

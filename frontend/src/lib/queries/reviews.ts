@@ -12,7 +12,7 @@ import {
   describeActionError,
   type ReviewAction,
 } from "@/lib/reviews/model";
-import type { ReviewRequestResponse, ReviewStatus } from "@/types/api";
+import type { ReviewDecisionBody, ReviewRequestResponse, ReviewStatus } from "@/types/api";
 
 /** Review state changes from other operators, so the queue and an open review are refreshed on an interval. */
 export const REVIEW_REFRESH_MS = 30_000;
@@ -95,6 +95,8 @@ export interface ReviewActionVariables {
   action: ReviewAction;
   /** Status the operator saw when they acted. Used only for the success message. */
   from: ReviewStatus;
+  /** Required for approve and reject: {reviewer, note}. Ignored for start. */
+  decision?: ReviewDecisionBody;
 }
 
 export interface ReviewActionDeps {
@@ -120,9 +122,12 @@ export function reviewActionMutationOptions({
   notify,
 }: ReviewActionDeps): MutationOptions<ReviewRequestResponse, Error, ReviewActionVariables> {
   return {
-    mutationFn: ({ id, action }) => {
+    mutationFn: ({ id, action, decision }) => {
       if (adminKey === null) throw new Error("Admin key is not set.");
-      return api[action](id, { adminKey });
+      if (action === "start") return api.start(id, { adminKey });
+      // The backend requires a reviewer on both decisions; never send a decision without one.
+      if (decision === undefined || decision.reviewer.trim() === "") throw new Error("A reviewer name is required.");
+      return api[action](id, decision, { adminKey });
     },
     onMutate: async ({ id }) => {
       await queryClient.cancelQueries({ queryKey: reviewKeys.detail(id) });

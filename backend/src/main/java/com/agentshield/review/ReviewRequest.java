@@ -100,6 +100,26 @@ public class ReviewRequest {
     @Column(name = "trajectory_reason", length = 1000)
     private String trajectoryReason;
 
+    /** Verified registered agent that made the request (V10). Only this agent may read or claim the review. */
+    @Column(name = "registered_agent_id")
+    private UUID registeredAgentId;
+
+    /** Operator-supplied name of whoever approved or rejected the review (V10). Not an authenticated identity. */
+    @Column(length = 100)
+    private String reviewer;
+
+    /** Reviewer's note: required on reject, optional on approve (V10). */
+    @Column(name = "decision_note", length = 1000)
+    private String decisionNote;
+
+    /** When the owning agent claimed the approval; set exactly once (V10). */
+    @Column(name = "consumed_at")
+    private Instant consumedAt;
+
+    /** After this instant the review can no longer be started, decided or claimed (V10). */
+    @Column(name = "expires_at", nullable = false)
+    private Instant expiresAt;
+
     public ReviewRequest() {
     }
 
@@ -281,6 +301,51 @@ public class ReviewRequest {
         this.trajectoryReason = trajectoryReason;
     }
 
+    public UUID getRegisteredAgentId() {
+        return registeredAgentId;
+    }
+
+    public void setRegisteredAgentId(UUID registeredAgentId) {
+        this.registeredAgentId = registeredAgentId;
+    }
+
+    public String getReviewer() {
+        return reviewer;
+    }
+
+    public void setReviewer(String reviewer) {
+        this.reviewer = reviewer;
+    }
+
+    public String getDecisionNote() {
+        return decisionNote;
+    }
+
+    public void setDecisionNote(String decisionNote) {
+        this.decisionNote = decisionNote;
+    }
+
+    public Instant getConsumedAt() {
+        return consumedAt;
+    }
+
+    public void setConsumedAt(Instant consumedAt) {
+        this.consumedAt = consumedAt;
+    }
+
+    public Instant getExpiresAt() {
+        return expiresAt;
+    }
+
+    public void setExpiresAt(Instant expiresAt) {
+        this.expiresAt = expiresAt;
+    }
+
+    /** True when {@code now} is at or after expiresAt. */
+    public boolean isExpiredAt(Instant now) {
+        return expiresAt != null && !now.isBefore(expiresAt);
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -305,6 +370,8 @@ public class ReviewRequest {
         private Integer trajectoryScore;
         private RiskTier trajectoryTier;
         private String trajectoryReason;
+        private UUID registeredAgentId;
+        private Instant expiresAt;
 
         public Builder id(UUID id) {
             this.id = id;
@@ -401,10 +468,23 @@ public class ReviewRequest {
             return this;
         }
 
+        public Builder registeredAgentId(UUID registeredAgentId) {
+            this.registeredAgentId = registeredAgentId;
+            return this;
+        }
+
+        public Builder expiresAt(Instant expiresAt) {
+            this.expiresAt = expiresAt;
+            return this;
+        }
+
         public ReviewRequest build() {
-            return new ReviewRequest(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity,
-                    riskScore, riskTier, originalDecision, status, reason, createdAt, updatedAt, reviewedAt,
-                    trajectoryScore, trajectoryTier, trajectoryReason);
+            ReviewRequest built = new ReviewRequest(id, requestId, agentId, sessionId, tool, action, resource,
+                    resourceSensitivity, riskScore, riskTier, originalDecision, status, reason, createdAt, updatedAt,
+                    reviewedAt, trajectoryScore, trajectoryTier, trajectoryReason);
+            built.setRegisteredAgentId(registeredAgentId);
+            built.setExpiresAt(expiresAt);
+            return built;
         }
     }
 }

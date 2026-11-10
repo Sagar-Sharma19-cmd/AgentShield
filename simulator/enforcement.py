@@ -1,18 +1,21 @@
 """
 Enforcement gate: the only code path that can execute a simulated tool operation.
 
-Invariant: an executor is called only when the parsed AgentShield decision is ALLOW.
-REVIEW, DENY, any gateway failure and any malformed response all stop before execution.
+Invariant: an executor is called only when the parsed AgentShield decision is ALLOW, or (with
+--wait-for-review) when a REVIEW was APPROVED by an operator, the approval was claimed exactly once,
+and the claimed tool/action/resource equal the operation. DENY, REJECTED, any gateway failure,
+timeout, expiry, mismatch and any malformed response all stop before execution.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, List, Optional, Sequence
 
-from agentshield_client import AgentShieldClient, Evaluation, GatewayError
+from agentshield_client import AgentShieldClient, Evaluation, GatewayError, ReviewStatus
 
 
 class Outcome(str, Enum):
@@ -41,6 +44,8 @@ class StepResult:
     evaluation: Optional[Evaluation]
     message: str
     execution_output: Optional[str] = None
+    # Final state of the review request, when the step waited for one (--wait-for-review).
+    review: Optional[ReviewStatus] = None
 
 
 @dataclass
@@ -60,6 +65,23 @@ class PipelineResult:
 
 Executor = Callable[[Operation], str]
 
+DEFAULT_REVIEW_TIMEOUT_SECONDS = 300.0
+DEFAULT_REVIEW_POLL_SECONDS = 3.0
+
+
+@dataclass(frozen=True)
+class ReviewWait:
+    """
+    How to wait for a human decision on a REVIEW. sleep and monotonic are injectable so tests can
+    run the timeout path without waiting. on_status is called once per observed status change.
+    """
+
+    timeout_seconds: float = DEFAULT_REVIEW_TIMEOUT_SECONDS
+    poll_seconds: float = DEFAULT_REVIEW_POLL_SECONDS
+    sleep: Callable[[float], None] = time.sleep
+    monotonic: Callable[[], float] = time.monotonic
+    on_status: Optional[Callable[[ReviewStatus], None]] = None
+
 
 def new_session_id(pipeline_name: str) -> str:
     """Traceable per-run identity, for example ci-deploy-staging-3f9c2a1b8d4e. Max 64 characters."""
@@ -68,8 +90,11 @@ def new_session_id(pipeline_name: str) -> str:
 
 
 def run_operation(client: AgentShieldClient, session_id: str, operation: Operation,
-                  executors: dict) -> StepResult:
-    """Evaluates one operation through AgentShield and executes it only on ALLOW."""
+                  executors: dict, review_wait: Optional[ReviewWait] = None) -> StepResult:
+    """
+    Evaluates one operation through AgentShield and executes it only on ALLOW. With review_wait, a
+    REVIEW is polled until an operator decides; see wait_for_review.
+    """
     try:
         evaluation = client.evaluate(
             session_id=session_id,
@@ -82,14 +107,10 @@ def run_operation(client: AgentShieldClient, session_id: str, operation: Operati
                           f"Gateway did not return a usable decision ({error}). Not executed.")
 
     if evaluation.decision == "ALLOW":
-        executor = executors[operation.name]
-        try:
-            output = executor(operation)
-        except Exception as error:  # the mock failed; the decision was still ALLOW
-            return StepResult(operation, Outcome.EXECUTION_ERROR, evaluation,
-                              f"Mock tool raised {type(error).__name__}.")
-        return StepResult(operation, Outcome.EXECUTED, evaluation,
-                          "Executed (mock).", execution_output=output)
+        return _execute(operation, evaluation, executors, "Executed (mock).")
+
+    if evaluation.decision == "REVIEW" and review_wait is not None:
+        return wait_for_review(client, operation, evaluation, executors, review_wait)
 
     if evaluation.decision == "REVIEW":
         review = evaluation.review_request_id or "not provided"
@@ -104,9 +125,84 @@ def run_operation(client: AgentShieldClient, session_id: str, operation: Operati
                       f"Denied by AgentShield: {evaluation.reason} Not executed.")
 
 
+def _execute(operation: Operation, evaluation: Evaluation, executors: dict, message: str,
+             review: Optional[ReviewStatus] = None) -> StepResult:
+    executor = executors[operation.name]
+    try:
+        output = executor(operation)
+    except Exception as error:  # the mock failed; the decision was still ALLOW / a claimed approval
+        return StepResult(operation, Outcome.EXECUTION_ERROR, evaluation,
+                          f"Mock tool raised {type(error).__name__}.", review=review)
+    return StepResult(operation, Outcome.EXECUTED, evaluation, message, execution_output=output, review=review)
+
+
+def wait_for_review(client: AgentShieldClient, operation: Operation, evaluation: Evaluation,
+                    executors: dict, wait: ReviewWait) -> StepResult:
+    """
+    Polls the agent's own review request until an operator decides, then:
+    - APPROVED: claims it (once), checks the claimed tool/action/resource equal this operation, and
+      only then executes the mock. Any mismatch fails closed.
+    - REJECTED: BLOCKED, with the reviewer and note.
+    - expired, timed out, already consumed, or any gateway error: FAILED_CLOSED.
+    """
+    review_id = evaluation.review_request_id
+    if not review_id:
+        return StepResult(operation, Outcome.FAILED_CLOSED, evaluation,
+                          "REVIEW without a reviewRequestId: nothing to wait for. Not executed.")
+
+    def failed(message: str, review: Optional[ReviewStatus] = None) -> StepResult:
+        return StepResult(operation, Outcome.FAILED_CLOSED, evaluation, message + " Not executed.", review=review)
+
+    deadline = wait.monotonic() + wait.timeout_seconds
+    last_status: Optional[str] = None
+    review: Optional[ReviewStatus] = None
+
+    while True:
+        try:
+            review = client.get_review(review_id)
+        except GatewayError as error:
+            return failed(f"Could not read review {review_id} ({error}).", review)
+
+        if review.status != last_status:
+            last_status = review.status
+            if wait.on_status is not None:
+                wait.on_status(review)
+
+        if review.expired:
+            return failed(f"Review {review_id} expired before it was claimed.", review)
+
+        if review.status == "REJECTED":
+            note = review.note or "no note"
+            return StepResult(operation, Outcome.BLOCKED, evaluation,
+                              f"Rejected by {review.reviewer or 'an operator'}: {note} Not executed.", review=review)
+
+        if review.status == "APPROVED":
+            if review.consumed:
+                return failed(f"Approval for review {review_id} was already used.", review)
+            try:
+                claim = client.claim_review(review_id)
+            except GatewayError as error:
+                return failed(f"Could not claim review {review_id} ({error}).", review)
+            approved = (claim.tool, claim.action, claim.resource)
+            requested = (operation.tool, operation.action, operation.resource)
+            if approved != requested:
+                return failed("The approved operation " + " ".join(approved)
+                              + " does not match the requested " + " ".join(requested) + ".", review)
+            return _execute(operation, evaluation, executors,
+                            f"Approved by {claim.reviewer or review.reviewer or 'an operator'}; "
+                            "approval claimed and executed (mock).", review=review)
+
+        remaining = deadline - wait.monotonic()
+        if remaining <= 0:
+            return failed(f"No decision on review {review_id} within {wait.timeout_seconds:g} s "
+                          f"(last status {review.status}).", review)
+        wait.sleep(min(wait.poll_seconds, remaining))
+
+
 def run_pipeline(client: AgentShieldClient, pipeline_name: str, operations: Sequence[Operation],
                  executors: dict, stop_on_block: bool = True,
-                 on_step: Optional[Callable[[int, int, StepResult], None]] = None) -> PipelineResult:
+                 on_step: Optional[Callable[[int, int, StepResult], None]] = None,
+                 review_wait: Optional[ReviewWait] = None) -> PipelineResult:
     """
     Runs operations in order. With stop_on_block (the default), the first step that is not
     executed halts the pipeline (fail closed), and later steps are not evaluated or executed.
@@ -115,7 +211,7 @@ def run_pipeline(client: AgentShieldClient, pipeline_name: str, operations: Sequ
     result = PipelineResult(pipeline_name=pipeline_name, session_id=session_id)
 
     for index, operation in enumerate(operations, start=1):
-        step = run_operation(client, session_id, operation, executors)
+        step = run_operation(client, session_id, operation, executors, review_wait)
         result.steps.append(step)
         if on_step is not None:
             on_step(index, len(operations), step)

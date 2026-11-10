@@ -1,5 +1,6 @@
 package com.agentshield.review;
 
+import com.agentshield.config.ClockConfig;
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
@@ -32,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DataJpaTest
 @org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase(replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
-@Import(ReviewRequestService.class)
+@Import({ReviewRequestService.class, ClockConfig.class})
 @ActiveProfiles("test")
 class ReviewRequestServiceTest {
 
@@ -110,7 +111,7 @@ class ReviewRequestServiceTest {
         UUID id = create().getId();
         reviewRequestService.startReview(id);
 
-        ReviewRequest approved = reviewRequestService.approveReview(id);
+        ReviewRequest approved = reviewRequestService.approveReview(id, "alice", null);
 
         assertEquals(ReviewStatus.APPROVED, approved.getStatus());
         assertNotNull(approved.getReviewedAt());
@@ -122,7 +123,7 @@ class ReviewRequestServiceTest {
         UUID id = create().getId();
         reviewRequestService.startReview(id);
 
-        ReviewRequest rejected = reviewRequestService.rejectReview(id);
+        ReviewRequest rejected = reviewRequestService.rejectReview(id, "alice", "not safe");
 
         assertEquals(ReviewStatus.REJECTED, rejected.getStatus());
         assertNotNull(rejected.getReviewedAt());
@@ -133,7 +134,7 @@ class ReviewRequestServiceTest {
     void testPendingToApprovedDirectlyIsInvalid() {
         UUID id = create().getId();
 
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id, "alice", null));
     }
 
     @Test
@@ -141,7 +142,7 @@ class ReviewRequestServiceTest {
     void testPendingToRejectedDirectlyIsInvalid() {
         UUID id = create().getId();
 
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id, "alice", "not safe"));
     }
 
     @Test
@@ -158,10 +159,10 @@ class ReviewRequestServiceTest {
     void testApprovedIsImmutable() {
         UUID id = create().getId();
         reviewRequestService.startReview(id);
-        reviewRequestService.approveReview(id);
+        reviewRequestService.approveReview(id, "alice", null);
 
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id));
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id, "alice", null));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id, "alice", "not safe"));
         assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.startReview(id));
     }
 
@@ -170,10 +171,10 @@ class ReviewRequestServiceTest {
     void testRejectedIsImmutable() {
         UUID id = create().getId();
         reviewRequestService.startReview(id);
-        reviewRequestService.rejectReview(id);
+        reviewRequestService.rejectReview(id, "alice", "not safe");
 
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id));
-        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.approveReview(id, "alice", null));
+        assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.rejectReview(id, "alice", "not safe"));
         assertThrows(InvalidReviewStateException.class, () -> reviewRequestService.startReview(id));
     }
 

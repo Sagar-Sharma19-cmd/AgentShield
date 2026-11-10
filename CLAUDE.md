@@ -299,8 +299,13 @@ IMPLEMENTED:
   per-row attribution (`audit_logs.escalated_by`) and a kill switch. Escalates an ALLOW to REVIEW only
   at HIGH/CRITICAL. Never produces DENY. Failures are logged and leave the decision unchanged.
 - Human review workflow (backend): `review_requests` created on REVIEW; start, approve and reject
-  endpoints under `/api/v1/reviews` (admin key; no notifications, no per-reviewer identity)
-- Flyway migrations V1–V9 (V7–V9 are the trajectory migrations; V10–V12 are reserved for M3.4 and not written)
+  endpoints under `/api/v1/reviews` (admin key; approve/reject take `{reviewer, note}`; reviewer is a typed
+  name, not an authenticated identity; no notifications). Reviews expire after
+  `agentshield.review.ttl-minutes` (default 30)
+- Review loop (B3): the owning agent (verified registered agent id) reads `GET /api/v1/gateway/reviews/{id}`
+  and claims an approval once with `POST /api/v1/gateway/reviews/{id}/claim`, which returns the exact
+  approved tool/action/resource. Simulator `--wait-for-review` polls, claims and fails closed otherwise
+- Flyway migrations V1–V10 (V7–V9 are the trajectory migrations; V10 is the human-review loop; V11–V13 are reserved for M3.4 and not written)
 - PostgreSQL persistence
 - Backend unit tests
 - Backend integration tests

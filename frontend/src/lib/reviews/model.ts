@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { ApiError } from "@/lib/api/client";
-import type { AgentResponse, ReviewRequestResponse, ReviewStatus } from "@/types/api";
+import type { AgentResponse, ReviewDecisionBody, ReviewRequestResponse, ReviewStatus } from "@/types/api";
 
 /**
  * Pure review-workflow rules for the console. They mirror ReviewRequestService: a review starts
  * PENDING, must be started to IN_REVIEW, and then ends APPROVED or REJECTED. Nothing in this
- * module grants tool authorization; approval records a human decision only.
+ * module grants tool authorization. An approval lets the owning agent claim and run that exact
+ * operation once, before the review expires; the backend enforces that, not the console.
  */
 
 export const REVIEW_STATUSES = ["PENDING", "IN_REVIEW", "APPROVED", "REJECTED"] as const satisfies readonly ReviewStatus[];
@@ -45,15 +46,15 @@ export const REVIEW_ACTION_COPY: Record<
     label: "Approve",
     confirmTitle: "Approve this review?",
     confirmBody:
-      "This records a human approval for the held request. It does not grant the agent permission to use this tool, does not re-run the request, and does not change future gateway decisions.",
-    success: "Review approved. This records the decision only and grants no tool permission.",
+      "The agent that made this request can then claim the approval once, before it expires, to run exactly this tool, action and resource. It grants no standing permission and does not change future gateway decisions.",
+    success: "Review approved. The agent can claim it once to run exactly this request.",
   },
   reject: {
     label: "Reject",
     confirmTitle: "Reject this review?",
     confirmBody:
-      "This records a rejection of the held request. It does not change any gateway decision or permission grant.",
-    success: "Review rejected. This records the decision only.",
+      "The agent is told the request was rejected, with your name and note. It does not change any permission grant or future gateway decision.",
+    success: "Review rejected. The agent will see your note.",
   },
 };
 
@@ -149,7 +150,50 @@ export function describeActionError(error: unknown): string {
     if (error.status === 404) {
       return "This review no longer exists.";
     }
+    if (error.status === 409) {
+      // For example an expired review. The backend message says which.
+      return `${error.message} The review has been refreshed.`;
+    }
     return error.message;
   }
   return "The decision could not be saved. Check that the AgentShield backend is running, then try again.";
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Decision body (approve / reject)                                                                */
+/* ---------------------------------------------------------------------------------------------- */
+
+/** Limits enforced by the backend (ApproveReviewRequest / RejectReviewRequest). */
+export const REVIEWER_MAX = 100;
+export const NOTE_MAX = 1000;
+
+export interface DecisionDraft {
+  reviewer: string;
+  note: string;
+}
+
+export type DecisionFieldErrors = Partial<Record<keyof DecisionDraft, string>>;
+
+export type DecisionBodyResult =
+  | { ok: true; body: ReviewDecisionBody }
+  | { ok: false; errors: DecisionFieldErrors };
+
+/**
+ * Validates the dialog fields and builds the request body, mirroring the backend rules: reviewer is
+ * required (1-100 characters after trimming); the note is required for reject and optional for
+ * approve (at most 1000). An empty optional note is left out of the body.
+ */
+export function buildDecisionBody(action: ConfirmableAction, draft: DecisionDraft): DecisionBodyResult {
+  const reviewer = draft.reviewer.trim();
+  const note = draft.note.trim();
+  const errors: DecisionFieldErrors = {};
+
+  if (reviewer === "") errors.reviewer = "Enter your name.";
+  else if (reviewer.length > REVIEWER_MAX) errors.reviewer = `Use at most ${REVIEWER_MAX} characters.`;
+
+  if (action === "reject" && note === "") errors.note = "Say why you are rejecting it. The agent sees this note.";
+  else if (note.length > NOTE_MAX) errors.note = `Use at most ${NOTE_MAX} characters.`;
+
+  if (errors.reviewer || errors.note) return { ok: false, errors };
+  return { ok: true, body: note === "" ? { reviewer } : { reviewer, note } };
 }

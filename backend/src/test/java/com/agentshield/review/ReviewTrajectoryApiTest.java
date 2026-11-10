@@ -154,7 +154,8 @@ class ReviewTrajectoryApiTest {
                 .status(ReviewStatus.PENDING)
                 .reason("DELETE action on non-production resource requires human review.")
                 .createdAt(now)
-                .updatedAt(now);
+                .updatedAt(now)
+                .expiresAt(now.plusSeconds(1800));
     }
 
     private ReviewRequest persist(ReviewRequest reviewRequest) {

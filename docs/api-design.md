@@ -43,7 +43,57 @@ Any other path is denied. Agent keys never work on admin APIs and the admin key 
 | Method | Path | Description | Status |
 |--------|------|-------------|--------|
 | `POST` | `/gateway/evaluate` | Submit an agent tool request for security evaluation | ✅ Implemented |
+| `GET` | `/gateway/reviews/{id}` | The calling agent's own review request (B3) | ✅ Implemented |
+| `POST` | `/gateway/reviews/{id}/claim` | Claim an approved review once and receive the exact approved operation (B3) | ✅ Implemented |
 | `GET` | `/actuator/health` | Health check endpoint (public) | ✅ Implemented |
+
+### Agent review endpoints — requires agent API key (B3)
+
+These sit under `/gateway/**`, so they use the gateway security chain: the agent API key, `ROLE_AGENT`.
+The admin key is rejected here (`401`). Ownership is the **verified** registered agent of the
+authenticated key, recorded when the gateway created the review, never the `agentId` in a request body.
+
+| Method | Path | Success | Errors |
+|--------|------|---------|--------|
+| `GET` | `/gateway/reviews/{id}` | `200` `AgentReviewResponse` | `401` bad/missing/admin key · `404` unknown id **or another agent's review** (same body, so existence is not revealed) |
+| `POST` | `/gateway/reviews/{id}/claim` | `200` `ReviewClaimResponse`, exactly once | `401` · `404` as above · `409` not `APPROVED` (`PENDING`, `IN_REVIEW`, `REJECTED`), expired, or already claimed |
+
+**`AgentReviewResponse`:**
+```json
+{
+  "id": "b2c3d4e5-0000-4000-8000-000000000002",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "status": "APPROVED",
+  "reviewer": "alice",
+  "note": "Staging build cache only.",
+  "expiresAt": "2026-11-10T12:30:00Z",
+  "expired": false,
+  "consumed": false,
+  "tool": "filesystem",
+  "action": "DELETE",
+  "resource": "tmp/build-cache"
+}
+```
+
+**`ReviewClaimResponse`** (the only operation the claim allows, exactly as approved):
+```json
+{
+  "reviewId": "b2c3d4e5-0000-4000-8000-000000000002",
+  "requestId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "sessionId": "sess-12345",
+  "tool": "filesystem",
+  "action": "DELETE",
+  "resource": "tmp/build-cache",
+  "reviewer": "alice",
+  "consumedAt": "2026-11-10T12:05:00Z"
+}
+```
+
+The claim is one conditional update (`... WHERE consumed_at IS NULL AND status = 'APPROVED' AND
+expires_at > now`), so two concurrent claims cannot both succeed. A `409` body's `message` says why, for
+example `"This approval was already claimed at …. An approval can be used once."` A claim grants no
+permission and does not change any later gateway decision. The agent should run the operation only if
+`tool`, `action` and `resource` equal what it intended (the simulator fails closed otherwise).
 
 ### Agents — requires admin API key
 
@@ -84,11 +134,23 @@ invariants.
 | `GET` | `/reviews/{id}` | Get a review request | `200` |
 | `GET` | `/reviews?status=PENDING` | List review requests by status (`status` required: `PENDING`, `IN_REVIEW`, `APPROVED`, `REJECTED`) | `200` |
 | `POST` | `/reviews/{id}/start` | `PENDING → IN_REVIEW` | `200` |
-| `POST` | `/reviews/{id}/approve` | `IN_REVIEW → APPROVED` (terminal) | `200` |
-| `POST` | `/reviews/{id}/reject` | `IN_REVIEW → REJECTED` (terminal) | `200` |
+| `POST` | `/reviews/{id}/approve` | `IN_REVIEW → APPROVED` (terminal). Body `{"reviewer": "...", "note": "..."}` | `200` |
+| `POST` | `/reviews/{id}/reject` | `IN_REVIEW → REJECTED` (terminal). Body `{"reviewer": "...", "note": "..."}` | `200` |
+
+**Decision bodies (B3).** `reviewer` is required on both: 1–100 characters, trimmed. It is a name the
+operator types, not an authenticated identity, because the admin key is shared. `note` is optional on
+approve and **required** on reject: 1–1000 characters. A missing or invalid field, or a missing body,
+returns `400` with `fieldErrors` (for example `{"reviewer": "reviewer is required"}`).
+
+```json
+{ "reviewer": "bob", "note": "This cache is shared with production." }
+```
 
 An invalid transition (e.g. `approve` before `start`, or any transition from `APPROVED`/
-`REJECTED`) returns `400`. An unknown `{id}` returns `404`.
+`REJECTED`) returns `400`. An unknown `{id}` returns `404`. **Start, approve or reject on an expired
+review returns `409`** with a message naming the expiry time. A review expires
+`agentshield.review.ttl-minutes` (default 30, env `AGENTSHIELD_REVIEW_TTL_MINUTES`) after the gateway
+created it.
 
 **Response body (`ReviewRequestResponse`):**
 ```json
@@ -111,9 +173,16 @@ An invalid transition (e.g. `approve` before `start`, or any transition from `AP
   "trajectoryReason": null,
   "createdAt": "2026-09-13T22:50:00Z",
   "updatedAt": "2026-09-13T22:50:00Z",
-  "reviewedAt": null
+  "reviewedAt": null,
+  "reviewer": null,
+  "note": null,
+  "expiresAt": "2026-09-13T23:20:00Z",
+  "expired": false,
+  "consumedAt": null
 }
 ```
+`reviewer` and `note` are set by approve/reject. `expired` is computed when the response is built.
+`consumedAt` is set when the owning agent claims the approval (B3).
 `riskScore`/`riskTier` here are the **effective** values: the higher of the Risk Engine assessment and
 the trajectory assessment (unlike `EvaluationResponse`, where `riskScore` is PolicyEngine's static score
 — see the Gateway response notes above). `trajectoryScore`, `trajectoryTier` and `trajectoryReason` are
@@ -457,8 +526,8 @@ weights, and tier thresholds.
 | `204` | Permission revoked |
 | `400` | Invalid request body or malformed path parameter |
 | `401` | Missing, malformed, unknown, rotated-out or revoked API key; wrong admin key; unmapped path |
-| `404` | Agent, tool or permission not found (admin APIs) |
-| `409` | Duplicate name / grant, invalid status transition, or key rotation for a revoked agent |
+| `404` | Agent, tool, permission or review not found (admin APIs); on `/gateway/reviews/**` also another agent's review |
+| `409` | Duplicate name / grant, invalid status transition, key rotation for a revoked agent, an expired review (start/approve/reject/claim), or a claim of a review that is not approved or was already claimed |
 | `500` | Internal server error |
 
 ---

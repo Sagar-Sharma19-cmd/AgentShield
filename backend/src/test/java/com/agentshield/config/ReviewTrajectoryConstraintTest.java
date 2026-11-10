@@ -32,16 +32,17 @@ class ReviewTrajectoryConstraintTest {
     private static final String INSERT_WITH_TRAJECTORY =
             "INSERT INTO review_requests (id, request_id, agent_id, session_id, tool, action, resource, "
                     + "resource_sensitivity, risk_score, risk_tier, original_decision, status, reason, "
-                    + "created_at, updated_at, reviewed_at, trajectory_score, trajectory_tier, trajectory_reason) "
+                    + "created_at, updated_at, reviewed_at, trajectory_score, trajectory_tier, trajectory_reason, expires_at) "
                     + "VALUES (?, ?, 'agent-1', 'session-1', 'filesystem', 'DELETE', 'dev/tmp.log', "
-                    + "'SENSITIVE', 70, 'HIGH', 'REVIEW', 'PENDING', 'needs review', ?, ?, NULL, ?, ?, ?)";
+                    + "'SENSITIVE', 70, 'HIGH', 'REVIEW', 'PENDING', 'needs review', ?, ?, NULL, ?, ?, ?, "
+                    + "CURRENT_TIMESTAMP)";
 
     private static final String INSERT_LEGACY =
             "INSERT INTO review_requests (id, request_id, agent_id, session_id, tool, action, resource, "
                     + "resource_sensitivity, risk_score, risk_tier, original_decision, status, reason, "
-                    + "created_at, updated_at, reviewed_at) "
+                    + "created_at, updated_at, reviewed_at, expires_at) "
                     + "VALUES (?, ?, 'agent-1', 'session-1', 'filesystem', 'DELETE', 'dev/tmp.log', "
-                    + "'SENSITIVE', 70, 'HIGH', 'REVIEW', 'PENDING', 'needs review', ?, ?, NULL)";
+                    + "'SENSITIVE', 70, 'HIGH', 'REVIEW', 'PENDING', 'needs review', ?, ?, NULL, CURRENT_TIMESTAMP)";
 
     @Autowired
     private JdbcTemplate jdbc;

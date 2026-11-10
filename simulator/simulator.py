@@ -14,6 +14,13 @@ Usage:
   python3 simulator.py --list
   python3 simulator.py --scenario deployment_pipeline
   python3 simulator.py --scenario deployment_pipeline --continue-on-block
+  python3 simulator.py --scenario deployment_pipeline --wait-for-review [--review-timeout 300]
+
+With --wait-for-review, a REVIEW decision is not the end of the step: the simulator polls its review
+request every 3 s and prints each status change. APPROVED: it claims the approval once, checks the
+claimed tool/action/resource equal the operation, runs the mock and continues. REJECTED: BLOCKED,
+with the reviewer and note. Timeout, expiry or any error: FAILED_CLOSED. Without the flag a REVIEW
+halts the step as before.
 
 Exit codes: 0 pipeline completed (every step executed); 1 pipeline halted or had steps that did
 not execute; 2 configuration error.
@@ -25,8 +32,9 @@ import argparse
 import sys
 from typing import List, Optional
 
-from agentshield_client import AgentShieldClient, ConfigError, load_config
-from enforcement import Outcome, PipelineResult, StepResult, run_pipeline
+from agentshield_client import AgentShieldClient, ConfigError, ReviewStatus, load_config
+from enforcement import (DEFAULT_REVIEW_TIMEOUT_SECONDS, Outcome, PipelineResult, ReviewWait, StepResult,
+                         run_pipeline)
 from mock_tools import MockDevOps
 from scenarios import SCENARIOS
 
@@ -69,11 +77,33 @@ def _print_step(index: int, total: int, step: StepResult) -> None:
         if ev.review_request_id:
             print(f"      Review ID   : {ev.review_request_id}")
     print(f"      Status      : {STATUS_LABEL[step.outcome]}")
-    if step.outcome == Outcome.FAILED_CLOSED:
+    if step.outcome == Outcome.FAILED_CLOSED or step.review is not None:
         print(f"      Detail      : {step.message}")
     if step.execution_output:
         print(f"      Mock output : {step.execution_output}")
     print()
+
+
+def _print_review_status(review: ReviewStatus) -> None:
+    """Printed as each status change is seen while waiting, so the operator sees progress live."""
+    # Printed before the step's own block (the step finishes after the wait), so the line names the review
+    # and the operation under review.
+    line = (f"  ... review {review.review_id} ({review.tool} {review.action} -> {review.resource}): "
+            f"{review.status}")
+    if review.reviewer:
+        line += f" by {review.reviewer}"
+    if review.note:
+        line += f" - {review.note}"
+    if review.status in ("PENDING", "IN_REVIEW") and review.expires_at:
+        line += f"   (expires {review.expires_at})"
+    print(line, flush=True)
+
+
+def _positive_seconds(value: str) -> float:
+    seconds = float(value)
+    if not seconds > 0:
+        raise argparse.ArgumentTypeError("must be a positive number of seconds")
+    return seconds
 
 
 def _print_summary(result: PipelineResult, total_steps: int) -> None:
@@ -108,6 +138,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--continue-on-block", action="store_true",
                         help="keep evaluating later steps after a step is not executed "
                              "(default: halt the pipeline at the first such step)")
+    parser.add_argument("--wait-for-review", action="store_true",
+                        help="on REVIEW, poll the review request until an operator approves or rejects it; "
+                             "an approval is claimed once and must match the operation exactly")
+    parser.add_argument("--review-timeout", type=_positive_seconds, default=DEFAULT_REVIEW_TIMEOUT_SECONDS,
+                        metavar="SECONDS",
+                        help=f"with --wait-for-review, give up and fail closed after this long "
+                             f"(default {DEFAULT_REVIEW_TIMEOUT_SECONDS:g})")
     return parser
 
 
@@ -135,6 +172,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     _print_header(scenario.name, scenario.description, config.gateway_url, config.agent_id, mocks.run_dir)
 
     total = len(scenario.operations)
+    review_wait = (ReviewWait(timeout_seconds=args.review_timeout, on_status=_print_review_status)
+                   if args.wait_for_review else None)
+    if review_wait is not None:
+        print(f"Reviews  : waiting up to {args.review_timeout:g} s for an operator decision on each REVIEW")
+        print(RULE)
     result = run_pipeline(
         client,
         scenario.pipeline_name,
@@ -142,6 +184,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         mocks.executors(),
         stop_on_block=not args.continue_on_block,
         on_step=lambda index, count, step: _print_step(index, count, step),
+        review_wait=review_wait,
     )
     _print_summary(result, total)
     return EXIT_COMPLETED if result.completed else EXIT_HALTED

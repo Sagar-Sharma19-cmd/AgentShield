@@ -35,7 +35,7 @@ class GatewayAtomicityTest extends AbstractTrajectoryGatewayTest {
     @Test
     @DisplayName("A failure creating the review request rolls back the audit row and risk assessment")
     void reviewCreationFailureRollsBackEarlierWrites() throws Exception {
-        when(reviewRequestService.createReviewRequest(any(), any(), any(), anyInt(), any(), any(), any(), any(), any()))
+        when(reviewRequestService.createReviewRequest(any(), any(), any(), anyInt(), any(), any(), any(), any(), any(), any()))
                 .thenThrow(new IllegalStateException("simulated review store failure"));
 
         // Non-production DELETE on a granted tool: PolicyEngine -> REVIEW, so a review request is created.

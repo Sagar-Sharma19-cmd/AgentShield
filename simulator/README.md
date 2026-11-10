@@ -162,6 +162,28 @@ python3 simulator.py --scenario deployment_pipeline --continue-on-block   # eval
 Exit codes: `0` every step was allowed and executed; `1` the pipeline halted or some steps did not
 execute; `2` configuration error.
 
+### Waiting for a human decision: `--wait-for-review`
+
+```bash
+python3 simulator.py --scenario review_required --wait-for-review                    # wait up to 300 s per review
+python3 simulator.py --scenario review_required --wait-for-review --review-timeout 120
+```
+
+Without the flag, a REVIEW stops the step exactly as before. With it, on REVIEW the simulator:
+
+1. Polls `GET /api/v1/gateway/reviews/{reviewRequestId}` every 3 seconds with its own agent key, and
+   prints each status change (`PENDING`, `IN_REVIEW`, `APPROVED`/`REJECTED`, with the reviewer and note).
+2. **APPROVED:** calls `POST /api/v1/gateway/reviews/{id}/claim` once. It checks that the claimed `tool`,
+   `action` and `resource` equal the operation it asked for, and only then runs the mock and continues
+   the pipeline. A mismatch fails closed. The claim was spent, but nothing runs.
+3. **REJECTED:** the step is `BLOCKED`, showing who rejected it and their note.
+4. **Expired, timed out (`--review-timeout`, default 300 s), already claimed, 404/409/5xx, unreachable or
+   malformed:** the step is `FAILED_CLOSED` and nothing runs.
+
+The approval is a one-time token for that exact operation. A second claim is refused (409), and an
+approval never covers a different tool, action or resource. Reviews expire 30 minutes after the gateway
+created them (backend setting `AGENTSHIELD_REVIEW_TTL_MINUTES`).
+
 ## Tests
 
 ```bash
@@ -180,11 +202,16 @@ The suite covers:
   riskScore, empty body.
 - A pipeline halts at the first REVIEW, and later steps are not sent to the gateway.
 - The request body matches the contract, and the key is sent only in `X-Agent-API-Key`.
+- `--wait-for-review` (`tests/test_review_wait.py`, against a scripted local stub, with fake time so no test
+  waits): approve then claim once and execute; reject gives BLOCKED with the reviewer and note; timeout,
+  expiry, an already-consumed approval, claim 409, read errors and malformed review bodies fail closed; a
+  claimed tool/action/resource that differs from the operation fails closed; status changes are reported
+  once each; review ids that are not UUIDs are refused before any request; without the flag, nothing is polled.
 - The API key never appears in configuration output, error messages, or the step output.
 - Real local-socket tests against an in-process stub on `127.0.0.1` cover the real `urllib`
   status-code and timeout paths. This stub is not the AgentShield backend.
 
-Result at the time of writing: **43 tests, all passing**, with `ResourceWarning` treated as an error.
+Result at the time of writing: **58 tests, all passing**, with `ResourceWarning` treated as an error.
 
 ## Limitations
 
@@ -192,8 +219,9 @@ Result at the time of writing: **43 tests, all passing**, with `ResourceWarning`
   that calls Docker, Jenkins or Kubernetes directly bypasses AgentShield. Real enforcement needs the
   tool or network path to require an ALLOW, which is not built.
 - **Mock tools only.** Nothing is executed, so no real side effect is tested.
-- **No review completion.** After REVIEW the run stops. The backend has no agent-facing status or
-  approval endpoint, so the simulator cannot resume a paused pipeline.
+- **Review completion is opt-in and polled.** Without `--wait-for-review`, a REVIEW stops the run. With
+  it, the simulator polls every 3 s; there are no push notifications. The approval covers one exact
+  operation once; AgentShield does not observe the mock (or a real tool) actually running afterwards.
 - **Metadata not sent.** `EvaluationRequest.metadata` is accepted by the backend but never stored or
   used. Traceability is the session ID, which is stored in `audit_logs.session_id`.
 - **Session identity is client-supplied.** The session ID is chosen by the client, so it proves a

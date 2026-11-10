@@ -1,5 +1,6 @@
 import { QueryClient } from "@tanstack/react-query";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { reviewsApi } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/client";
 import { actionSuccessMessage } from "@/lib/reviews/model";
 import type { ReviewRequestResponse, ReviewStatus } from "@/types/api";
@@ -29,6 +30,11 @@ function makeReview(status: ReviewStatus): ReviewRequestResponse {
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     reviewedAt: status === "IN_REVIEW" ? null : "2026-01-01T00:01:00Z",
+    reviewer: status === "APPROVED" || status === "REJECTED" ? "alice" : null,
+    note: null,
+    expiresAt: "2026-01-01T00:30:00Z",
+    expired: false,
+    consumedAt: null,
   };
 }
 
@@ -52,7 +58,7 @@ describe("reviewActionMutationOptions: notifications", () => {
     const options = reviewActionMutationOptions({ adminKey: "test-key", queryClient, api, notify });
     const mutation = queryClient.getMutationCache().build(queryClient, options);
 
-    await mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW" });
+    await mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW", decision: { reviewer: "alice" } });
 
     expect(api.approve).toHaveBeenCalledTimes(1);
     expect(notify.success).toHaveBeenCalledTimes(1);
@@ -72,7 +78,9 @@ describe("reviewActionMutationOptions: notifications", () => {
     const options = reviewActionMutationOptions({ adminKey: "test-key", queryClient, api, notify });
     const mutation = queryClient.getMutationCache().build(queryClient, options);
 
-    await expect(mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW" })).rejects.toThrow();
+    await expect(
+      mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW", decision: { reviewer: "alice" } }),
+    ).rejects.toThrow();
 
     expect(notify.error).toHaveBeenCalledTimes(1);
     expect(notify.error.mock.calls[0][0]).toContain(backendMessage);
@@ -91,6 +99,85 @@ describe("reviewActionMutationOptions: notifications", () => {
     );
     expect(api.start).not.toHaveBeenCalled();
     expect(notify.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("reviewActionMutationOptions: request body", () => {
+  function setup() {
+    const queryClient = makeClient();
+    const api = {
+      start: vi.fn().mockResolvedValue(makeReview("IN_REVIEW")),
+      approve: vi.fn().mockResolvedValue(makeReview("APPROVED")),
+      reject: vi.fn().mockResolvedValue(makeReview("REJECTED")),
+    };
+    const options = reviewActionMutationOptions({ adminKey: "test-key", queryClient, api, notify: makeNotify() });
+    return { api, mutation: queryClient.getMutationCache().build(queryClient, options) };
+  }
+
+  it("sends {reviewer, note} with approve", async () => {
+    const { api, mutation } = setup();
+    await mutation.execute({
+      id: REVIEW_ID,
+      action: "approve",
+      from: "IN_REVIEW",
+      decision: { reviewer: "alice", note: "Staging only." },
+    });
+    expect(api.approve).toHaveBeenCalledWith(REVIEW_ID, { reviewer: "alice", note: "Staging only." }, { adminKey: "test-key" });
+  });
+
+  it("sends {reviewer, note} with reject", async () => {
+    const { api, mutation } = setup();
+    await mutation.execute({
+      id: REVIEW_ID,
+      action: "reject",
+      from: "IN_REVIEW",
+      decision: { reviewer: "bob", note: "Touches production." },
+    });
+    expect(api.reject).toHaveBeenCalledWith(REVIEW_ID, { reviewer: "bob", note: "Touches production." }, { adminKey: "test-key" });
+  });
+
+  it("start sends no decision body", async () => {
+    const { api, mutation } = setup();
+    await mutation.execute({ id: REVIEW_ID, action: "start", from: "PENDING", decision: { reviewer: "ignored" } });
+    expect(api.start).toHaveBeenCalledWith(REVIEW_ID, { adminKey: "test-key" });
+  });
+
+  it("refuses a decision without a reviewer and never calls the API", async () => {
+    const { api, mutation } = setup();
+    await expect(mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW" })).rejects.toThrow(
+      "A reviewer name is required.",
+    );
+    await expect(
+      mutation.execute({ id: REVIEW_ID, action: "reject", from: "IN_REVIEW", decision: { reviewer: "  ", note: "x" } }),
+    ).rejects.toThrow("A reviewer name is required.");
+    expect(api.approve).not.toHaveBeenCalled();
+    expect(api.reject).not.toHaveBeenCalled();
+  });
+});
+
+describe("reviewsApi: HTTP request", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("POSTs the decision as JSON to /approve and /reject with the admin key header", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      async () => new Response(JSON.stringify(makeReview("APPROVED")), { status: 200, headers: { "content-type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await reviewsApi.approve(REVIEW_ID, { reviewer: "alice" }, { adminKey: "test-key" });
+    await reviewsApi.reject(REVIEW_ID, { reviewer: "bob", note: "No." }, { adminKey: "test-key" });
+
+    const [approveUrl, approveInit] = fetchMock.mock.calls[0];
+    expect(approveUrl).toBe(`/api/v1/reviews/${REVIEW_ID}/approve`);
+    expect(approveInit.method).toBe("POST");
+    expect(approveInit.headers).toMatchObject({ "Content-Type": "application/json", "X-Admin-API-Key": "test-key" });
+    expect(JSON.parse(approveInit.body)).toEqual({ reviewer: "alice" });
+
+    const [rejectUrl, rejectInit] = fetchMock.mock.calls[1];
+    expect(rejectUrl).toBe(`/api/v1/reviews/${REVIEW_ID}/reject`);
+    expect(JSON.parse(rejectInit.body)).toEqual({ reviewer: "bob", note: "No." });
   });
 });
 
@@ -118,7 +205,7 @@ describe("reviewActionMutationOptions: stale detail reads", () => {
     const options = reviewActionMutationOptions({ adminKey: "test-key", queryClient, api, notify: makeNotify() });
     const mutation = queryClient.getMutationCache().build(queryClient, options);
 
-    await mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW" });
+    await mutation.execute({ id: REVIEW_ID, action: "approve", from: "IN_REVIEW", decision: { reviewer: "alice" } });
     expect(queryClient.getQueryData<ReviewRequestResponse>(key)?.status).toBe("APPROVED");
 
     // The stale poll now resolves with the pre-decision state. It must not overwrite the cache.

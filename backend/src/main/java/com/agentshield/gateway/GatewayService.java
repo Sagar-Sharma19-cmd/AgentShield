@@ -136,12 +136,14 @@ public class GatewayService {
 
         // 5. Final decision REVIEW -> persist a human review request (Phase 3). ALLOW/DENY never do.
         //    The Risk Engine's score and tier are passed unchanged. The review row stores the effective
-        //    values and the trajectory signal separately.
+        //    values and the trajectory signal separately. Ownership is the VERIFIED registered agent id,
+        //    never the agentId the client claimed, so only that agent can later read or claim the review.
         UUID reviewRequestId = null;
         if (finalDecision == DecisionType.REVIEW) {
             ReviewRequest reviewRequest = reviewRequestService.createReviewRequest(requestId, request,
                     policyResult.getResourceSensitivity(), riskAssessment.riskScore(), riskAssessment.riskTier(),
-                    policyResult.getDecision(), finalResult.getReason(), timestamp, trajectory.orElse(null));
+                    policyResult.getDecision(), finalResult.getReason(), timestamp, trajectory.orElse(null),
+                    authorization.agentId());
             reviewRequestId = reviewRequest.getId();
         }
 

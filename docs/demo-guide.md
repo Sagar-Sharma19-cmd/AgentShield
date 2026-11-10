@@ -155,6 +155,32 @@ DENY and REVIEW decisions from Steps 6-8 appear as live security alerts (toasts 
 - Open a pending review, then click **Start review**, then **Approve** or **Reject**.
 - Show the trajectory review from Step 7 with its evidence.
 
+### Step 11b. Close the loop live: the agent waits for your decision (B3)
+Use two windows side by side: the terminal (Tab 5) and the browser on **Reviews**.
+
+```bash
+cd simulator
+python3 simulator.py --scenario review_required --wait-for-review --review-timeout 300
+```
+1. Step 1 (`jenkins EXECUTE`) gets **REVIEW**. The terminal prints `... review <id> (...): PENDING` and keeps
+   polling every 3 seconds.
+2. In the browser, open that review (refresh the Pending tab if needed). Click **Start review**. The terminal
+   prints `IN_REVIEW`.
+3. Click **Approve**, type your name (it is remembered for the tab) and an optional note, then confirm. The
+   terminal prints `APPROVED by <name>`, claims the approval once, checks it is exactly `jenkins EXECUTE
+   jenkins/job/agentshield-build`, runs the mock and moves on.
+4. Step 2 (`shell EXECUTE`) gets **REVIEW** too. This time click **Start review**, then **Reject**, with a
+   note such as "Healthchecks run from the scheduler, not the agent". The terminal shows **BLOCKED**, with
+   your name and note.
+
+What to say:
+> An approval is not a permission grant. It is a one-time token for one exact operation: the agent can claim it
+> once, before it expires (30 minutes), and only the agent that made the request can see it. A second claim, an
+> expired review, or a different tool/action/resource is refused, and the simulator fails closed.
+
+Optional evidence: in the review detail, **Claimed by the agent** now shows a time. The same review cannot be
+claimed again (HTTP 409).
+
 ### Step 12. CI/CD demo page
 - Select `faculty-demo-agent`. It shows the scenario steps and the decisions recorded in the audit log.
 
@@ -187,6 +213,8 @@ Also show the `.github/workflows/` folder: CI runs backend, risk engine and secu
 - **Cooperative enforcement:** the agent must call AgentShield. An agent that calls Docker directly bypasses it.
 - Rules and trajectory are **deterministic heuristics**, not a trained ML model.
 - Not built yet: prompt-injection detection, rate limiting, multi-tenancy, per-operator admin accounts.
+- The reviewer name is typed by the operator, not an authenticated identity, and agents learn about decisions
+  by polling, not by notification.
 
 ---
 

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import {
   availableReviewActions,
+  buildDecisionBody,
   buildReviewHref,
+  NOTE_MAX,
+  REVIEWER_MAX,
   describeActionError,
   initialConfirmation,
   parseReviewParams,
@@ -164,5 +167,48 @@ describe("resolveAgent", () => {
 
   it("returns the agent when the registry loaded and contains it", () => {
     expect(resolveAgent({ state: "ready", agents: [agent] }, "agent-1")).toEqual({ kind: "found", agent });
+  });
+});
+
+describe("buildDecisionBody", () => {
+  it("approve: reviewer required, note optional and omitted when empty, both trimmed", () => {
+    expect(buildDecisionBody("approve", { reviewer: "  alice ", note: "  " })).toEqual({ ok: true, body: { reviewer: "alice" } });
+    expect(buildDecisionBody("approve", { reviewer: "alice", note: " ok " })).toEqual({
+      ok: true,
+      body: { reviewer: "alice", note: "ok" },
+    });
+    const missing = buildDecisionBody("approve", { reviewer: "   ", note: "" });
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.errors.reviewer).toBeDefined();
+  });
+
+  it("reject: note required", () => {
+    const result = buildDecisionBody("reject", { reviewer: "bob", note: "" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.note).toBeDefined();
+      expect(result.errors.reviewer).toBeUndefined();
+    }
+    expect(buildDecisionBody("reject", { reviewer: "bob", note: "Unsafe." })).toEqual({
+      ok: true,
+      body: { reviewer: "bob", note: "Unsafe." },
+    });
+  });
+
+  it("enforces the backend length limits", () => {
+    const long = buildDecisionBody("approve", { reviewer: "x".repeat(REVIEWER_MAX + 1), note: "n".repeat(NOTE_MAX + 1) });
+    expect(long.ok).toBe(false);
+    if (!long.ok) {
+      expect(long.errors.reviewer).toBeDefined();
+      expect(long.errors.note).toBeDefined();
+    }
+    expect(buildDecisionBody("approve", { reviewer: "x".repeat(REVIEWER_MAX), note: "n".repeat(NOTE_MAX) }).ok).toBe(true);
+  });
+});
+
+describe("describeActionError: 409", () => {
+  it("passes the backend message through, for example an expired review", () => {
+    const message = "Review request expired at 2026-11-10T12:30:00Z.";
+    expect(describeActionError(new ApiError(409, { message } as never))).toContain(message);
   });
 });

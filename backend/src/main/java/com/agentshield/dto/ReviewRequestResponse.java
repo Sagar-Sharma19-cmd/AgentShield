@@ -33,12 +33,22 @@ public record ReviewRequestResponse(
         /** Trajectory signal alone; null when trajectory analysis did not run. riskScore/riskTier are the effective values. */
         Integer trajectoryScore,
         RiskTier trajectoryTier,
-        String trajectoryReason
+        String trajectoryReason,
+        /** Who approved or rejected it, as typed by the operator; null until decided. */
+        String reviewer,
+        /** Reviewer's note; null until decided (and optional on approve). */
+        String note,
+        Instant expiresAt,
+        /** Computed when the response is built: true at or after expiresAt. */
+        boolean expired,
+        /** When the owning agent claimed the approval; null if not claimed. */
+        Instant consumedAt
 ) {
-    public static ReviewRequestResponse from(ReviewRequest r) {
+    public static ReviewRequestResponse from(ReviewRequest r, Instant now) {
         return new ReviewRequestResponse(r.getId(), r.getRequestId(), r.getAgentId(), r.getSessionId(), r.getTool(),
                 r.getAction(), r.getResource(), r.getResourceSensitivity(), r.getRiskScore(), r.getRiskTier(),
                 r.getOriginalDecision(), r.getStatus(), r.getReason(), r.getCreatedAt(), r.getUpdatedAt(),
-                r.getReviewedAt(), r.getTrajectoryScore(), r.getTrajectoryTier(), r.getTrajectoryReason());
+                r.getReviewedAt(), r.getTrajectoryScore(), r.getTrajectoryTier(), r.getTrajectoryReason(),
+                r.getReviewer(), r.getDecisionNote(), r.getExpiresAt(), r.isExpiredAt(now), r.getConsumedAt());
     }
 }

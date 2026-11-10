@@ -11,6 +11,7 @@ import type {
   EvaluationResponse,
   PermissionCreateRequest,
   PermissionResponse,
+  ReviewDecisionBody,
   ReviewRequestResponse,
   ReviewStatus,
   ToolCreateRequest,
@@ -109,16 +110,18 @@ export const reviewsApi = {
       auth: { kind: "admin", key: adminKey },
     }),
 
-  approve: (id: string, { adminKey }: AdminAuth) =>
+  approve: (id: string, body: ReviewDecisionBody, { adminKey }: AdminAuth) =>
     apiRequest<ReviewRequestResponse>(`/reviews/${id}/approve`, {
       method: "POST",
       auth: { kind: "admin", key: adminKey },
+      body,
     }),
 
-  reject: (id: string, { adminKey }: AdminAuth) =>
+  reject: (id: string, body: ReviewDecisionBody, { adminKey }: AdminAuth) =>
     apiRequest<ReviewRequestResponse>(`/reviews/${id}/reject`, {
       method: "POST",
       auth: { kind: "admin", key: adminKey },
+      body,
     }),
 };
 

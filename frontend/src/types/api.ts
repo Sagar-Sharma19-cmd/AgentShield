@@ -181,6 +181,22 @@ export interface ReviewRequestResponse {
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
+  /** Name typed by the operator who approved or rejected it. Not an authenticated identity. Null until decided. */
+  reviewer: string | null;
+  /** Reviewer's note. Required on reject, optional on approve. Null until decided. */
+  note: string | null;
+  /** After this the review cannot be started, decided or claimed. */
+  expiresAt: string;
+  /** Computed by the backend when the response was built. */
+  expired: boolean;
+  /** When the owning agent claimed the approval (once). Null if not claimed. */
+  consumedAt: string | null;
+}
+
+/** Body of POST /reviews/{id}/approve and /reject. note is required for reject. */
+export interface ReviewDecisionBody {
+  reviewer: string;
+  note?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -540,10 +540,63 @@ GatewayService: final decision (after DecisionEscalator)
   this is an operator action, not an agent action, so no new authentication mechanism was added.
 - **`EvaluationResponse.reviewRequestId`** is set only when the final decision is `REVIEW`;
   `null` for `ALLOW`/`DENY`. Additive, backward-compatible field.
-- **Out of scope for this workflow:** notifications, a review queue UI/dashboard, reviewer
-  identity/RBAC (the existing single shared admin key is reused as-is), SLA/expiry on pending
-  reviews, and any automatic action on approval/rejection (e.g. re-invoking the protected tool) —
-  all future work, not implemented.
+- **Out of scope for this workflow:** notifications, authenticated reviewer identity/RBAC (the
+  reviewer name is typed by the operator; the single shared admin key is reused as-is), and any
+  server-side re-invocation of the protected tool. The agent runs the tool itself after a claim.
+
+### Closing the loop: agent read and claim (Phase B3)
+
+Before B3 an approval only changed a row. Now the agent that made the request can learn the
+outcome and, if approved, claim permission to run **that exact operation once**.
+
+```
+Agent (agent API key)            Gateway / ReviewRequestService               Operator (admin API key)
+  │ POST /gateway/evaluate ─────▶ final decision REVIEW
+  │                               review_requests row: PENDING,
+  │                               registered_agent_id = AuthorizationDecision.agentId() (verified),
+  │                               expires_at = created_at + agentshield.review.ttl-minutes (30)
+  │ ◀── 200 {decision: REVIEW, reviewRequestId}
+  │
+  │ GET /gateway/reviews/{id} ──▶ 200 {status: PENDING, expiresAt, ...}   (poll)
+  │                                                                ◀── POST /reviews/{id}/start
+  │                                                                ◀── POST /reviews/{id}/approve
+  │                                                                     {reviewer, note?}
+  │ GET /gateway/reviews/{id} ──▶ 200 {status: APPROVED, reviewer, note, consumed: false}
+  │ POST /gateway/reviews/{id}/claim
+  │                          ──▶ UPDATE review_requests SET consumed_at = now
+  │                               WHERE id = ? AND registered_agent_id = caller
+  │                                 AND status = 'APPROVED' AND consumed_at IS NULL AND expires_at > now
+  │ ◀── 200 {tool, action, resource, requestId}    (1 row updated)
+  │     409 not approved / expired / already claimed   (0 rows updated)
+  │ agent checks tool/action/resource == what it intended, then runs it; any mismatch fails closed
+```
+
+- **Ownership is the verified agent.** `registered_agent_id` comes from the API-key-authenticated
+  caller via `AuthorizationDecision.agentId()`, never from the `agentId` in the request body. The
+  agent endpoints compare it with the authenticated principal. Another agent, an unknown id and a
+  review with no registered agent all get the same **404**, so a review's existence is not revealed.
+- **Same authentication.** `/api/v1/gateway/reviews/**` falls under the existing gateway security chain
+  (agent API key, `ROLE_AGENT`). An admin key there is rejected with 401, and an agent key on
+  `/api/v1/reviews/**` is rejected with 401, as before.
+- **Exactly once.** The claim is a single conditional `UPDATE ... WHERE consumed_at IS NULL` (portable
+  JPQL). The database applies it under a row lock, so of two concurrent claims at most one updates a
+  row. A database that reports the conflict as an error instead of waiting is treated as a lost claim
+  (409). `ReviewLoopIntegrationTest.concurrentClaimHasOneWinner` races 4 claims, 10 times, on H2.
+- **Exact operation.** The claim returns the stored `tool`, `action` and `resource` of the reviewed
+  request and nothing else. A claim is not a permission grant, does not change `agent_tool_permissions`,
+  and does not affect any future gateway decision. The simulator refuses to run anything whose
+  tool/action/resource differs from the claim.
+- **Expiry.** `expires_at = created_at + agentshield.review.ttl-minutes` (env
+  `AGENTSHIELD_REVIEW_TTL_MINUTES`, default 30). Start, approve, reject and claim on an expired review
+  answer **409**. Responses carry `expired`, computed from the injected `Clock` when the response is built.
+- **Decision bodies.** Approve takes `{reviewer, note?}`; reject takes `{reviewer, note}`. `reviewer` is
+  1–100 characters and `note` at most 1000 (400 otherwise). Both are stored (`reviewer`, `decision_note`)
+  and shown to the agent and in admin responses.
+- **Strict state machine unchanged.** An invalid transition is still 400 (`InvalidReviewStateException`).
+  Expiry (409) is checked only while the review is in the status the action starts from, so terminal
+  reviews keep their 400 transition error.
+- **Not audited.** Operator decisions and claims are stored on the review row, but there is still no
+  admin-action audit trail and a claim does not write an `audit_logs` row.
 
 ## Audit
 
@@ -632,7 +685,9 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 | V8 | `V8__add_review_request_trajectory.sql` | Trajectory analysis: `review_requests.trajectory_score` (0–100 CHECK), `trajectory_tier` (CHECK), `trajectory_reason` (VARCHAR 1000). All NULL on existing rows |
 | V9 | `V9__add_audit_logs_trajectory.sql` | Trajectory analysis: `audit_logs.trajectory_score`, `trajectory_tier`, `trajectory_reason`, `escalated_by` with CHECKs. Also a CHECK that a `TRAJECTORY` escalation has a non-null tier. Existing rows keep NULL in all four columns |
 
-- **Reserved:** V10–V12 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0). They are design only, and no migration file exists for them yet.
+| V10 | `V10__add_review_request_resolution.sql` | Human-review loop (B3): `review_requests.registered_agent_id` (UUID), `reviewer` (VARCHAR 100), `decision_note` (VARCHAR 1000), `consumed_at`, `expires_at` (NOT NULL after backfill), and a CHECK that only an `APPROVED` review can be consumed. Backfill: `registered_agent_id` from the `audit_logs` row with the same `request_id`; `expires_at = created_at + 30 minutes` |
+
+- **Reserved:** V11–V13 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; it was planned as V10–V12 before B3 took V10). They are design only, and no migration file exists for them yet.
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.
@@ -674,10 +729,11 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
   [Trajectory Analysis](#trajectory-analysis).
 - The live alert feed (M4.2, frontend) polls `GET /api/v1/audit` every 10 seconds. It is pull-based,
   not push-based, so alerts can be up to one poll interval late.
-- The human review workflow (Phase 3) has no notifications, review queue UI, reviewer identity/
-  RBAC (it reuses the single shared admin key), SLA/expiry on pending reviews, or automatic
-  action on approval/rejection — approving a review records a human decision but does not
-  re-invoke the protected tool. See [Human Review Workflow](#human-review-workflow).
+- The human review workflow has no notifications (agents poll `GET /api/v1/gateway/reviews/{id}`), and
+  no authenticated reviewer identity or RBAC: `reviewer` is a name the operator types while using the
+  single shared admin key. Decisions and claims are stored on the review row but are not written to an
+  admin audit trail. The TTL is one global setting. An approval lets the agent run the approved operation
+  once; AgentShield does not see or verify the tool call itself. See [Human Review Workflow](#human-review-workflow).
 
 ## Future Roadmap
 
