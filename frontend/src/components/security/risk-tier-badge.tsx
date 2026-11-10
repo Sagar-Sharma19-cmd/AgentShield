@@ -5,7 +5,7 @@ import type { RiskTier } from "@/types/api";
 const TIER_STYLES: Record<RiskTier, { icon: LucideIcon; label: string; tone: string }> = {
   LOW: { icon: ShieldCheck, label: "Low risk", tone: "border-success/30 bg-success/10 text-success-text" },
   MEDIUM: { icon: ShieldHalf, label: "Medium risk", tone: "border-warning/50 bg-warning/20 text-warning-text" },
-  HIGH: { icon: ShieldAlert, label: "High risk", tone: "border-danger/30 bg-danger/10 text-danger-text" },
+  HIGH: { icon: ShieldAlert, label: "High risk", tone: "border-risk-high/40 bg-risk-high/12 text-risk-high-text" },
   CRITICAL: { icon: Flame, label: "Critical risk", tone: "border-danger/60 bg-danger/20 text-danger-text" },
 };
 

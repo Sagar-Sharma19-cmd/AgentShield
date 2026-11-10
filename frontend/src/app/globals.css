@@ -5,15 +5,17 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * AgentShield design system.
+ * AgentShield design system. Spec: docs/frontend-design-system.md ("Graphite").
  *
  * Three layers, defined only in this file:
- *   1. Brand palette (--brand-*): pastel hues used for surfaces and accents. Never used alone for severity.
- *   2. Semantic tokens (--background, --card, --success-text, ...): defined separately for light (:root)
- *      and dark (.dark). Dark is a complete map, not an inversion of light.
+ *   1. Brand palette (--brand-*): muted indigo / teal / sky / amber hues for decorative surfaces and
+ *      accents. Never used alone for severity.
+ *   2. Semantic tokens (--background, --card, --success-text, --risk-high-text, ...): defined separately
+ *      for light (:root) and dark (.dark). Dark is a complete map, not an inversion of light.
  *   3. Components read semantic tokens only (through Tailwind utilities such as bg-card or text-danger-text).
  *
- * Contrast for every text/background pair is checked by src/lib/design/theme-contrast.test.ts.
+ * Contrast for every text/background pair is checked by src/lib/design/theme-contrast.test.ts and
+ * src/lib/design/semantic-contrast.test.ts.
  */
 
 @theme inline {
@@ -31,6 +33,8 @@
   --color-success-text: var(--success-text);
   --color-warning-text: var(--warning-text);
   --color-danger-text: var(--danger-text);
+  --color-risk-high: var(--risk-high);
+  --color-risk-high-text: var(--risk-high-text);
   --color-brand-mint: var(--brand-mint);
   --color-brand-mint-soft: var(--brand-mint-soft);
   --color-brand-lilac: var(--brand-lilac);
@@ -75,120 +79,129 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Mirrors of src/lib/motion/tokens.ts (kept in sync by tokens.test.ts) for CSS-only transitions. */
   --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
 }
 
-/* Light theme: pale lilac-tinted paper, violet ink, pastel surfaces. */
+/* Light theme: cool off-white paper, graphite ink, one indigo accent. */
 :root {
   color-scheme: light;
-  --background: oklch(0.975 0.01 290);
-  --foreground: oklch(0.25 0.03 280);
-  --card: oklch(0.995 0.004 290);
-  --card-foreground: oklch(0.25 0.03 280);
-  --popover: oklch(0.995 0.004 290);
-  --popover-foreground: oklch(0.25 0.03 280);
-  --primary: oklch(0.42 0.12 285);
-  --primary-foreground: oklch(0.99 0.004 290);
-  --secondary: oklch(0.94 0.035 170);
-  --secondary-foreground: oklch(0.3 0.05 170);
-  --muted: oklch(0.955 0.012 290);
-  --muted-foreground: oklch(0.45 0.03 280);
-  --accent: oklch(0.94 0.04 55);
-  --accent-foreground: oklch(0.36 0.07 45);
-  --destructive: oklch(0.55 0.17 25);
-  --destructive-foreground: oklch(0.99 0.004 290);
-  --success: oklch(0.5 0.1 160);
-  --success-foreground: oklch(0.99 0.004 290);
-  --warning: oklch(0.82 0.13 80);
-  --warning-foreground: oklch(0.28 0.05 70);
-  --danger: oklch(0.55 0.17 25);
-  --danger-foreground: oklch(0.99 0.004 290);
-  --border: oklch(0.9 0.015 290);
-  --input: oklch(0.9 0.015 290);
-  --ring: oklch(0.55 0.13 285);
-  --chart-1: oklch(0.62 0.12 285);
-  --chart-2: oklch(0.7 0.1 170);
-  --chart-3: oklch(0.8 0.12 75);
-  --chart-4: oklch(0.66 0.15 25);
-  --chart-5: oklch(0.6 0.04 260);
-  --radius: 0.75rem;
-  --sidebar: oklch(0.955 0.02 290);
-  --sidebar-foreground: oklch(0.25 0.03 280);
-  --sidebar-primary: oklch(0.42 0.12 285);
-  --sidebar-primary-foreground: oklch(0.99 0.004 290);
-  --sidebar-accent: oklch(0.92 0.035 290);
-  --sidebar-accent-foreground: oklch(0.25 0.03 280);
-  --sidebar-border: oklch(0.9 0.015 290);
-  --sidebar-ring: oklch(0.55 0.13 285);
+  --background: oklch(0.985 0.002 265);
+  --foreground: oklch(0.21 0.015 265);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.015 265);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.015 265);
+  --primary: oklch(0.5 0.17 268);
+  --primary-foreground: oklch(0.99 0.002 265);
+  --secondary: oklch(0.955 0.005 265);
+  --secondary-foreground: oklch(0.27 0.015 265);
+  --muted: oklch(0.96 0.004 265);
+  --muted-foreground: oklch(0.5 0.015 265);
+  --accent: oklch(0.955 0.006 265);
+  --accent-foreground: oklch(0.21 0.015 265);
+  --destructive: oklch(0.54 0.2 27);
+  --destructive-foreground: oklch(0.99 0.002 265);
+  --success: oklch(0.52 0.13 155);
+  --success-foreground: oklch(0.99 0.002 265);
+  --warning: oklch(0.8 0.15 80);
+  --warning-foreground: oklch(0.27 0.05 70);
+  --danger: oklch(0.54 0.2 27);
+  --danger-foreground: oklch(0.99 0.002 265);
+  --border: oklch(0.915 0.005 265);
+  --input: oklch(0.88 0.006 265);
+  --ring: oklch(0.55 0.17 268);
+  /* Charts: 1 indigo (also LOW), 2 teal, 3 amber (MEDIUM), 4 red (HIGH+), 5 slate. */
+  --chart-1: oklch(0.55 0.15 268);
+  --chart-2: oklch(0.6 0.1 185);
+  --chart-3: oklch(0.75 0.15 75);
+  --chart-4: oklch(0.6 0.19 30);
+  --chart-5: oklch(0.6 0.02 265);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.97 0.003 265);
+  --sidebar-foreground: oklch(0.21 0.015 265);
+  --sidebar-primary: oklch(0.5 0.17 268);
+  --sidebar-primary-foreground: oklch(0.99 0.002 265);
+  --sidebar-accent: oklch(0.93 0.006 265);
+  --sidebar-accent-foreground: oklch(0.21 0.015 265);
+  --sidebar-border: oklch(0.915 0.005 265);
+  --sidebar-ring: oklch(0.55 0.17 268);
   /* Text-safe status tones for tinted surfaces. The fills above are not used as text. */
-  --success-text: oklch(0.42 0.1 160);
-  --warning-text: oklch(0.45 0.1 65);
-  --danger-text: oklch(0.48 0.16 25);
-  /* Pastel brand surfaces. The -soft tones are backgrounds only; text on them uses --foreground. */
-  --brand-mint: oklch(0.8 0.08 170);
-  --brand-mint-soft: oklch(0.95 0.03 170);
-  --brand-lilac: oklch(0.8 0.08 290);
-  --brand-lilac-soft: oklch(0.94 0.03 290);
-  --brand-peach: oklch(0.85 0.08 55);
-  --brand-peach-soft: oklch(0.955 0.03 55);
-  --brand-sky: oklch(0.83 0.06 235);
-  --brand-sky-soft: oklch(0.95 0.025 235);
-  --glow: oklch(0.9 0.05 290 / 35%);
+  --success-text: oklch(0.45 0.12 155);
+  --warning-text: oklch(0.48 0.11 65);
+  --danger-text: oklch(0.5 0.19 27);
+  /* HIGH risk tier: orange, so HIGH and CRITICAL (danger) differ in tone as well as icon and label. */
+  --risk-high: oklch(0.66 0.17 50);
+  --risk-high-text: oklch(0.5 0.14 50);
+  /* Brand surfaces. The -soft tones are backgrounds only; text on them uses --foreground. */
+  --brand-mint: oklch(0.7 0.1 185);
+  --brand-mint-soft: oklch(0.96 0.02 185);
+  --brand-lilac: oklch(0.62 0.13 270);
+  --brand-lilac-soft: oklch(0.95 0.02 270);
+  --brand-peach: oklch(0.78 0.1 55);
+  --brand-peach-soft: oklch(0.96 0.02 55);
+  --brand-sky: oklch(0.72 0.09 235);
+  --brand-sky-soft: oklch(0.96 0.02 235);
+  --glow: oklch(0.85 0.06 268 / 22%);
 }
 
-/* Dark theme: deep indigo ink surfaces with pastel accents. Defined independently of :root. */
+/* Dark theme (primary): graphite surfaces with a faint blue cast. Defined independently of :root. */
 .dark {
   color-scheme: dark;
-  --background: oklch(0.18 0.03 280);
-  --foreground: oklch(0.95 0.01 290);
-  --card: oklch(0.22 0.032 280);
-  --card-foreground: oklch(0.95 0.01 290);
-  --popover: oklch(0.24 0.034 280);
-  --popover-foreground: oklch(0.95 0.01 290);
-  --primary: oklch(0.8 0.09 290);
-  --primary-foreground: oklch(0.2 0.04 285);
-  --secondary: oklch(0.3 0.05 170);
-  --secondary-foreground: oklch(0.94 0.03 170);
-  --muted: oklch(0.27 0.03 280);
-  --muted-foreground: oklch(0.77 0.03 280);
-  --accent: oklch(0.33 0.05 50);
-  --accent-foreground: oklch(0.94 0.03 55);
-  --destructive: oklch(0.75 0.13 25);
-  --destructive-foreground: oklch(0.2 0.03 25);
-  --success: oklch(0.78 0.1 160);
-  --success-foreground: oklch(0.2 0.03 160);
-  --warning: oklch(0.86 0.11 85);
-  --warning-foreground: oklch(0.25 0.04 75);
-  --danger: oklch(0.75 0.13 25);
-  --danger-foreground: oklch(0.2 0.03 25);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 14%);
-  --ring: oklch(0.78 0.09 290);
-  --chart-1: oklch(0.78 0.1 285);
-  --chart-2: oklch(0.8 0.08 170);
-  --chart-3: oklch(0.86 0.1 80);
-  --chart-4: oklch(0.76 0.13 25);
-  --chart-5: oklch(0.72 0.03 260);
-  --sidebar: oklch(0.2 0.032 280);
-  --sidebar-foreground: oklch(0.95 0.01 290);
-  --sidebar-primary: oklch(0.8 0.09 290);
-  --sidebar-primary-foreground: oklch(0.2 0.04 285);
-  --sidebar-accent: oklch(0.28 0.04 285);
-  --sidebar-accent-foreground: oklch(0.95 0.01 290);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.78 0.09 290);
-  --success-text: oklch(0.84 0.09 160);
-  --warning-text: oklch(0.88 0.1 85);
-  --danger-text: oklch(0.84 0.11 25);
-  --brand-mint: oklch(0.62 0.07 170);
-  --brand-mint-soft: oklch(0.28 0.04 170);
-  --brand-lilac: oklch(0.66 0.09 290);
-  --brand-lilac-soft: oklch(0.28 0.05 290);
-  --brand-peach: oklch(0.7 0.08 55);
-  --brand-peach-soft: oklch(0.3 0.05 55);
-  --brand-sky: oklch(0.68 0.06 235);
-  --brand-sky-soft: oklch(0.28 0.04 235);
-  --glow: oklch(0.5 0.1 290 / 25%);
+  --background: oklch(0.16 0.008 265);
+  --foreground: oklch(0.96 0.004 265);
+  --card: oklch(0.195 0.009 265);
+  --card-foreground: oklch(0.96 0.004 265);
+  --popover: oklch(0.215 0.01 265);
+  --popover-foreground: oklch(0.96 0.004 265);
+  --primary: oklch(0.72 0.13 268);
+  --primary-foreground: oklch(0.17 0.02 268);
+  --secondary: oklch(0.25 0.01 265);
+  --secondary-foreground: oklch(0.94 0.005 265);
+  --muted: oklch(0.235 0.009 265);
+  --muted-foreground: oklch(0.72 0.012 265);
+  --accent: oklch(0.26 0.012 265);
+  --accent-foreground: oklch(0.96 0.004 265);
+  --destructive: oklch(0.68 0.17 25);
+  --destructive-foreground: oklch(0.16 0.02 25);
+  --success: oklch(0.72 0.15 155);
+  --success-foreground: oklch(0.16 0.02 155);
+  --warning: oklch(0.8 0.14 80);
+  --warning-foreground: oklch(0.2 0.03 75);
+  --danger: oklch(0.68 0.17 25);
+  --danger-foreground: oklch(0.16 0.02 25);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.72 0.13 268);
+  --chart-1: oklch(0.72 0.13 268);
+  --chart-2: oklch(0.74 0.1 185);
+  --chart-3: oklch(0.82 0.14 80);
+  --chart-4: oklch(0.7 0.17 28);
+  --chart-5: oklch(0.65 0.02 265);
+  --sidebar: oklch(0.145 0.008 265);
+  --sidebar-foreground: oklch(0.96 0.004 265);
+  --sidebar-primary: oklch(0.72 0.13 268);
+  --sidebar-primary-foreground: oklch(0.17 0.02 268);
+  --sidebar-accent: oklch(0.23 0.01 265);
+  --sidebar-accent-foreground: oklch(0.96 0.004 265);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.72 0.13 268);
+  --success-text: oklch(0.8 0.14 155);
+  --warning-text: oklch(0.84 0.13 80);
+  --danger-text: oklch(0.76 0.15 25);
+  --risk-high: oklch(0.74 0.15 50);
+  --risk-high-text: oklch(0.8 0.13 55);
+  --brand-mint: oklch(0.7 0.1 185);
+  --brand-mint-soft: oklch(0.25 0.03 185);
+  --brand-lilac: oklch(0.66 0.12 270);
+  --brand-lilac-soft: oklch(0.25 0.035 270);
+  --brand-peach: oklch(0.72 0.1 55);
+  --brand-peach-soft: oklch(0.26 0.03 55);
+  --brand-sky: oklch(0.7 0.09 235);
+  --brand-sky-soft: oklch(0.25 0.03 235);
+  --glow: oklch(0.55 0.12 268 / 10%);
 }
 
 @layer base {

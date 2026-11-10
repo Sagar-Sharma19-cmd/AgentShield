@@ -11,6 +11,7 @@ import { SecurityAlertsMonitor } from "@/components/alerts/security-alerts-monit
 import { SecurityAlertsProvider } from "@/components/alerts/security-alerts-context";
 import { ThemeSwitcher } from "@/components/shell/theme-switcher";
 import { AdminUnlockPanel } from "@/components/shell/admin-unlock-panel";
+import { PageTransition } from "@/components/motion/page-transition";
 import { useAdminKey } from "@/lib/auth/admin-key";
 import { breadcrumbsFor, isNavActive, NAV_ITEMS } from "@/lib/shell/navigation";
 import { cn } from "@/lib/utils";
@@ -50,13 +51,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Short fade when the section changes. Reduced-motion users get no animation (globals.css). */
+/** Short fade when the section changes (keyed on the pathname, so filter changes do not replay it). */
 function RouteTransition({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   return (
-    <div key={pathname} className="min-h-full animate-in fade-in-0 duration-200 ease-out">
+    <PageTransition routeKey={pathname} className="min-h-full">
       {children}
-    </div>
+    </PageTransition>
   );
 }
 
