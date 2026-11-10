@@ -313,15 +313,14 @@ security semantics. Every state needs Loading, Empty, Error and Unauthorized vie
   and a `SlideUp` entrance. Key validation and storage are unchanged.
 - **Route fade**: `PageTransition` (opacity only).
 
-### Overview (`components/dashboard/*`)
-- KPI row of four tiles: `Stagger` + `AnimatedNumber` (replaces the CSS `animate-in` and delay style on
-  `StatTile`).
-- The security alert feed stays second. New alerts enter with `SlideUp`, and unread items get a dot plus the
-  text "New".
-- Decision breakdown: a segmented bar plus a legend with icon, label, count and percentage for each decision.
-- Risk distribution: Recharts bars with `--chart-1/3/4`, direct value labels, and an accessible table
-  fallback.
-- Recent incidents and recent activity: compact tables with mono request IDs.
+### Overview: implemented as "Checkpoint" (Phase F3, see section 7)
+- Header (eyebrow, title, Live indicator from the recent-evaluations query state, Refresh), then GateFunnel,
+  CheckpointStream (full width), then ReviewTriage and SessionTrace side by side (stacked below `lg`).
+- Kept: the live security alert feed (the header's alert indicator links here) and the all-time decision
+  breakdown (the only all-time figure on the page).
+- No longer on the page, but the files remain: `OverviewStats`, `RiskDistributionCard`, `RecentIncidentsCard`,
+  `RecentActivityCard`. The stream and funnel replace their information for the recent sample. Their pure
+  logic and tests (`lib/dashboard/metrics.ts`) are unchanged.
 
 ### Activity (`components/activity/*`)
 - A full-width (`max-w-7xl`) dense table with a sticky header (`z-10`), row hover and a selected-row
@@ -369,3 +368,68 @@ security semantics. Every state needs Loading, Empty, Error and Unauthorized vie
   alpha-compositing support in `contrast.ts`.
 - Charts have not yet been checked for colour-vision deficiency beyond the hue spacing in this doc.
 - The redesign plan in section 5 has not been user-tested.
+
+---
+
+## 7. Signature: Checkpoint (Overview)
+
+AgentShield is a gateway. Every agent request passes, in order:
+**Identity → Permission → Policy → Risk engine → Trajectory → Decision**. The Overview shows that
+pipeline rather than generic KPI cards. Visual rules: hairline borders, dashed hairline gate dividers, mono
+uppercase micro-labels, tabular numbers, no glow, neon or gradients.
+
+### Gate derivation (`src/lib/checkpoint/gates.ts`, `gateFor`)
+
+Only recorded audit fields are used (`authorizationResult`, `decision`, `escalatedBy`). Nothing is re-scored.
+
+| authorizationResult | decision | escalatedBy | Gate |
+|---|---|---|---|
+| `AGENT_NOT_FOUND`, `AGENT_SUSPENDED`, `AGENT_REVOKED`, `AGENT_IDENTITY_MISMATCH` | any | any | **Identity** |
+| `TOOL_NOT_FOUND`, `TOOL_DISABLED`, `UNAUTHORIZED`, `PERMISSION_DISABLED` | any | any | **Permission** |
+| `AUTHORIZED` | ALLOW | any | **Passed** (shown as "Allowed") |
+| `AUTHORIZED` | DENY | `RISK_ENGINE` | **Risk engine** |
+| `AUTHORIZED` | DENY | `NONE`, `TRAJECTORY`, null | **Policy** |
+| `AUTHORIZED` | REVIEW | `TRAJECTORY` | **Trajectory** |
+| `AUTHORIZED` | REVIEW | `RISK_ENGINE` | **Risk engine** |
+| `AUTHORIZED` | REVIEW | `NONE`, null | **Policy** |
+
+`escalatedBy` is null on rows written before V9. Those non-ALLOW rows fall back to Policy, because the data
+cannot show that a later stage was involved. Trajectory never produces DENY, so DENY + `TRAJECTORY` is not
+expected; it is treated as Policy rather than attributed to trajectory.
+
+### The four components (`src/components/checkpoint/`)
+
+1. **GateFunnel**: five stages (Requests, Authorized, Passed policy, Passed risk, Allowed) with an
+   `AnimatedNumber`, the share of requests, and a thin bar animated with `scaleX` (transform only). It is
+   labelled "Last N requests", where N is the sample size (the dashboard's newest 100 audit rows at most). The
+   footnote says that HTTP 401 rejections (bad or missing agent key) never reach the gateway and are not counted.
+2. **CheckpointStream**: six gate columns with dashed dividers. Each of the 40 newest rows is a dot (decision
+   icon + colour) that travels from the left and stops at its gate.
+   - On first load, the newest 20 replay.
+   - After that, only requestIds not seen before travel.
+   - At most 12 dots travel at once (`checkpointMotion`: 320 ms travel, 50 ms apart).
+   - With reduced motion, dots fade in at their gate.
+   - A visible `role="status"` line summarises arrivals ("3 new: 2 allowed, 1 denied at Policy").
+   - A Pause control freezes the view; on resume, the missed arrivals travel in.
+   - Dots are links to the existing activity detail (`/activity?request=…`). There is one tab stop, and the
+     arrow keys move between dots.
+3. **ReviewTriage**: open reviews (PENDING + IN_REVIEW) from the existing review list queries.
+   - It is a keyboard listbox: J/K move, Enter opens the review on the Reviews page, and A/R open the
+     existing approve/reject confirmation there (`/reviews?…&confirm=approve`).
+   - `confirm` is honoured only when the status allows that action (IN_REVIEW). It only pre-opens the dialog,
+     and the operator still confirms.
+   - On a PENDING review, A/R explain that it must be started first. Nothing is ever decided from the Overview.
+4. **SessionTrace**: an SVG line of the trajectory score over the most escalated session in the sample, with a
+   dashed HIGH threshold at 60.
+   - Points use the decision icon + colour, and each has a `<title>` tooltip.
+   - Requests without a trajectory score sit in an "n/a" lane below the axis instead of being drawn as 0.
+   - The x axis is request order.
+   - A visually hidden table lists every point.
+   - When no session in the sample has a trajectory score, a calm empty state is shown.
+
+### Data
+
+All four components read existing queries only: `useRecentEvaluations` (dashboard, 100 newest audit
+rows) and `useReviewsByStatus("PENDING" | "IN_REVIEW")`. There are no new endpoints or query keys. Audit
+rows do not carry the Risk Engine score, so the stream and trace use the policy score, decision and
+trajectory score only.

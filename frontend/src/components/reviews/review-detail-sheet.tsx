@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Skeleton } from "@/components/ui/skeleton";
 import { ReviewStatusBadge } from "@/components/reviews/review-status-badge";
 import { useReview } from "@/lib/queries/reviews";
-import { resolveAgent, type AgentLookup } from "@/lib/reviews/model";
+import { resolveAgent, type AgentLookup, type ConfirmableAction } from "@/lib/reviews/model";
 import type { ReviewRequestResponse } from "@/types/api";
 import { ReviewActions } from "./review-actions";
 import {
@@ -22,13 +22,17 @@ interface ReviewDetailSheetProps {
   reviewId: string | undefined;
   onClose: () => void;
   agentLookup: AgentLookup;
+  /** From the URL (Overview triage A/R): pre-open this action's confirmation dialog, if allowed. */
+  requestedConfirm?: ConfirmableAction;
+  /** Called once that confirmation dialog closes, confirmed or cancelled. */
+  onConfirmHandled?: () => void;
 }
 
 /**
  * Full review record. The detail is fetched by id, so a deep link or a review that changed on the
  * server since the queue loaded still shows the current state.
  */
-export function ReviewDetailSheet({ reviewId, onClose, agentLookup }: ReviewDetailSheetProps) {
+export function ReviewDetailSheet({ reviewId, onClose, agentLookup, requestedConfirm, onConfirmHandled }: ReviewDetailSheetProps) {
   const query = useReview(reviewId);
 
   return (
@@ -50,7 +54,12 @@ export function ReviewDetailSheet({ reviewId, onClose, agentLookup }: ReviewDeta
                 <ReviewStatusBadge status={query.data.status} />
                 <RiskTierBadge tier={query.data.riskTier} />
               </div>
-              <ReviewDetailBody review={query.data} agentLookup={agentLookup} />
+              <ReviewDetailBody
+                review={query.data}
+                agentLookup={agentLookup}
+                requestedConfirm={requestedConfirm}
+                onConfirmHandled={onConfirmHandled}
+              />
             </>
           )}
         </div>
@@ -62,9 +71,13 @@ export function ReviewDetailSheet({ reviewId, onClose, agentLookup }: ReviewDeta
 function ReviewDetailBody({
   review,
   agentLookup,
+  requestedConfirm,
+  onConfirmHandled,
 }: {
   review: ReviewRequestResponse;
   agentLookup: AgentLookup;
+  requestedConfirm?: ConfirmableAction;
+  onConfirmHandled?: () => void;
 }) {
   const agent = resolveAgent(agentLookup, review.agentId);
 
@@ -88,7 +101,7 @@ function ReviewDetailBody({
           <AuditSection requestId={review.requestId} />
         </div>
       </DashboardCard>
-      <ReviewActions review={review} />
+      <ReviewActions review={review} requestedConfirm={requestedConfirm} onConfirmHandled={onConfirmHandled} />
     </>
   );
 }

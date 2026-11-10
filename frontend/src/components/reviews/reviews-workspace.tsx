@@ -63,6 +63,11 @@ export function ReviewsWorkspace({ state }: { state: ReviewUrlState }) {
     router.push(buildReviewHref(next));
   }
 
+  /** Drops a handled `confirm` from the URL, so a reload or Back does not reopen the dialog. */
+  function clearConfirm() {
+    if (state.confirm) router.replace(buildReviewHref({ status: state.status, review: state.review }));
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-4 md:p-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
@@ -122,6 +127,8 @@ export function ReviewsWorkspace({ state }: { state: ReviewUrlState }) {
         reviewId={state.review}
         onClose={() => navigate({ status: state.status })}
         agentLookup={agentLookup}
+        requestedConfirm={state.confirm}
+        onConfirmHandled={clearConfirm}
       />
     </div>
   );

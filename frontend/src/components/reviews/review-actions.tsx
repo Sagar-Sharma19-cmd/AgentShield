@@ -19,6 +19,8 @@ import {
   actionSuccessMessage,
   availableReviewActions,
   describeActionError,
+  initialConfirmation,
+  type ConfirmableAction,
   type ReviewAction,
 } from "@/lib/reviews/model";
 import type { ReviewRequestResponse } from "@/types/api";
@@ -31,10 +33,21 @@ interface Feedback {
 /**
  * Start / approve / reject for one review. Only the actions the backend accepts from the current
  * status are offered. Approve and reject ask for confirmation, because they are final.
+ *
+ * `requestedConfirm` (from an Overview triage link) only pre-opens that same confirmation dialog,
+ * and only when the current status allows the action. Nothing runs until the operator confirms.
  */
-export function ReviewActions({ review }: { review: ReviewRequestResponse }) {
+export function ReviewActions({
+  review,
+  requestedConfirm,
+  onConfirmHandled,
+}: {
+  review: ReviewRequestResponse;
+  requestedConfirm?: ConfirmableAction;
+  onConfirmHandled?: () => void;
+}) {
   const mutation = useReviewAction();
-  const [confirming, setConfirming] = useState<ReviewAction | null>(null);
+  const [confirming, setConfirming] = useState<ReviewAction | null>(() => initialConfirmation(review.status, requestedConfirm));
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const actions = availableReviewActions(review.status);
 
@@ -105,7 +118,14 @@ export function ReviewActions({ review }: { review: ReviewRequestResponse }) {
         </p>
       )}
 
-      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+      <AlertDialog
+        open={confirming !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setConfirming(null);
+          onConfirmHandled?.();
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirming ? REVIEW_ACTION_COPY[confirming].confirmTitle : ""}</AlertDialogTitle>

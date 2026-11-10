@@ -4,6 +4,7 @@ import {
   availableReviewActions,
   buildReviewHref,
   describeActionError,
+  initialConfirmation,
   parseReviewParams,
   resolveAgent,
   sortNewestFirst,
@@ -63,6 +64,22 @@ describe("parseReviewParams", () => {
   it("takes the first value when a parameter is repeated", () => {
     expect(parseReviewParams({ status: ["REJECTED", "PENDING"] })).toEqual({ status: "REJECTED" });
   });
+
+  it("accepts a confirm request for a selected review", () => {
+    expect(parseReviewParams({ status: "IN_REVIEW", review: VALID_ID, confirm: "reject" })).toEqual({
+      status: "IN_REVIEW",
+      review: VALID_ID,
+      confirm: "reject",
+    });
+  });
+
+  it("drops an unknown confirm value and any confirm without a selected review", () => {
+    expect(parseReviewParams({ status: "IN_REVIEW", review: VALID_ID, confirm: "start" })).toEqual({
+      status: "IN_REVIEW",
+      review: VALID_ID,
+    });
+    expect(parseReviewParams({ status: "IN_REVIEW", confirm: "approve" })).toEqual({ status: "IN_REVIEW" });
+  });
 });
 
 describe("buildReviewHref", () => {
@@ -74,6 +91,23 @@ describe("buildReviewHref", () => {
     expect(buildReviewHref({ status: "IN_REVIEW", review: VALID_ID })).toBe(
       `/reviews?status=IN_REVIEW&review=${VALID_ID}`,
     );
+  });
+
+  it("adds a confirm request only alongside a selected review", () => {
+    expect(buildReviewHref({ status: "IN_REVIEW", review: VALID_ID, confirm: "approve" })).toBe(
+      `/reviews?status=IN_REVIEW&review=${VALID_ID}&confirm=approve`,
+    );
+    expect(buildReviewHref({ status: "IN_REVIEW", confirm: "approve" })).toBe("/reviews?status=IN_REVIEW");
+  });
+});
+
+describe("initialConfirmation", () => {
+  it("pre-opens only an action the current status allows", () => {
+    expect(initialConfirmation("IN_REVIEW", "approve")).toBe("approve");
+    expect(initialConfirmation("IN_REVIEW", "reject")).toBe("reject");
+    expect(initialConfirmation("PENDING", "approve")).toBeNull();
+    expect(initialConfirmation("APPROVED", "reject")).toBeNull();
+    expect(initialConfirmation("IN_REVIEW", undefined)).toBeNull();
   });
 });
 

@@ -62,10 +62,19 @@ export function sortNewestFirst<T extends Pick<ReviewRequestResponse, "createdAt
   return [...reviews].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
 }
 
-/** URL state for the Reviews page. Unknown values fall back to the safe defaults (PENDING, no selection). */
+/** Final actions that a link may ask to confirm (Overview triage A/R). Never "start", which has no confirmation. */
+export const CONFIRMABLE_ACTIONS = ["approve", "reject"] as const;
+export type ConfirmableAction = (typeof CONFIRMABLE_ACTIONS)[number];
+
+/**
+ * URL state for the Reviews page. Unknown values fall back to the safe defaults (PENDING, no selection).
+ * `confirm` only pre-opens the existing confirmation dialog for the selected review; it never performs
+ * the action, and it is ignored unless the review's current status allows that action.
+ */
 const reviewUrlSchema = z.object({
   status: z.enum(REVIEW_STATUSES).catch("PENDING"),
   review: z.uuid().optional().catch(undefined),
+  confirm: z.enum(CONFIRMABLE_ACTIONS).optional().catch(undefined),
 });
 
 export type ReviewUrlState = z.infer<typeof reviewUrlSchema>;
@@ -75,14 +84,25 @@ export function parseReviewParams(raw: Record<string, string | string[] | undefi
   for (const [key, value] of Object.entries(raw)) {
     flat[key] = Array.isArray(value) ? value[0] : value;
   }
-  return reviewUrlSchema.parse(flat);
+  const parsed = reviewUrlSchema.parse(flat);
+  // A confirmation request without a selected review has nothing to confirm.
+  return parsed.review ? parsed : { status: parsed.status };
 }
 
 /** Builds a /reviews href. The selection is dropped when the status changes or the sheet closes. */
-export function buildReviewHref(state: { status: ReviewStatus; review?: string }): string {
+export function buildReviewHref(state: { status: ReviewStatus; review?: string; confirm?: ConfirmableAction }): string {
   const params = new URLSearchParams({ status: state.status });
-  if (state.review) params.set("review", state.review);
+  if (state.review) {
+    params.set("review", state.review);
+    if (state.confirm) params.set("confirm", state.confirm);
+  }
   return `/reviews?${params.toString()}`;
+}
+
+/** The confirmation to pre-open, if the requested action is one the review's status allows. */
+export function initialConfirmation(status: ReviewStatus, requested: ConfirmableAction | undefined): ConfirmableAction | null {
+  if (!requested) return null;
+  return availableReviewActions(status).includes(requested) ? requested : null;
 }
 
 /** Status word for the success message of an action, used for the transition feedback line. */

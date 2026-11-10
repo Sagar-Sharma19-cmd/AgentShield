@@ -90,3 +90,13 @@ export function staggerDelay(count: number, each: number = stagger.each, maxTota
 export function cssCubicBezier(curve: CubicBezier): string {
   return `cubic-bezier(${curve.join(", ")})`;
 }
+
+/**
+ * CheckpointStream timing (Overview). Each dot travels for `slow`, and travelling dots leave
+ * `stagger` seconds apart. With at most 12 travelling dots (DEFAULT_STREAM_LIMITS.maxConcurrent), a full
+ * replay settles in under a second.
+ */
+export const checkpointMotion = {
+  travel: durations.slow,
+  stagger: 0.05,
+} as const;

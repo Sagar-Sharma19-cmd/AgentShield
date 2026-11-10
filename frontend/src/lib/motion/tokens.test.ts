@@ -90,3 +90,12 @@ describe("staggerDelay", () => {
     expect(delay).toBeLessThan(stagger.each);
   });
 });
+
+describe("checkpointMotion", () => {
+  it("settles a full replay of 12 travelling dots within one second", async () => {
+    const { checkpointMotion } = await import("./tokens");
+    const { DEFAULT_STREAM_LIMITS } = await import("@/lib/checkpoint/stream");
+    const total = (DEFAULT_STREAM_LIMITS.maxConcurrent - 1) * checkpointMotion.stagger + checkpointMotion.travel;
+    expect(total).toBeLessThanOrEqual(1);
+  });
+});
