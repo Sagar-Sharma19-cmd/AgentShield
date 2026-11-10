@@ -160,3 +160,4 @@ surefire-reports/
 # UI/UX Pro Max skill (local tooling)
 .claude/skills/ui-ux-pro-max/
 .shared/ui-ux-pro-max/
+.agents/

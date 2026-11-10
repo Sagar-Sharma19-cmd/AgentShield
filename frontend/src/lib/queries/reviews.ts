@@ -45,23 +45,20 @@ export function useReviewsByStatus(status: ReviewStatus) {
 }
 
 /**
- * Counts for every status tab. Uses the same query keys as useReviewsByStatus, so the active tab
- * shares its cache entry with the queue and the counts add no extra requests for that tab.
+ * All four status lists, for the Reviews workspace. Its tabs (Needs action, Approved, Rejected, Expired)
+ * and their counts are derived client-side (lib/reviews/tabs.ts). Same query keys and options as
+ * useReviewsByStatus, so the Overview triage, the sidebar badge and this page share one cache entry per
+ * status and add no extra requests.
  */
-export function useReviewCounts() {
+export function useReviewLists() {
   const { adminKey } = useAdminKey();
   const results = useQueries({
     queries: REVIEW_STATUSES.map((status) => listQueryOptions(status, adminKey)),
   });
-
-  const counts = Object.fromEntries(
-    REVIEW_STATUSES.map((status, index) => [status, results[index].data?.length]),
-  ) as Record<ReviewStatus, number | undefined>;
-
-  return {
-    counts,
-    isError: results.some((result) => result.isError),
-  };
+  return Object.fromEntries(REVIEW_STATUSES.map((status, index) => [status, results[index]])) as Record<
+    ReviewStatus,
+    (typeof results)[number]
+  >;
 }
 
 /**

@@ -1,54 +1,64 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { RotateCw } from "lucide-react";
-import { DashboardCard, SectionEmpty, SectionError, SectionSkeleton } from "@/components/dashboard/section-states";
+import { Inbox, MousePointerClick, RotateCw } from "lucide-react";
+import { SectionError } from "@/components/dashboard/section-states";
+import { Kbd } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAgentRegistry } from "@/lib/queries/agents";
-import { refreshReviewWorkspace, useReviewCounts, useReviewsByStatus } from "@/lib/queries/reviews";
+import { refreshReviewWorkspace, useReviewAction, useReviewLists } from "@/lib/queries/reviews";
+import type { AgentLookup } from "@/lib/reviews/model";
 import {
-  REVIEW_STATUS_LABELS,
-  REVIEW_STATUSES,
-  buildReviewHref,
-  sortNewestFirst,
-  type AgentLookup,
-  type ReviewUrlState,
-} from "@/lib/reviews/model";
-import type { ReviewStatus } from "@/types/api";
+  REVIEW_TAB_LABELS,
+  REVIEW_TABS,
+  TAB_STATUSES,
+  buildWorkspaceHref,
+  partitionReviews,
+  tabCounts,
+  type ReviewTab,
+  type ReviewWorkspaceState,
+} from "@/lib/reviews/tabs";
+import type { ReviewRequestResponse, ReviewStatus } from "@/types/api";
+import { ReviewDetail } from "./review-detail";
 import { ReviewDetailSheet } from "./review-detail-sheet";
 import { ReviewQueue } from "./review-queue";
+import { useIsDesktop, useNow } from "./use-review-clock";
 
-const EMPTY_COPY: Record<ReviewStatus, { title: string; body: string }> = {
-  PENDING: {
-    title: "No reviews waiting to start",
-    body: "A held request appears here when a gateway evaluation ends in REVIEW.",
-  },
-  IN_REVIEW: {
-    title: "Nothing is in review",
-    body: "Start a pending review to move it here while you decide.",
-  },
-  APPROVED: {
-    title: "No approved reviews",
-    body: "Approved reviews are recorded here. Approval never grants tool access on its own.",
-  },
-  REJECTED: {
-    title: "No rejected reviews",
-    body: "Rejected reviews are recorded here.",
-  },
+const TAB_DESCRIPTIONS: Record<ReviewTab, string> = {
+  "needs-action": "Pending and in-review requests, soonest to expire first.",
+  approved: "Approved. The agent can claim each approval once, before it expires, to run exactly that request.",
+  rejected: "Rejected, with the reviewer's note. The agent is told why.",
+  expired: "Timed out before a decision. They can no longer be started, decided or claimed.",
 };
 
 /**
- * Review queue with status tabs. The status and the selected review live in the URL, so a filtered
- * view or an open review can be linked and survives reloads.
+ * The Reviews workspace ("Checkpoint" language): status tabs with counts, the queue on the left and the
+ * selected review on the right from `lg` up. Below `lg`, the review opens in the existing sheet.
+ * Tab and selection live in the URL, so a view can be linked and Back works.
  */
-export function ReviewsWorkspace({ state }: { state: ReviewUrlState }) {
+export function ReviewsWorkspace({ state }: { state: ReviewWorkspaceState }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const queue = useReviewsByStatus(state.status);
-  const { counts, isError: countsFailed } = useReviewCounts();
+  const lists = useReviewLists();
   const registry = useAgentRegistry();
+  const startMutation = useReviewAction();
+  const now = useNow();
+  const isDesktop = useIsDesktop();
+
+  const data = Object.fromEntries(Object.entries(lists).map(([status, query]) => [status, query.data])) as Partial<
+    Record<ReviewStatus, ReviewRequestResponse[] | undefined>
+  >;
+  const tabs = partitionReviews(data);
+  const counts = tabCounts(tabs);
+  const sources = TAB_STATUSES[state.tab].map((status) => lists[status]);
+  const reviews = tabs[state.tab];
+  const failed = sources.find((query) => query.isError && query.data === undefined);
+  // Another tab's list failed while this tab's loaded: say why that count is missing.
+  const partialFailure = !failed && Object.values(lists).some((query) => query.isError);
 
   // Known data wins over a later refetch error, so a background failure does not hide agent names.
   const agentLookup: AgentLookup = registry.data
@@ -57,92 +67,242 @@ export function ReviewsWorkspace({ state }: { state: ReviewUrlState }) {
       ? { state: "error" }
       : { state: "loading" };
   const agentNames = new Map((registry.data ?? []).map((agent) => [agent.id, agent.name]));
-  const reviews = sortNewestFirst(queue.data ?? []);
 
-  function navigate(next: { status: ReviewStatus; review?: string }) {
-    router.push(buildReviewHref(next));
+  function navigate(next: ReviewWorkspaceState) {
+    router.push(buildWorkspaceHref(next));
   }
 
   /** Drops a handled `confirm` from the URL, so a reload or Back does not reopen the dialog. */
   function clearConfirm() {
-    if (state.confirm) router.replace(buildReviewHref({ status: state.status, review: state.review }));
+    if (state.confirm) router.replace(buildWorkspaceHref({ tab: state.tab, review: state.review }));
   }
 
+  function start(review: ReviewRequestResponse) {
+    // Same mutation and toast as the Start review button. Opening the review shows the result in place.
+    startMutation.mutate({ id: review.id, action: "start", from: review.status });
+    if (review.id !== state.review) navigate({ tab: state.tab, review: review.id });
+  }
+
+  const actionable = state.tab === "needs-action";
+
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-5 p-4 md:p-8">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-8">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-col gap-1">
+          <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">Respond · Human review</p>
           <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
-          <p className="text-sm text-muted-foreground">
-            Requests the gateway held for a human decision. Each review is recorded; none change access on their own.
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Requests the gateway held for a human decision. An approval lets the agent run that exact request once; it never
+            changes a permission grant.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void refreshReviewWorkspace(queryClient)}
-        >
+        <Button variant="outline" size="sm" onClick={() => void refreshReviewWorkspace(queryClient)}>
           <RotateCw aria-hidden="true" />
           Refresh
         </Button>
       </header>
 
-      <Tabs value={state.status} onValueChange={(value) => navigate({ status: value as ReviewStatus })}>
-        <TabsList aria-label="Filter reviews by status" className="flex h-auto w-full flex-wrap justify-start">
-          {REVIEW_STATUSES.map((status) => (
-            <TabsTrigger key={status} value={status} className="gap-2">
-              {REVIEW_STATUS_LABELS[status]}
+      <Tabs value={state.tab} onValueChange={(value) => navigate({ tab: value as ReviewTab })}>
+        <TabsList aria-label="Reviews by status" className="flex h-auto w-full flex-wrap justify-start">
+          {REVIEW_TABS.map((tab) => (
+            <TabsTrigger key={tab} value={tab} className="gap-2">
+              {REVIEW_TAB_LABELS[tab]}
               <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {counts[status] ?? "–"}
+                <span className="sr-only">, </span>
+                {counts[tab] ?? "–"}
+                <span className="sr-only">{counts[tab] === undefined ? " count not loaded" : counts[tab] === 1 ? " review" : " reviews"}</span>
               </span>
             </TabsTrigger>
           ))}
         </TabsList>
       </Tabs>
 
-      {countsFailed && (
+      {partialFailure ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Some status counts could not be loaded. The queue below is still current for the selected tab.
+          Some status lists could not be loaded, so a count shows “–”. The tabs that loaded are current.
         </p>
-      )}
+      ) : null}
 
-      <DashboardCard title={`${REVIEW_STATUS_LABELS[state.status]} reviews`} description={queueDescription(state.status)}>
-        {queue.isPending ? (
-          <SectionSkeleton label="Loading reviews" rows={4} />
-        ) : queue.isError ? (
-          <SectionError error={queue.error} onRetry={() => void queue.refetch()} subject="reviews" />
-        ) : reviews.length === 0 ? (
-          <SectionEmpty title={EMPTY_COPY[state.status].title} body={EMPTY_COPY[state.status].body} />
-        ) : (
-          <ReviewQueue
-            reviews={reviews}
-            agentNames={agentNames}
-            selectedId={state.review}
-            onSelect={(id) => navigate({ status: state.status, review: id })}
-          />
-        )}
-      </DashboardCard>
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(20rem,26rem)_minmax(0,1fr)]">
+        <section aria-labelledby="review-queue-heading" className="flex min-w-0 flex-col gap-3">
+          <div className="flex flex-col gap-0.5">
+            <h2 id="review-queue-heading" className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">
+              {REVIEW_TAB_LABELS[state.tab]} queue
+            </h2>
+            <p className="text-xs text-muted-foreground">{TAB_DESCRIPTIONS[state.tab]}</p>
+          </div>
+          {failed ? (
+            <SectionError
+              error={failed.error ?? new Error("Reviews could not be loaded.")}
+              onRetry={() => sources.forEach((query) => void query.refetch())}
+              subject="reviews"
+            />
+          ) : reviews === undefined ? (
+            <QueueSkeleton />
+          ) : reviews.length === 0 ? (
+            <TabEmpty tab={state.tab} expiredCount={counts.expired} />
+          ) : (
+            <ReviewQueue
+              key={state.tab}
+              reviews={reviews}
+              agentNames={agentNames}
+              selectedId={state.review}
+              now={now}
+              label={`${REVIEW_TAB_LABELS[state.tab]} reviews`}
+              actionable={actionable}
+              onOpen={(id) => navigate({ tab: state.tab, review: id })}
+              onConfirm={(id, action) => navigate({ tab: state.tab, review: id, confirm: action })}
+              onStart={start}
+            />
+          )}
+        </section>
 
-      <ReviewDetailSheet
-        reviewId={state.review}
-        onClose={() => navigate({ status: state.status })}
-        agentLookup={agentLookup}
-        requestedConfirm={state.confirm}
-        onConfirmHandled={clearConfirm}
-      />
+        {isDesktop ? (
+          // Sticky below the 56 px app header. Nothing here is transformed, so stickiness is not broken.
+          <section
+            aria-label="Selected review"
+            className="sticky top-[4.5rem] max-h-[calc(100dvh-5.5rem)] min-w-0 overflow-y-auto rounded-lg border border-border bg-card p-5"
+          >
+            {state.review ? (
+              <ReviewDetail
+                reviewId={state.review}
+                tab={state.tab}
+                now={now}
+                agentLookup={agentLookup}
+                requestedConfirm={state.confirm}
+                onConfirmHandled={clearConfirm}
+              />
+            ) : reviews === undefined && !failed ? (
+              <DetailPlaceholderSkeleton />
+            ) : (
+              <NothingSelected hasReviews={(reviews?.length ?? 0) > 0} />
+            )}
+          </section>
+        ) : null}
+      </div>
+
+      {!isDesktop ? (
+        <ReviewDetailSheet
+          reviewId={state.review}
+          tab={state.tab}
+          now={now}
+          onClose={() => navigate({ tab: state.tab })}
+          agentLookup={agentLookup}
+          requestedConfirm={state.confirm}
+          onConfirmHandled={clearConfirm}
+        />
+      ) : null}
     </div>
   );
 }
 
-function queueDescription(status: ReviewStatus): string {
-  switch (status) {
-    case "PENDING":
-      return "Waiting for a reviewer to start.";
-    case "IN_REVIEW":
-      return "Started and awaiting an approve or reject decision.";
-    case "APPROVED":
-      return "Decided as approved. Recorded only; no tool permission was granted.";
-    case "REJECTED":
-      return "Decided as rejected. Recorded only.";
+function NothingSelected({ hasReviews }: { hasReviews: boolean }) {
+  return (
+    <div className="flex flex-col items-start gap-3 py-6">
+      <span className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <MousePointerClick aria-hidden="true" className="size-4" />
+      </span>
+      <p className="text-sm font-medium">{hasReviews ? "Select a review" : "Nothing to show"}</p>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        {hasReviews ? (
+          <>
+            Click a row, or focus the queue and use <Kbd>J</Kbd> <Kbd>K</Kbd> to move and <Kbd>↵</Kbd> to open. Its decision path,
+            timeline and actions appear here.
+          </>
+        ) : (
+          "When this tab has reviews, the selected one appears here."
+        )}
+      </p>
+    </div>
+  );
+}
+
+const EMPTY_COPY: Record<Exclude<ReviewTab, "needs-action">, { title: string; body: string }> = {
+  approved: {
+    title: "No approved reviews",
+    body: "Approved reviews are recorded here, with who approved them and whether the agent has claimed the approval.",
+  },
+  rejected: {
+    title: "No rejected reviews",
+    body: "Rejected reviews are recorded here, with the reviewer's note the agent was given.",
+  },
+  expired: {
+    title: "Nothing has expired",
+    body: "A review that is not decided before it expires (30 minutes after it was created, by default) moves here. It can no longer be acted on.",
+  },
+};
+
+function TabEmpty({ tab, expiredCount }: { tab: ReviewTab; expiredCount: number | undefined }) {
+  if (tab !== "needs-action") {
+    const copy = EMPTY_COPY[tab];
+    return (
+      <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border px-4 py-6">
+        <Inbox aria-hidden="true" className="size-4 text-muted-foreground" />
+        <p className="text-sm font-medium">{copy.title}</p>
+        <p className="max-w-sm text-sm text-muted-foreground">{copy.body}</p>
+      </div>
+    );
   }
+
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border px-4 py-6">
+      <Inbox aria-hidden="true" className="size-4 text-muted-foreground" />
+      <p className="text-sm font-medium">No requests are waiting for review</p>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        A request lands here when the gateway holds it for a human. To create one, run the agent simulator. PolicyEngine sends
+        every EXECUTE to review:
+      </p>
+      <pre className="w-full overflow-x-auto rounded-md border border-border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">
+        <code>{"cd simulator\npython3 simulator.py --scenario review_required"}</code>
+      </pre>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href="/pipeline">Open the CI/CD demo</Link>
+        </Button>
+        {expiredCount ? (
+          <Button asChild variant="ghost" size="sm">
+            <Link href={buildWorkspaceHref({ tab: "expired" })}>See {expiredCount} expired</Link>
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Rows shaped like the queue's: title + status, resource, tier/score/signal, agent/age/countdown. */
+function QueueSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading reviews" className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
+      {Array.from({ length: 5 }, (_, index) => (
+        <div key={index} className="flex flex-col gap-2 px-3 py-2.5">
+          <div className="flex justify-between">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-6 w-20" />
+          </div>
+          <Skeleton className="h-3 w-3/4" />
+          <Skeleton className="h-5 w-1/2" />
+          <div className="flex justify-between">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The detail pane's shape while the queue loads: stamp, title, facts, then the decision path. */
+function DetailPlaceholderSkeleton() {
+  return (
+    <div className="flex flex-col gap-4" aria-hidden="true">
+      <div className="flex justify-between">
+        <Skeleton className="h-7 w-28" />
+        <Skeleton className="h-5 w-32" />
+      </div>
+      <Skeleton className="h-6 w-2/3" />
+      <Skeleton className="h-4 w-1/2" />
+      <Skeleton className="h-16 w-full" />
+      <Skeleton className="h-48 w-full" />
+    </div>
+  );
 }

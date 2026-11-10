@@ -16,6 +16,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatTimestamp } from "@/lib/format";
+import { actionAvailability } from "@/lib/reviews/availability";
+import { isEffectivelyExpired } from "@/lib/reviews/expiry";
 import { loadReviewerName, saveReviewerName } from "@/lib/reviews/reviewer-name";
 import { useReviewAction } from "@/lib/queries/reviews";
 import {
@@ -23,7 +25,6 @@ import {
   REVIEW_ACTION_COPY,
   REVIEWER_MAX,
   actionSuccessMessage,
-  availableReviewActions,
   buildDecisionBody,
   describeActionError,
   initialConfirmation,
@@ -44,28 +45,52 @@ interface Feedback {
  * because they are final, and collect the reviewer's name (remembered for this tab) and a note
  * (required to reject). Both are stored on the review and shown to the agent.
  *
- * `requestedConfirm` (from an Overview triage link) only pre-opens that same confirmation dialog,
- * and only when the current status allows the action. Nothing runs until the operator confirms.
+ * `requestedConfirm` (from an Overview triage link, or A/R in the Reviews queue) only pre-opens that
+ * same confirmation dialog, and only when the current status allows the action and the review has not
+ * expired. A new request while this is mounted opens it too. Nothing runs until the operator confirms.
+ *
+ * Buttons that cannot be used are shown disabled with the reason next to them (for example
+ * "Expired 3 min ago."), from actionAvailability.
  */
 export function ReviewActions({
   review,
+  now,
   requestedConfirm,
   onConfirmHandled,
 }: {
   review: ReviewRequestResponse;
+  /** Page clock (30 s tick), for expiry. */
+  now: number;
   requestedConfirm?: ConfirmableAction;
   onConfirmHandled?: () => void;
 }) {
   const mutation = useReviewAction();
-  const [confirming, setConfirming] = useState<ReviewAction | null>(() => initialConfirmation(review.status, requestedConfirm));
+  const expired = isEffectivelyExpired(review, now);
+  const [confirming, setConfirming] = useState<ReviewAction | null>(() =>
+    expired ? null : initialConfirmation(review.status, requestedConfirm),
+  );
+  const [seenRequest, setSeenRequest] = useState(requestedConfirm);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   // Review data is fetched in the browser (admin key), so this never renders on the server.
   const [reviewer, setReviewer] = useState(() => loadReviewerName());
   const [note, setNote] = useState("");
   const [fieldErrors, setFieldErrors] = useState<DecisionFieldErrors>({});
   const fieldId = useId();
-  const allowed = availableReviewActions(review.status);
-  const actions = review.expired ? [] : allowed;
+  const availability = actionAvailability(review, now);
+  const reasonId = `${fieldId}-reason`;
+
+  // A confirm request that arrives while mounted (keyboard A/R on the queue): adjust state during render,
+  // React's pattern for responding to a prop change. It still only opens the confirmation dialog.
+  if (requestedConfirm !== seenRequest) {
+    setSeenRequest(requestedConfirm);
+    const next = expired ? null : initialConfirmation(review.status, requestedConfirm);
+    if (next) {
+      setNote("");
+      setFieldErrors({});
+      setConfirming(next);
+    }
+  }
+  const disabledReason = availability.find((item) => !item.enabled)?.reason;
 
   function openConfirmation(action: ConfirmableAction) {
     setNote("");
@@ -118,34 +143,46 @@ export function ReviewActions({
         Decision
       </h3>
 
-      {review.expired && allowed.length > 0 ? (
-        <p className="text-sm text-muted-foreground">
-          This review expired at <time dateTime={review.expiresAt}>{formatTimestamp(review.expiresAt)}</time>. It can no
-          longer be started or decided; the agent must send the request again.
-        </p>
-      ) : actions.length === 0 ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+      {availability.length === 0 ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           This review is <ReviewStatusBadge status={review.status} />. Decisions are final.
         </p>
       ) : (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          {actions.map((action) => {
-            const isApprove = action === "approve";
-            const isReject = action === "reject";
-            return (
-              <Button
-                key={action}
-                variant={isReject ? "outline" : isApprove ? "default" : "secondary"}
-                disabled={mutation.isPending}
-                onClick={() => (action === "start" ? run(action) : openConfirmation(action))}
-                className="w-full sm:w-auto"
-              >
-                {REVIEW_ACTION_COPY[action].label}
-              </Button>
-            );
-          })}
-        </div>
+        <>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {availability.map(({ action, enabled }) => {
+              const isApprove = action === "approve";
+              const isReject = action === "reject";
+              return (
+                <Button
+                  key={action}
+                  variant={isReject ? "outline" : isApprove ? "default" : "secondary"}
+                  disabled={!enabled || mutation.isPending}
+                  aria-describedby={enabled ? undefined : reasonId}
+                  onClick={() => (action === "start" ? run(action) : openConfirmation(action))}
+                  className="w-full disabled:cursor-not-allowed sm:w-auto"
+                >
+                  {REVIEW_ACTION_COPY[action].label}
+                </Button>
+              );
+            })}
+          </div>
+          {disabledReason ? (
+            <p id={reasonId} className="text-sm text-muted-foreground">
+              {disabledReason}
+            </p>
+          ) : null}
+        </>
       )}
+      {/* Announced once when the review expires while it is open; the visible text above keeps counting. */}
+      <p role="status" className="sr-only">
+        {expired && availability.length > 0 ? (
+          <>
+            This review expired at <time dateTime={review.expiresAt}>{formatTimestamp(review.expiresAt)}</time>. It can no longer be
+            started or decided.
+          </>
+        ) : null}
+      </p>
 
       {mutation.isPending && (
         <p role="status" className="text-xs text-muted-foreground">

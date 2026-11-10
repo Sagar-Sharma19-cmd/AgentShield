@@ -279,7 +279,7 @@ Import each from its own file (no barrel), so unused primitives stay out of the 
 
 ---
 
-## 5. Page-by-page redesign plan (Shell, Overview and Activity implemented; the rest planned)
+## 5. Page-by-page redesign plan (Shell, Overview, Activity and Reviews implemented; the rest planned)
 
 Constraints for every page: no changes to API calls, query keys, React Query logic, admin-key handling or
 security semantics. Every state needs Loading, Empty, Error and Unauthorized views. The layout must work at
@@ -372,12 +372,41 @@ Statuses: passed, decided here, checked with no change, not reached, not recorde
   no score was recorded.
 - The final "Decision" step is decided only for ALLOW. Otherwise it reads "not allowed" or "held for review".
 
-### Reviews (`components/reviews/*`)
-- Two panes on desktop (queue left, detail right). On mobile, a queue opens a sheet.
-- Queue items: risk tier badge, decision reason, age, status badge.
-- Detail: request context, the escalation chain (policy → Risk Engine → trajectory), then Approve/Reject at the
-  bottom with a confirm step. The action result changes the status badge (colour fade, `fast`) and the item
-  leaves the PENDING list with a fade plus a `layout` spring.
+### Reviews (`components/reviews/*`): implemented (Phase F5)
+- **Layout**: from `lg` up, the queue (left, 20–26 rem) and the selected review (right, a sticky pane below the
+  app header with its own scroll). Below `lg`, the review opens in the existing sheet. Tab and selection are in
+  the URL (`?tab=&review=&confirm=`); a legacy `?status=` link (Overview triage) maps to its tab.
+- **Tabs** (`lib/reviews/tabs.ts`), all from the four existing `GET /reviews?status=` queries
+  (`useReviewLists`, keyed `reviewKeys.list(status)`, so no new keys or requests):
+  - Needs action: PENDING + IN_REVIEW with `expired=false`, soonest expiry first.
+  - Approved / Rejected: every review in that status. The backend's `expired` turns true on decided reviews too
+    once `expiresAt` passes, so it does not move them; the timeline shows what it means.
+  - Expired: PENDING + IN_REVIEW with `expired=true`. Never actionable.
+  - A count shows "–" until all of its lists have loaded.
+- **Queue rows**: action + tool, resource (mono, truncated, full value on hover), agent, age, effective score +
+  tier badge, status badge, the signal that escalated it (`lib/reviews/signal.ts`, same gate icons as the
+  Overview) and an expiry countdown (`lib/reviews/expiry.ts`): "expires in 12 min", a warning icon and tone under
+  5 min, "expired 3 min ago" after. The exact time is in the sr-only text and the hover title. The page clock
+  ticks every 30 s, so the text changes at most that often.
+- **Signal attribution**: review rows have no `escalatedBy`. `originalDecision` REVIEW means Policy. An escalated
+  ALLOW is attributed from the gateway's fixed reason suffix ("Escalated to REVIEW by Risk Engine assessment" /
+  "… by trajectory analysis"), and shown as "Not recorded" if neither is present. The detail pane prefers the
+  audit row's recorded `escalatedBy`.
+- **Keyboard** (`lib/reviews/queue-keys.ts`, built on `triageKey`): a listbox with one tab stop. J/K move, Enter
+  opens, S starts (same mutation as the button), A/R only open the existing confirmation dialog. Decided or
+  expired reviews explain why instead. Ignored while typing or while a dialog is open. A hint row shows the keys.
+- **Detail**: stamp (status, or "Expired" for an open review past expiry), title, resource, agent, effective
+  score and tier. Then "Why it needs review" (signal, recorded reason, trajectory factors, and `DecisionPath` from
+  the audit row), the timeline, actions, request facts with copy buttons, a link to the request in Activity, and
+  the current grant. Actions that cannot be used are shown disabled with the reason (`lib/reviews/availability.ts`).
+- **Timeline** (`lib/reviews/timeline.ts`): Created → In review → Decision → Agent claim. Each step is done /
+  now / not yet / will not happen / expired, with an icon and a text label. The backend stores no start time, so
+  In review has a time only while the review is IN_REVIEW (`updatedAt`).
+- **Motion**: status badges and the stamp fade in place on change (opacity, `fast`). A row leaving the tab fades
+  out and the rest close the gap with `springs.layout`; reduced motion keeps the fade only. The sticky pane is
+  never transformed.
+- **States**: two-pane skeletons, the existing `SectionError`, and an empty state for each tab. Needs action points
+  to `python3 simulator.py --scenario review_required` and the CI/CD demo.
 
 ### Agents (`components/agents/*`)
 - A registry table (desktop) or cards (mobile) with status badge (ACTIVE/SUSPENDED/REVOKED, each with an icon).
