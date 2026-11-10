@@ -285,16 +285,33 @@ Constraints for every page: no changes to API calls, query keys, React Query log
 security semantics. Every state needs Loading, Empty, Error and Unauthorized views. The layout must work at
 375, 768, 1024 and 1440 px.
 
-### Shell (`components/shell/*`)
-- Sidebar: `--sidebar` darker than the page in dark mode. A 240 px fixed column. Group nav into
-  "Monitor" (Overview, Activity, Reviews) and "Configure" (Agents, Tools), with "Demo" (CI/CD) set apart.
-- Active item: a `layoutId` pill animated with `springs.snappy`, plus `aria-current`.
-- Brand mark: replace the pastel gradient with a solid `--primary` tile.
-- Header: breadcrumbs, a pending-review count chip (from the existing reviews query) linking to Reviews, and
-  the theme switcher.
-- Session footer: "Admin session" with a lock button (unchanged behaviour).
-- Mobile: the sheet nav stays. The header is 56 px with a 44 px touch target on the menu button.
-- Done in this change: route fade now uses `PageTransition`.
+### Shell (`components/shell/*`) — implemented (Phase F2)
+- **Sidebar**: 240 px, collapsible to a 56 px icon rail. The choice is stored in localStorage
+  (`agentshield-sidebar-collapsed`, read and written in try/catch, see `lib/shell/sidebar-preference.ts`). The
+  width changes instantly. In the rail, labels and group headings are screen-reader-only and a tooltip shows the
+  label.
+- **Groups**: Monitor (Overview, Activity), Respond (Reviews), Configure (Agents, Tools), Demo (CI/CD demo).
+  The group is a field on each `NAV_ITEMS` entry, and `navSections()` derives the sections from it.
+- **Active item**: a pill with a shared `layoutId` (`springs.snappy`) and a 3 px primary bar, plus `aria-current`
+  and medium weight, so colour is not the only signal. The desktop sidebar and the mobile sheet use separate
+  `LayoutGroup` ids.
+- **Reviews badge**: PENDING count from the existing `useReviewsByStatus("PENDING")` query (same key, endpoint
+  and 30 s refresh as the Reviews page). Hidden while unknown, on error, or at 0. Capped at "99+". Screen
+  readers hear "Reviews 3 pending".
+- **Brand**: the original shield-with-filter-bars `LogoMark` on a tinted primary tile, plus the wordmark.
+- **Footer**: "Admin session", environment label "Local" (hard-coded; no environment config exists) and the
+  lock button (`clearAdminKey`).
+- **Header**: breadcrumbs (`breadcrumbsFor`), a search button showing ⌘K / Ctrl K that opens the command
+  palette, the unread-alert indicator (from `SecurityAlertsProvider`, linking to the Overview feed) and the
+  theme switcher. There is also a "Skip to main content" link.
+- **Command palette** (`command-palette.tsx`, cmdk + Radix Dialog): go to each page, toggle theme or use the
+  system theme, lock the console. The list comes from `lib/shell/commands.ts` (pure, tested). It opens with a
+  scale + fade (`base`/`enter` in, `fast`/`exit` out), and reduced motion leaves the fade only. The shortcut
+  does not open the palette over another open dialog.
+- **Mobile**: the sheet nav uses the same grouped `SidebarNav` and footer.
+- **Unlock panel**: a centred card with the logo, why the key is needed, three facts about how it is handled,
+  and a `SlideUp` entrance. Key validation and storage are unchanged.
+- **Route fade**: `PageTransition` (opacity only).
 
 ### Overview (`components/dashboard/*`)
 - KPI row of four tiles: `Stagger` + `AnimatedNumber` (replaces the CSS `animate-in` and delay style on
