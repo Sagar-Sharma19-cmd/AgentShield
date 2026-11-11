@@ -13,7 +13,7 @@ export function AgentLoadError({ copy, onRetry }: { copy: AgentLoadErrorCopy; on
   const { clearAdminKey } = useAdminKey();
 
   return (
-    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
+    <div role="status" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
       <div className="flex items-start gap-2.5">
         <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger-text" />
         <div className="flex flex-col gap-1">

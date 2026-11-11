@@ -54,7 +54,7 @@ export function SplitHeadline({
         outlineSecond ? (
           <OutlinedWord>{second}</OutlinedWord>
         ) : (
-          <span className="inline-block border border-transparent px-[0.16em] pb-[0.04em]">{second}</span>
+          <span className={`inline-block border border-transparent px-[0.16em] pb-[0.04em] ${WORD_BACKING}`}>{second}</span>
         ),
         1,
       )}
@@ -82,10 +82,16 @@ export function usePrefersReducedMotion(): boolean {
   );
 }
 
+/**
+ * Paper backing behind every headline word, at every width: the robot is drawn behind all text, and the
+ * backing keeps a headline readable while the robot passes behind it.
+ */
+const WORD_BACKING = "bg-background/90";
+
 /** A headline word in an outlined box with corner ticks and an accent hairline on top. */
 export function OutlinedWord({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span className={cn("relative inline-block border border-foreground/20 px-[0.16em] pb-[0.04em] max-[900px]:bg-background/85", className)}>
+    <span className={cn("relative inline-block border border-foreground/20 px-[0.16em] pb-[0.04em]", WORD_BACKING, className)}>
       <span aria-hidden="true" className="absolute inset-x-0 -top-px h-[2px]" style={{ backgroundImage: ACCENT_GRADIENT }} />
       {(["-left-[3px] -top-[3px]", "-right-[3px] -top-[3px]", "-left-[3px] -bottom-[3px]", "-right-[3px] -bottom-[3px]"] as const).map(
         (position) => (

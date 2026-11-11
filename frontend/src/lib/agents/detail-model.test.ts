@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api/client";
 import {
-  buildAgentActivityHref,
   describeAgentActionError,
   describeAgentDetailError,
   describeAgentStatusEffect,
@@ -10,7 +9,6 @@ import {
 } from "./detail-model";
 import type { PermissionResponse } from "@/types/api";
 
-const AGENT_ID = "11111111-2222-4333-8444-555555555555";
 const LEAK = "An unexpected error occurred during security evaluation";
 
 function grant(id: string, toolName: string): Pick<PermissionResponse, "id" | "toolName"> {
@@ -56,12 +54,6 @@ describe("describeAgentStatusEffect", () => {
     expect(effect.summary).toContain("Its key was removed");
     expect(effect.grantsNote).toContain("not usable");
     expect(describeAgentStatusEffect("ACTIVE").grantsNote).toBeUndefined();
-  });
-});
-
-describe("buildAgentActivityHref", () => {
-  it("links to the Activity Explorer filtered by this agent only", () => {
-    expect(buildAgentActivityHref(AGENT_ID)).toBe(`/activity?agentId=${AGENT_ID}`);
   });
 });
 

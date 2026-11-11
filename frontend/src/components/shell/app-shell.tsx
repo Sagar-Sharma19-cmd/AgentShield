@@ -20,14 +20,14 @@ import { useAdminKey } from "@/lib/auth/admin-key";
 import { useSidebarCollapsed } from "@/lib/hooks/use-sidebar-collapsed";
 import { useReviewsByStatus } from "@/lib/queries/reviews";
 import { isApplePlatform, paletteAriaShortcut, paletteShortcutLabel } from "@/lib/shell/commands";
+import { environmentLabel } from "@/lib/shell/environment";
 import { badgeCountLabel, breadcrumbsFor } from "@/lib/shell/navigation";
 import { cn } from "@/lib/utils";
+import { TOUCH_TARGET } from "@/components/shell/touch-target";
+import { ALERT_FEED_HREF, focusAlertFeed } from "@/components/alerts/alert-feed-anchor";
 
-/**
- * The console has no environment configuration yet; it is only run against a local stack.
- * Shown in the sidebar footer so a screenshot or demo never implies a hosted deployment.
- */
-const ENVIRONMENT_LABEL = "Local";
+/** Sidebar footer label, so a screenshot or demo says which stack it shows (lib/shell/environment.ts). */
+const ENVIRONMENT_LABEL = environmentLabel(process.env.NEXT_PUBLIC_AGENTSHIELD_ENV);
 
 const SIDEBAR_ID = "console-sidebar";
 
@@ -161,7 +161,7 @@ function ConsoleHeader({ onOpenPalette, pendingReviews }: { onOpenPalette: () =>
   const crumbs = breadcrumbsFor(pathname);
 
   return (
-    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 md:px-6">
+    <header className="sticky top-0 z-20 flex h-14 items-center gap-2 border-b border-border bg-background/85 px-4 backdrop-blur-md supports-[backdrop-filter]:bg-background/70 max-md:gap-3 md:px-6">
       <MobileMenu pendingReviews={pendingReviews} />
       <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
         <ol className="flex min-w-0 items-center gap-1.5 text-sm">
@@ -212,7 +212,7 @@ function SearchButton({ onClick }: { onClick: () => void }) {
       aria-label="Search pages and actions"
       aria-haspopup="dialog"
       aria-keyshortcuts={apple === null ? undefined : paletteAriaShortcut(apple)}
-      className="shrink-0 gap-2 text-muted-foreground max-sm:size-8 max-sm:px-0 sm:w-44 sm:justify-start"
+      className={cn("shrink-0 gap-2 text-muted-foreground max-md:h-8 max-sm:size-8 max-sm:px-0 sm:w-44 sm:justify-start", TOUCH_TARGET)}
     >
       <Search aria-hidden="true" />
       <span className="hidden sm:inline">Search…</span>
@@ -227,9 +227,11 @@ function SearchButton({ onClick }: { onClick: () => void }) {
 
 /**
  * Unread security alerts from the existing alerts context (filled by SecurityAlertsMonitor). Links
- * to the Overview, where the live alert feed and "Mark all read" are. The count is text, not colour.
+ * straight to the Overview's alert feed (scrolled to and focused), where "Mark all read" is. The count is
+ * text, not colour.
  */
 function AlertIndicator() {
+  const pathname = usePathname();
   const { unreadIds } = useSecurityAlerts();
   const count = unreadIds.size;
   const countLabel = badgeCountLabel(count);
@@ -238,8 +240,18 @@ function AlertIndicator() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button asChild variant="ghost" size="icon" className="relative shrink-0">
-          <Link href="/" aria-label={label}>
+        <Button asChild variant="ghost" size="icon" className={cn("shrink-0", TOUCH_TARGET)}>
+          <Link
+            href={ALERT_FEED_HREF}
+            aria-label={label}
+            onClick={(event) => {
+              // Already on the Overview: a client hash link would not move focus, so do it here.
+              if (pathname === "/" && focusAlertFeed()) {
+                event.preventDefault();
+                window.history.replaceState(null, "", ALERT_FEED_HREF);
+              }
+            }}
+          >
             <Bell aria-hidden="true" />
             {countLabel ? (
               <span
@@ -262,7 +274,7 @@ function MobileMenu({ pendingReviews }: { pendingReviews: number | undefined }) 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden" aria-label="Open navigation menu">
+        <Button variant="ghost" size="icon" className={cn("md:hidden", TOUCH_TARGET)} aria-label="Open navigation menu">
           <Menu aria-hidden="true" />
         </Button>
       </SheetTrigger>

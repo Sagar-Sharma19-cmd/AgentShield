@@ -1,5 +1,4 @@
 import { ApiError } from "@/lib/api/client";
-import { buildActivityHref, parseActivityParams } from "@/lib/activity/filters";
 import type { AgentStatus, PermissionResponse } from "@/types/api";
 
 /** Plain code-unit comparison, so the order does not depend on the browser locale. */
@@ -50,11 +49,6 @@ export function describeAgentStatusEffect(status: AgentStatus): AgentStatusEffec
         grantsNote: "This agent is revoked, so these grants are not usable.",
       };
   }
-}
-
-/** Activity Explorer filtered to one agent. The id is passed through the same parser the page uses. */
-export function buildAgentActivityHref(agentId: string): string {
-  return buildActivityHref(parseActivityParams({ agentId }));
 }
 
 export function isAgentNotFound(error: unknown): boolean {

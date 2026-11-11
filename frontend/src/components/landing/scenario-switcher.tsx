@@ -1,13 +1,12 @@
 "use client";
 
-import { Fragment } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowLeft, ArrowRight, CornerDownRight } from "lucide-react";
 import { DECISION_MARKS } from "@/components/checkpoint/decision-mark";
 import { Button } from "@/components/ui/button";
 import { applyCarouselKey, stepIndex } from "@/lib/landing/carousel";
 import { LANDING_SCENARIOS } from "@/lib/landing/content";
-import { breakableParts } from "@/lib/landing/text";
+import { BreakableText } from "@/components/breakable-text";
 import { cn } from "@/lib/utils";
 import { DecisionTag } from "./landing-primitives";
 
@@ -89,7 +88,7 @@ export function ScenarioSwitcher({ index, onChange }: { index: number; onChange:
                       after && "text-muted-foreground line-through decoration-muted-foreground/50",
                     )}
                   >
-                    {/* Below 640 px: two lines, the resource on its own line and wrapping only at "/" or "-". */}
+                    {/* Below 640 px: two lines, the resource on its own line and wrapping only at "/", "-" or an inner ".". */}
                     <div className="flex flex-col gap-0.5 sm:hidden">
                       <div className="flex flex-wrap items-center gap-x-2">
                         <span className="w-4 shrink-0 tabular-nums text-muted-foreground">{stepIndexValue + 1}</span>
@@ -97,13 +96,8 @@ export function ScenarioSwitcher({ index, onChange }: { index: number; onChange:
                         <span>{step.tool}</span>
                         {decisive && <DecidedHere />}
                       </div>
-                      <span className="pl-6 break-normal [overflow-wrap:anywhere]">
-                        {breakableParts(step.resource).map((part, partIndex) => (
-                          <Fragment key={partIndex}>
-                            {partIndex > 0 && <wbr />}
-                            {part}
-                          </Fragment>
-                        ))}
+                      <span className="pl-6">
+                        <BreakableText text={step.resource} />
                       </span>
                     </div>
                     {/* From 640 px: one row, as before. */}

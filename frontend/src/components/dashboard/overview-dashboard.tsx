@@ -1,12 +1,12 @@
 "use client";
 
 import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { PageContainer, PageHeader } from "@/components/shell/page-header";
 import { CircleAlert, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SecurityAlertFeedCard } from "@/components/alerts/security-alert-feed-card";
 import { CheckpointStream } from "@/components/checkpoint/checkpoint-stream";
-import { MicroLabel } from "@/components/checkpoint/checkpoint-panel";
 import { GateFunnel } from "@/components/checkpoint/gate-funnel";
 import { ReviewTriage } from "@/components/checkpoint/review-triage";
 import { SessionTrace } from "@/components/checkpoint/session-trace";
@@ -34,24 +34,21 @@ export function OverviewDashboard() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <MicroLabel>Checkpoint</MicroLabel>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Overview</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Every agent request passes identity, permission, policy, risk engine and trajectory checks before a decision.
-            This page shows where recent requests stopped.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <LiveIndicator />
-          <Button variant="outline" size="sm" disabled={isRefreshing} onClick={refresh}>
-            <RotateCw aria-hidden="true" className={cn(isRefreshing && "animate-spin motion-reduce:animate-none")} />
-            Refresh
-          </Button>
-        </div>
-      </header>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Monitor · Checkpoint"
+        title="Overview"
+        description="Where recent requests stopped in the gateway: identity, permission, policy, risk engine and trajectory checks."
+        actions={
+          <>
+            <LiveIndicator />
+            <Button variant="outline" size="sm" disabled={isRefreshing} onClick={refresh}>
+              <RotateCw aria-hidden="true" className={cn(isRefreshing && "animate-spin motion-reduce:animate-none")} />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       <GateFunnel />
       <CheckpointStream />
@@ -69,7 +66,7 @@ export function OverviewDashboard() {
           <DecisionBreakdownCard />
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

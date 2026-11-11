@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { EYEBROW_CLASS as EYEBROW } from "@/components/shell/page-header";
 import { ArrowRight } from "lucide-react";
 import { DecisionIcon, DECISION_MARKS } from "@/components/checkpoint/decision-mark";
 import { GateIcon, GateMark } from "@/components/checkpoint/gate-mark";
@@ -14,7 +15,6 @@ import { formatTimestamp } from "@/lib/format";
 import { ACTION_LABELS } from "@/lib/labels";
 import { AGENT_SAMPLE_SIZE, useAgentAuditSample } from "@/lib/queries/audit";
 
-const EYEBROW = "font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase";
 
 /**
  * Recent requests that named this agent, from the shared per-agent audit sample (the same query the Activity

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { PageContainer, PageHeader } from "@/components/shell/page-header";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Inbox, MousePointerClick, RotateCw } from "lucide-react";
@@ -86,21 +87,18 @@ export function ReviewsWorkspace({ state }: { state: ReviewWorkspaceState }) {
   const actionable = state.tab === "needs-action";
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">Respond · Human review</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Reviews</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Requests the gateway held for a human decision. An approval lets the agent run that exact request once; it never
-            changes a permission grant.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void refreshReviewWorkspace(queryClient)}>
-          <RotateCw aria-hidden="true" />
-          Refresh
-        </Button>
-      </header>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Respond · Human review"
+        title="Reviews"
+        description="Requests held for a human decision. An approval lets the agent run that exact request once; it never changes a grant."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => void refreshReviewWorkspace(queryClient)}>
+            <RotateCw aria-hidden="true" />
+            Refresh
+          </Button>
+        }
+      />
 
       <Tabs value={state.tab} onValueChange={(value) => navigate({ tab: value as ReviewTab })}>
         <TabsList aria-label="Reviews by status" className="flex h-auto w-full flex-wrap justify-start">
@@ -192,7 +190,7 @@ export function ReviewsWorkspace({ state }: { state: ReviewWorkspaceState }) {
           onConfirmHandled={clearConfirm}
         />
       ) : null}
-    </div>
+    </PageContainer>
   );
 }
 

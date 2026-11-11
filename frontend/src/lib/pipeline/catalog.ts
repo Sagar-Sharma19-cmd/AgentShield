@@ -1,4 +1,4 @@
-import type { ActionType, DecisionType } from "@/types/api";
+import type { ActionType } from "@/types/api";
 
 /**
  * Static description of the M4.1 simulator, mirrored from simulator/scenarios.py and simulator/mock_tools.py.
@@ -32,7 +32,13 @@ export interface PipelineStep {
 }
 
 export interface PipelineScenario {
+  /** Scenario key, as passed to `simulator.py --scenario`. */
   id: string;
+  /**
+   * Scenario.pipeline_name in simulator/scenarios.py. The simulator's session ids are
+   * "ci-<slug of this>-<12 hex>" (enforcement.new_session_id), so this is how a run is matched to its scenario.
+   */
+  pipelineName: string;
   title: string;
   description: string;
   steps: PipelineStep[];
@@ -46,6 +52,7 @@ export interface PipelineScenario {
 export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   {
     id: "basic_read_write",
+    pipelineName: "build-staging",
     title: "Build staging",
     description: "Read build metadata, then build a staging image.",
     steps: [
@@ -56,6 +63,7 @@ export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   },
   {
     id: "credential_access",
+    pipelineName: "leak-attempt",
     title: "Credential access",
     description: "Attempts to read a local environment file.",
     steps: [{ tool: "filesystem", action: "READ", resource: ".env", summary: "Read a local environment file" }],
@@ -63,6 +71,7 @@ export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   },
   {
     id: "review_required",
+    pipelineName: "trigger-build",
     title: "Trigger build and healthcheck",
     description: "Triggers a build and runs a healthcheck.",
     steps: [
@@ -73,6 +82,7 @@ export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   },
   {
     id: "deployment_pipeline",
+    pipelineName: "deploy-staging",
     title: "Deploy staging",
     description: "Build, push to a registry, then apply the deployment.",
     steps: [
@@ -90,6 +100,7 @@ export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   },
   {
     id: "scope_escalation",
+    pipelineName: "cleanup-canary",
     title: "Clean up canary",
     description: "Applies a staging deployment, then deletes a canary.",
     steps: [
@@ -100,13 +111,13 @@ export const PIPELINE_SCENARIOS: readonly PipelineScenario[] = [
   },
 ];
 
-export const SIMULATOR_RUN_COMMANDS = [
-  "cd simulator",
-  "python3 simulator.py --list",
-  "python3 simulator.py --scenario deployment_pipeline",
-] as const;
+/**
+ * The exact command for one scenario, run from simulator/. --wait-for-review keeps a REVIEW step open until an
+ * operator decides in Reviews, so the run can be followed here live.
+ */
+export function simulatorRunCommand(scenario: Pick<PipelineScenario, "id">): string {
+  return `python3 simulator.py --scenario ${scenario.id} --wait-for-review`;
+}
 
-/** Environment variable names the simulator reads. Values are never shown in this app. */
-export const SIMULATOR_ENV_NAMES = ["AGENTSHIELD_GATEWAY_URL", "AGENTSHIELD_AGENT_ID", "AGENTSHIELD_AGENT_API_KEY"] as const;
-
-export const DECISION_ORDER: readonly DecisionType[] = ["ALLOW", "REVIEW", "DENY"];
+/** One-time setup and shell environment for a run (scripts/demo.sh writes the agent key to that file). */
+export const SIMULATOR_SETUP_COMMANDS = ["scripts/demo.sh setup", "source ~/.agentshield-demo/env", "cd simulator"] as const;

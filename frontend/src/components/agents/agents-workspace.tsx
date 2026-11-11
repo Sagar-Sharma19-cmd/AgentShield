@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EYEBROW_CLASS as EYEBROW, PageContainer, PageHeader } from "@/components/shell/page-header";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { MousePointerClick, RotateCw, Search, X } from "lucide-react";
@@ -27,7 +28,6 @@ import {
 } from "@/lib/agents/model";
 import { useAgentRegistry, refreshAgentRegistry } from "@/lib/queries/agents";
 
-const EYEBROW = "font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase";
 
 /**
  * Agent registry ("Checkpoint" language) with client-side search and status filtering. The status filter and
@@ -93,26 +93,23 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className={EYEBROW}>Configure · Identity gate</p>
-          <h1 id={AGENTS_PAGE_HEADING_ID} tabIndex={-1} className="text-2xl font-semibold tracking-tight outline-none">
-            Agents
-          </h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Registered agent identities. The gateway checks each request&apos;s agent and key first, then its grants at the
-            Permission gate.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={registry.isFetching} onClick={() => void refreshAgentRegistry(queryClient)}>
-            <RotateCw aria-hidden="true" className={registry.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
-            Refresh
-          </Button>
-          <RegisterAgentFlow />
-        </div>
-      </header>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Configure · Identity gate"
+        title="Agents"
+        headingId={AGENTS_PAGE_HEADING_ID}
+        headingFocusable
+        description="Registered agent identities. The gateway checks each request's agent and key first, then its grants."
+        actions={
+          <>
+            <Button variant="outline" size="sm" disabled={registry.isFetching} onClick={() => void refreshAgentRegistry(queryClient)}>
+              <RotateCw aria-hidden="true" className={registry.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
+              Refresh
+            </Button>
+            <RegisterAgentFlow />
+          </>
+        }
+      />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <Tabs value={state.status} onValueChange={(value) => navigate({ status: value as AgentStatusFilter })}>
@@ -218,7 +215,7 @@ export function AgentsWorkspace({ state }: { state: AgentUrlState }) {
       </div>
 
       {!isDesktop ? <AgentDetailSheet controller={controller} /> : null}
-    </div>
+    </PageContainer>
   );
 }
 

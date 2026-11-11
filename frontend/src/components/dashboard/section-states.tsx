@@ -15,18 +15,30 @@ export function DashboardCard({
   description,
   action,
   className,
+  id,
+  focusable = false,
   children,
 }: {
   title: string;
   description?: string;
   action?: React.ReactNode;
   className?: string;
+  /** Anchor id, for a card that is a link target (e.g. the alert feed). */
+  id?: string;
+  /** Lets a link move focus to the card itself (tabIndex -1, not in the tab order), with a visible ring. */
+  focusable?: boolean;
   children: React.ReactNode;
 }) {
   const headingId = useId();
 
   return (
-    <Card role="region" aria-labelledby={headingId} className={cn("h-full", className)}>
+    <Card
+      id={id}
+      role="region"
+      aria-labelledby={headingId}
+      tabIndex={focusable ? -1 : undefined}
+      className={cn("h-full", focusable && "scroll-mt-20 outline-none focus:ring-3 focus:ring-ring/50", className)}
+    >
       <CardHeader>
         <div className="flex min-w-0 flex-col gap-1">
           <CardTitle id={headingId} className="text-sm font-medium">
@@ -52,14 +64,32 @@ export function SectionSkeleton({ label, rows = 3 }: { label: string; rows?: num
   );
 }
 
-export function SectionEmpty({ title, body }: { title: string; body: string }) {
+/**
+ * The console's one empty state. `titleAs="h2"` when it stands in for a page's main content (not inside a
+ * card); `action` is its recovery button; `children` adds a short hint under the body.
+ */
+export function SectionEmpty({
+  title,
+  body,
+  action,
+  titleAs: Title = "p",
+  children,
+}: {
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+  titleAs?: "p" | "h2";
+  children?: React.ReactNode;
+}) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/40 px-4 py-8 text-center">
       <div className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
         <Inbox aria-hidden="true" className="size-4" />
       </div>
-      <p className="text-sm font-medium">{title}</p>
+      <Title className="text-sm font-medium">{title}</Title>
       <p className="max-w-sm text-xs text-muted-foreground">{body}</p>
+      {children ? <div className="max-w-sm text-xs text-muted-foreground">{children}</div> : null}
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   );
 }
@@ -73,7 +103,7 @@ export function SectionError({ error, onRetry, subject }: { error: Error; onRetr
   const rejected = error instanceof ApiError && (error.status === 401 || error.status === 403);
 
   return (
-    <div role="alert" className="flex flex-1 flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
+    <div role="status" className="flex flex-1 flex-col gap-3 rounded-lg border border-danger/30 bg-danger/5 p-4">
       <div className="flex items-start gap-2.5">
         <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger-text" />
         <div className="flex flex-col gap-1">

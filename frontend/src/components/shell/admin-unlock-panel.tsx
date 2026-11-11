@@ -47,7 +47,7 @@ export function AdminUnlockPanel() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center p-4 py-10">
+    <main id="main" className="flex flex-1 items-center justify-center p-4 py-10">
       {/* SlideUp transforms only this wrapper, which holds no sticky or fixed content. */}
       <SlideUp className="w-full max-w-md">
         <Card className="gap-5 py-6 shadow-sm">
@@ -113,7 +113,7 @@ export function AdminUnlockPanel() {
           </CardFooter>
         </Card>
       </SlideUp>
-    </div>
+    </main>
   );
 }
 

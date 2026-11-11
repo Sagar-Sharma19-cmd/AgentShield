@@ -63,13 +63,24 @@ Pipeline: **Authentication → PermissionEngine → PolicyEngine → Risk Engine
 
 ## Part 2 — The console (browser: http://localhost:3000)
 
+### Step 0. Public landing page (http://localhost:3000/welcome)
+- No admin key needed. Scroll through the three sections: the intro prompt box (real requests and verdicts),
+  **The pipeline** (the five gates in order) and **Scenarios** (the simulator runs and their documented outcomes).
+  The robot's face shows the same verdict as the selected scenario. Everything works offline.
+- With reduced motion turned on, the camera, typing and auto-advance stop and every request is listed.
+- Click **Open console**. The unlock panel links back here ("New here? See how AgentShield works").
+
 ### Step 1. Unlock the console
 - Paste the admin key into **Unlock the console**.
 - Point out that the key stays only in the browser session. The server stores only an HMAC-SHA256 hash with a pepper.
 - Optional: show the theme switcher (light/dark).
 
-### Step 2. Overview
-- Stats, decision breakdown (ALLOW / REVIEW / DENY), risk distribution, recent events.
+### Step 2. Overview (Checkpoint)
+- Top: the latest requests as a funnel through the gates (Identity, Permission, Policy, Risk engine,
+  Trajectory, Allowed), and **Where each request stopped**: one dot per request at the gate that decided it.
+- Then **Open reviews** (pending and in-review requests, newest first) and **Most escalated session**.
+- Bottom: **Live security alerts** and the decision breakdown.
+- The bell in the header shows unread alerts and jumps straight to the alert feed.
 - Security state is shown with text and icons, not only color (accessibility).
 
 ### Step 3. Tools
@@ -144,7 +155,8 @@ scripts/demo.sh attacks
 ## Part 4 — Back in the browser
 
 ### Step 9. Alerts
-DENY and REVIEW decisions from Steps 6-8 appear as live security alerts (toasts plus the alert feed on Overview).
+DENY and REVIEW decisions from Steps 6-8 appear as live security alerts: toasts, the bell count in the header,
+and the alert feed on Overview. Click the bell to jump to the feed, then **Mark all read**.
 
 ### Step 10. Activity (audit log)
 - Filter by decision = DENY. Open the `.env` event: reason, risk score, session ID, agent.
@@ -152,11 +164,15 @@ DENY and REVIEW decisions from Steps 6-8 appear as live security alerts (toasts 
 - Explain: every decision is audited, including denials. This gives explainability.
 
 ### Step 11. Reviews (human in the loop)
-- Open a pending review, then click **Start review**, then **Approve** or **Reject**.
-- Show the trajectory review from Step 7 with its evidence.
+- The page has four tabs, each with a count: **Needs action** (pending or in review, not expired),
+  **Approved**, **Rejected** and **Expired**.
+- In **Needs action**, open a review, click **Start review**, then **Approve** or **Reject**. Each opens a
+  confirmation; reject needs a note.
+- Show the trajectory review from Step 7 with its evidence and the signal that escalated it.
 
 ### Step 11b. Close the loop live: the agent waits for your decision (B3)
-Use two windows side by side: the terminal (Tab 5) and the browser on **Reviews**.
+Use two windows side by side: the terminal (Tab 5) and the browser on **CI/CD demo** (select
+`faculty-demo-agent`), with **Reviews** in a second tab.
 
 ```bash
 cd simulator
@@ -164,14 +180,16 @@ python3 simulator.py --scenario review_required --wait-for-review --review-timeo
 ```
 1. Step 1 (`jenkins EXECUTE`) gets **REVIEW**. The terminal prints `... review <id> (...): PENDING` and keeps
    polling every 3 seconds.
-2. In the browser, open that review (refresh the Pending tab if needed). Click **Start review**. The terminal
-   prints `IN_REVIEW`.
+2. On **CI/CD demo**, the new run appears at the top and is selected. Step 1 shows **Waiting for review** and the
+   page refreshes every 4 seconds. Click **Open review** on that step (it opens in **Reviews**, Needs action tab).
+   Click **Start review**. The terminal prints `IN_REVIEW`.
 3. Click **Approve**, type your name (it is remembered for the tab) and an optional note, then confirm. The
    terminal prints `APPROVED by <name>`, claims the approval once, checks it is exactly `jenkins EXECUTE
-   jenkins/job/agentshield-build`, runs the mock and moves on.
+   jenkins/job/agentshield-build`, runs the mock and moves on. Back on **CI/CD demo**, step 1 changes to
+   **Approved, executed** with your name, and its connector fills.
 4. Step 2 (`shell EXECUTE`) gets **REVIEW** too. This time click **Start review**, then **Reject**, with a
    note such as "Healthchecks run from the scheduler, not the agent". The terminal shows **BLOCKED**, with
-   your name and note.
+   your name and note. The CI/CD page shows step 2 **Rejected** with your note, and the run as **Rejected**.
 
 What to say:
 > An approval is not a permission grant. It is a one-time token for one exact operation: the agent can claim it
@@ -181,8 +199,17 @@ What to say:
 Optional evidence: in the review detail, **Claimed by the agent** now shows a time. The same review cannot be
 claimed again (HTTP 409).
 
-### Step 12. CI/CD demo page
-- Select `faculty-demo-agent`. It shows the scenario steps and the decisions recorded in the audit log.
+### Step 12. CI/CD demo page (live pipeline runs)
+- Select `faculty-demo-agent`. Left: every simulator run of this agent, newest first, with its status (Succeeded,
+  Waiting for review, Blocked, Rejected, Expired, Running) and one icon per step. Right: the selected run's steps as
+  cards: tool and action, resource, status, the gate that blocked it, and the reviewer and note once decided.
+- Each card links to its request in **Activity** and, for a review, to **Reviews**. This page never approves or
+  rejects anything itself.
+- **Copy run command** copies the exact command for the selected scenario, for example
+  `python3 simulator.py --scenario review_required --wait-for-review`. **What this scenario does** (collapsed)
+  shows the scenario's description and documented expectation.
+- Runs are rebuilt from the audit log (the agent's latest 100 requests) and the review requests; nothing is stored
+  by the page.
 
 ### Step 13. Agent lifecycle (kill switch)
 1. **Agents**, then `faculty-demo-agent`, then **Suspend agent**.
@@ -199,7 +226,7 @@ cd ~/Developer/AgentShield
 (cd backend && mvn -q test)                                          # 320 tests, 4 skipped
 (cd risk-engine && pytest -q)                                        # 43 tests
 (cd simulator && python3 -m unittest discover -s tests -t .)         # 43 tests
-(cd frontend && npx vitest run)                                      # 322 tests
+(cd frontend && npx vitest run)                                      # 642 tests
 ```
 The backend prints some `ERROR` lines on purpose. Those tests simulate a database or evaluator failure to prove the
 gateway fails safely. The run passes if Maven exits without `BUILD FAILURE`.
@@ -213,8 +240,9 @@ Also show the `.github/workflows/` folder: CI runs backend, risk engine and secu
 - **Cooperative enforcement:** the agent must call AgentShield. An agent that calls Docker directly bypasses it.
 - Rules and trajectory are **deterministic heuristics**, not a trained ML model.
 - Not built yet: prompt-injection detection, rate limiting, multi-tenancy, per-operator admin accounts.
-- The reviewer name is typed by the operator, not an authenticated identity, and agents learn about decisions
-  by polling, not by notification.
+- The reviewer name is typed by the operator, not an authenticated identity (everyone shares one admin key), and
+  agents learn about decisions by polling, not by notification.
+- Review decisions and claims are stored on the review request, but they are not written to an audit log.
 
 ---
 

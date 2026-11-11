@@ -1,6 +1,7 @@
 "use client";
 
-import { Inbox, RotateCw, TriangleAlert } from "lucide-react";
+import { RotateCw, TriangleAlert } from "lucide-react";
+import { SectionEmpty } from "@/components/dashboard/section-states";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError } from "@/lib/api/client";
@@ -40,24 +41,23 @@ export function ActivityEmpty({ reason, onAction }: ActivityEmptyProps) {
   const copy = EMPTY_COPY[reason];
 
   return (
-    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card/60 px-6 py-12 text-center">
-      <div className="flex size-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Inbox aria-hidden="true" className="size-5" />
-      </div>
-      <div className="flex max-w-md flex-col gap-1">
-        <h2 className="text-base font-medium">{copy.title}</h2>
-        <p className="text-sm text-muted-foreground">{copy.body}</p>
-        {reason === "none" ? (
-          <p className="text-sm text-muted-foreground">
-            To generate sample traffic, run <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">scripts/demo.sh</code>{" "}
-            from the repository root (see docs/demo-guide.md).
-          </p>
-        ) : null}
-      </div>
-      <Button variant="outline" size="sm" onClick={onAction}>
-        {copy.action}
-      </Button>
-    </div>
+    <SectionEmpty
+      titleAs="h2"
+      title={copy.title}
+      body={copy.body}
+      action={
+        <Button variant="outline" size="sm" onClick={onAction}>
+          {copy.action}
+        </Button>
+      }
+    >
+      {reason === "none" ? (
+        <>
+          To generate sample traffic, run <code className="rounded bg-muted px-1 py-0.5 font-mono">scripts/demo.sh</code> from
+          the repository root (see docs/demo-guide.md).
+        </>
+      ) : null}
+    </SectionEmpty>
   );
 }
 
@@ -91,7 +91,7 @@ export function ActivityError({ error, onRetry }: ActivityErrorProps) {
   const notFound = error instanceof ApiError && error.status === 404;
 
   return (
-    <div role="alert" className="flex flex-col gap-4 rounded-lg border border-danger/30 bg-danger/5 p-5">
+    <div role="status" className="flex flex-col gap-4 rounded-lg border border-danger/30 bg-danger/5 p-5">
       <div className="flex items-start gap-3">
         <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-danger-text" />
         <div className="flex flex-col gap-1">

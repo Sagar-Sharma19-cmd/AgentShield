@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { RotateCw, TriangleAlert } from "lucide-react";
 import { useSecurityAlerts } from "@/components/alerts/security-alerts-context";
@@ -16,6 +17,7 @@ import { trajectoryEvidence } from "@/lib/trajectory/model";
 import { TrajectoryEscalationBadge, TrajectorySummary } from "@/components/trajectory/trajectory-evidence";
 import { useSecurityAlertFeed } from "@/lib/queries/alerts";
 import { ApiError } from "@/lib/api/client";
+import { ALERT_FEED_ID, focusAlertFeed } from "@/components/alerts/alert-feed-anchor";
 
 /** Live feed of DENY and REVIEW decisions. Reads the monitor's cached query, so it adds no timer. */
 export function SecurityAlertFeedCard() {
@@ -24,8 +26,15 @@ export function SecurityAlertFeedCard() {
   const alerts = query.data ?? [];
   const unreadCount = unreadIds.size;
 
+  // Arriving from the header indicator (/#security-alerts): move focus here, not only the scroll position.
+  useEffect(() => {
+    if (window.location.hash === `#${ALERT_FEED_ID}`) focusAlertFeed();
+  }, []);
+
   return (
     <DashboardCard
+      id={ALERT_FEED_ID}
+      focusable
       title="Live security alerts"
       description={`Denied and review-required requests. Refreshes every ${ALERT_POLL_MS / 1000} seconds. New events are marked until you mark them read.`}
       action={

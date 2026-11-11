@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EYEBROW_CLASS as EYEBROW, PageContainer, PageHeader } from "@/components/shell/page-header";
 import { useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Search, Wrench } from "lucide-react";
 import { RegisterToolButton } from "@/components/tools/register-tool-dialog";
@@ -32,7 +33,6 @@ import {
 } from "@/lib/tools/registry";
 import type { ToolResponse } from "@/types/api";
 
-const EYEBROW = "font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase";
 
 /**
  * Tool registry ("Checkpoint" language). Each tool is a row with its type, status and an enable switch.
@@ -66,29 +66,26 @@ export function ToolsWorkspace() {
   const pendingId = updateStatus.isPending ? updateStatus.variables?.id : undefined;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 p-4 md:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <p className={EYEBROW}>Configure · Permission gate</p>
-          <h1 className="text-2xl font-semibold tracking-tight">Tools</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Systems an agent can call through the gateway. Registering a tool grants nothing: each agent needs its own
-            grant, made from its detail panel on the Agents page.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={tools.isFetching}
-            onClick={() => void queryClient.invalidateQueries({ queryKey: toolKeys.list() })}
-          >
-            <RotateCw aria-hidden="true" className={tools.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
-            Refresh
-          </Button>
-          <RegisterToolButton />
-        </div>
-      </header>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Configure · Permission gate"
+        title="Tools"
+        description="Systems an agent can call through the gateway. Registering a tool grants nothing; grants are made per agent."
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={tools.isFetching}
+              onClick={() => void queryClient.invalidateQueries({ queryKey: toolKeys.list() })}
+            >
+              <RotateCw aria-hidden="true" className={tools.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
+              Refresh
+            </Button>
+            <RegisterToolButton />
+          </>
+        }
+      />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <Tabs value={status} onValueChange={(value) => setStatus(value as ToolStatusFilter)}>
@@ -190,7 +187,7 @@ export function ToolsWorkspace() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageContainer>
   );
 }
 

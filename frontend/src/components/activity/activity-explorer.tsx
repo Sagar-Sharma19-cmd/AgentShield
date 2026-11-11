@@ -1,10 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PageContainer, PageHeader } from "@/components/shell/page-header";
 import { useRouter } from "next/navigation";
 import { RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { MicroLabel } from "@/components/checkpoint/checkpoint-panel";
 import { Kbd } from "@/components/shell/command-palette";
 import {
   buildActivityHref,
@@ -155,27 +155,24 @@ export function ActivityExplorer({ state }: ActivityExplorerProps) {
   }, [navigate]);
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-4 p-4 md:p-8">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex flex-col gap-1">
-          <MicroLabel>Audit log</MicroLabel>
-          <h1 className="font-heading text-2xl font-semibold tracking-tight">Activity</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Every request an agent made through the gateway, the gate that decided it, and the reason AgentShield gave.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => query.refetch()}
-          disabled={query.isFetching}
-          aria-label="Refresh activity"
-          className="self-start sm:self-end"
-        >
-          <RotateCw aria-hidden="true" className={query.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
-          Refresh
-        </Button>
-      </header>
+    <PageContainer>
+      <PageHeader
+        eyebrow="Monitor · Audit log"
+        title="Activity"
+        description="Every request an agent made through the gateway, the gate that decided it, and the reason given."
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+            aria-label="Refresh activity"
+          >
+            <RotateCw aria-hidden="true" className={query.isFetching ? "animate-spin motion-reduce:animate-none" : undefined} />
+            Refresh
+          </Button>
+        }
+      />
 
       <ActivityFilterBar key={JSON.stringify(applied)} applied={applied} onApply={applyFilters} agentInputRef={agentInputRef} />
 
@@ -237,7 +234,7 @@ export function ActivityExplorer({ state }: ActivityExplorerProps) {
       )}
 
       <ActivityDetailSheet requestId={state.request} onClose={closeDetail} />
-    </div>
+    </PageContainer>
   );
 }
 

@@ -1,11 +1,11 @@
 "use client";
 
 import { AgentStatusBadge } from "@/components/agents/agent-status-badge";
+import { EYEBROW_CLASS as EYEBROW } from "@/components/shell/page-header";
 import { formatTimestamp } from "@/lib/format";
 import { describeAgentStatusEffect } from "@/lib/agents/detail-model";
 import type { AgentResponse } from "@/types/api";
 
-const EYEBROW = "font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase";
 
 /** Label and value. Values come straight from the detail response; nothing is paraphrased. */
 function Field({ label, className, children }: { label: string; className?: string; children: React.ReactNode }) {

@@ -202,7 +202,12 @@ docker compose up --build
 9. **Authorization is external and deterministic** — the LLM never decides what it is allowed to do.
 10. **Authenticated identity, hashed credentials** — every agent proves who it is with its own API key; only HMAC hashes are stored, and keys are never logged.
 
-> **Current limitations:** a single shared admin key (no per-operator RBAC yet), and failed authentications are logged but not written to the audit table. Serve AgentShield over TLS outside local development — API keys are bearer credentials.
+> **Current limitations:**
+> - A single shared admin key (no per-operator RBAC yet).
+> - The reviewer name on an approval or rejection is an unverified label: the operator types it, and everyone with the shared admin key can type any name. It is not an authenticated identity.
+> - Review decisions (start, approve, reject) and an agent's claim of an approval are stored on the review request only. They are not written to an audit log. The audit table records the gateway decision that created the review, not what happened to it afterwards.
+> - Failed authentications are logged but not written to the audit table.
+> - Serve AgentShield over TLS outside local development — API keys are bearer credentials.
 
 ---
 

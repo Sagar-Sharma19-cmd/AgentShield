@@ -54,9 +54,10 @@ export const AGENT_SAMPLE_SIZE = 100;
 /**
  * The latest AGENT_SAMPLE_SIZE audit rows of one agent, newest first, for the session context in the
  * Activity detail sheet. The caller filters these rows by sessionId. Keyed through auditKeys.list, so
- * it shares the cache and invalidation of every other audit list.
+ * it shares the cache and invalidation of every other audit list. `refetchInterval` is optional polling
+ * (the CI/CD page follows a live run with it); React Query pauses it while the tab is hidden.
  */
-export function useAgentAuditSample(agentId: string | undefined) {
+export function useAgentAuditSample(agentId: string | undefined, options: { refetchInterval?: number | false } = {}) {
   const { adminKey } = useAdminKey();
   const params: AuditSearchParams = { agentId, page: 0, size: AGENT_SAMPLE_SIZE };
 
@@ -68,5 +69,6 @@ export function useAgentAuditSample(agentId: string | undefined) {
     },
     enabled: adminKey !== null && agentId !== undefined,
     retry: retryTransientFailures,
+    refetchInterval: options.refetchInterval,
   });
 }

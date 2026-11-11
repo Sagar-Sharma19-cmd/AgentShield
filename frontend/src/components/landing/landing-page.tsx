@@ -79,7 +79,8 @@ export function LandingPage() {
       <LandingNav active={active} />
       <SectionRail active={active} />
 
-      <main id="landing-stage" className="relative z-10">
+      {/* Stacking (inside the isolated root): paper grid and robot canvas at z-0, guides at z-1, all text at z-10, nav at z-30. */}
+      <main id="landing-stage" className="relative isolate z-10">
         {/* 1. Intro */}
         <section
           id="intro"

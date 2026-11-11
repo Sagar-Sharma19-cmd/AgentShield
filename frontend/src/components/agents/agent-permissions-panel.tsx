@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { EYEBROW_CLASS as EYEBROW } from "@/components/shell/page-header";
 import type { UseQueryResult } from "@tanstack/react-query";
 import Link from "next/link";
 import { AgentGrantForm, type GrantPrefill } from "@/components/agents/agent-grant-form";
@@ -23,7 +24,6 @@ import { useRevokePermission } from "@/lib/queries/permissions";
 import { useToolsList } from "@/lib/queries/tools";
 import type { AgentStatus, PermissionResponse } from "@/types/api";
 
-const EYEBROW = "font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase";
 
 interface AgentPermissionsPanelProps {
   agentId: string;

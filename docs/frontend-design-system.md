@@ -470,15 +470,37 @@ Statuses: passed, decided here, checked with no change, not reached, not recorde
   the top part of the screen with the text below it, and each text block (not the whole column) gets a tight
   paper backing. The prompt-box header shows only "Agent request" below 640 px.
 
-### CI/CD demo (`components/pipeline/*`)
-- Keep the "Mock execution only" note at the top (warning tone, icon, text).
-- Scenario selector, then the pipeline steps as a vertical stepper. Each step shows its gateway decision
-  badge once it is recorded in the audit log.
-- Results table limited to simulator rows (existing logic). New rows enter with `SlideUp`.
-- Replace `bg-brand-lilac-soft` and `bg-brand-sky-soft` usage with `bg-muted` or the brand tones as
-  re-tuned. They already work, so this is optional.
+### CI/CD pipeline runs (`components/pipeline/*`): implemented (Phase F7)
+- A run is the selected agent's audit rows sharing one simulator session id, `ci-<pipeline slug>-<12 hex>`
+  (`simulator/enforcement.py`). Rows come from `useAgentAuditSample` (latest 100); reviews from `useReviewLists`.
+  All logic is in `lib/pipeline/runs.ts` (`groupRuns`, `runSteps`, `runStatus`, `diffSteps`, `describeStep`).
+- Left: run list (title, status icon + label, start time, per-step icons, sr-only step count). The newest run
+  is followed until one is picked. Right: step cards joined by connectors, sized by a container query on the pane:
+  one column, two from 36rem (horizontal connector within a row), one row from 56rem (about a 1600 px window).
+  `tool.action` is never truncated; resources wrap only at "/", "-" or an inner "." (`lib/text.ts`, `BreakableText`).
+- Step status rules: ALLOW → Allowed, executed. DENY → Blocked with its gate (`gateFor`). REVIEW → by its
+  review: open and not expired → Waiting; APPROVED with `consumedAt` → Approved, executed; APPROVED unclaimed →
+  Approved, not claimed (Expired once expired); REJECTED → Rejected; open past expiry → Expired; review not in
+  the lists → Sent to review. No row → Skipped after a block/rejection/expiry or when a later step has a row,
+  otherwise Not started. The run status is taken from the first step that did not run.
+- Live: 4 s polling while the selected run is Waiting, or Running with a request in the last 10 min; 30 s
+  otherwise. React Query pauses polling in a hidden tab. A changed card transitions colour and gets a short
+  opacity highlight (none under reduced motion); its connector fills by `scale`. Fixed-height slots keep the cards
+  from moving. Changes are announced in a polite live region.
+- Read only: no approve/reject here. Each step links to its request in Activity and its review in Reviews.
+- The "Mock execution only" note stays at the top.
 
 ---
+
+### Shared page frame (Phase F9)
+- Every console page uses `PageContainer` (max-w-7xl, or `wide` for CI/CD; gap-5, p-4 / md:p-8) and `PageHeader`
+  (`components/shell/page-header.tsx`): eyebrow "Group · Topic" matching the sidebar group, the page's only h1,
+  a one-line description, actions on the right.
+- Loading, empty and error states: `SectionSkeleton` (or a skeleton shaped like the loaded layout), `SectionEmpty`
+  (optional `action`, `titleAs="h2"` outside a card) and `SectionError`. Load errors use a polite `role="status"`;
+  form validation errors keep `role="alert"`.
+- Header icon buttons are 32 px with a 44 px hit area at 768 px and below (`TOUCH_TARGET`); the theme control is a
+  single menu button there. The sidebar environment badge reads `NEXT_PUBLIC_AGENTSHIELD_ENV` (default "Local").
 
 ## 6. Limitations and open questions
 
