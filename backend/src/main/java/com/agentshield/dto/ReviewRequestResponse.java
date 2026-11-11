@@ -2,6 +2,7 @@ package com.agentshield.dto;
 
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
@@ -42,13 +43,19 @@ public record ReviewRequestResponse(
         /** Computed when the response is built: true at or after expiresAt. */
         boolean expired,
         /** When the owning agent claimed the approval; null if not claimed. */
-        Instant consumedAt
+        Instant consumedAt,
+        /**
+         * Which signal sent the request to review, as on the audit row: NONE (policy), RISK_ENGINE or
+         * TRAJECTORY. Null when not recorded (reviews created before V11 without an attributed audit row).
+         */
+        EscalationSource escalatedBy
 ) {
     public static ReviewRequestResponse from(ReviewRequest r, Instant now) {
         return new ReviewRequestResponse(r.getId(), r.getRequestId(), r.getAgentId(), r.getSessionId(), r.getTool(),
                 r.getAction(), r.getResource(), r.getResourceSensitivity(), r.getRiskScore(), r.getRiskTier(),
                 r.getOriginalDecision(), r.getStatus(), r.getReason(), r.getCreatedAt(), r.getUpdatedAt(),
                 r.getReviewedAt(), r.getTrajectoryScore(), r.getTrajectoryTier(), r.getTrajectoryReason(),
-                r.getReviewer(), r.getDecisionNote(), r.getExpiresAt(), r.isExpiredAt(now), r.getConsumedAt());
+                r.getReviewer(), r.getDecisionNote(), r.getExpiresAt(), r.isExpiredAt(now), r.getConsumedAt(),
+                r.getEscalatedBy());
     }
 }

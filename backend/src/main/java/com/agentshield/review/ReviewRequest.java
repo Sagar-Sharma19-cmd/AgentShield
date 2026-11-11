@@ -2,6 +2,7 @@ package com.agentshield.review;
 
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
@@ -119,6 +120,14 @@ public class ReviewRequest {
     /** After this instant the review can no longer be started, decided or claimed (V10). */
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
+
+    /**
+     * Which signal sent the request to review, as recorded on the audit row (V11). NULL means not
+     * recorded (a review created before V11 whose audit row has no escalated_by), not NONE.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "escalated_by", length = 20)
+    private EscalationSource escalatedBy;
 
     public ReviewRequest() {
     }
@@ -346,6 +355,14 @@ public class ReviewRequest {
         return expiresAt != null && !now.isBefore(expiresAt);
     }
 
+    public EscalationSource getEscalatedBy() {
+        return escalatedBy;
+    }
+
+    public void setEscalatedBy(EscalationSource escalatedBy) {
+        this.escalatedBy = escalatedBy;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -371,6 +388,7 @@ public class ReviewRequest {
         private RiskTier trajectoryTier;
         private String trajectoryReason;
         private UUID registeredAgentId;
+        private EscalationSource escalatedBy;
         private Instant expiresAt;
 
         public Builder id(UUID id) {
@@ -473,6 +491,11 @@ public class ReviewRequest {
             return this;
         }
 
+        public Builder escalatedBy(EscalationSource escalatedBy) {
+            this.escalatedBy = escalatedBy;
+            return this;
+        }
+
         public Builder expiresAt(Instant expiresAt) {
             this.expiresAt = expiresAt;
             return this;
@@ -484,6 +507,7 @@ public class ReviewRequest {
                     reviewedAt, trajectoryScore, trajectoryTier, trajectoryReason);
             built.setRegisteredAgentId(registeredAgentId);
             built.setExpiresAt(expiresAt);
+            built.setEscalatedBy(escalatedBy);
             return built;
         }
     }

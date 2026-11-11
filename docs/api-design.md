@@ -178,11 +178,15 @@ created it.
   "note": null,
   "expiresAt": "2026-09-13T23:20:00Z",
   "expired": false,
-  "consumedAt": null
+  "consumedAt": null,
+  "escalatedBy": "NONE"
 }
 ```
 `reviewer` and `note` are set by approve/reject. `expired` is computed when the response is built.
 `consumedAt` is set when the owning agent claims the approval (B3).
+`escalatedBy` is the signal that sent the request to review, the same value as the audit row's
+`escalatedBy` (V11): `NONE` (policy held it), `RISK_ENGINE` or `TRAJECTORY`. It is `null` only on reviews
+created before V11 whose audit row had no attribution (not recorded, which is not the same as `NONE`).
 `riskScore`/`riskTier` here are the **effective** values: the higher of the Risk Engine assessment and
 the trajectory assessment (unlike `EvaluationResponse`, where `riskScore` is PolicyEngine's static score
 — see the Gateway response notes above). `trajectoryScore`, `trajectoryTier` and `trajectoryReason` are

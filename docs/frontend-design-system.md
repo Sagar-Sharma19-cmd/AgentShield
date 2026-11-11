@@ -388,10 +388,11 @@ Statuses: passed, decided here, checked with no change, not reached, not recorde
   Overview) and an expiry countdown (`lib/reviews/expiry.ts`): "expires in 12 min", a warning icon and tone under
   5 min, "expired 3 min ago" after. The exact time is in the sr-only text and the hover title. The page clock
   ticks every 30 s, so the text changes at most that often.
-- **Signal attribution**: review rows have no `escalatedBy`. `originalDecision` REVIEW means Policy. An escalated
-  ALLOW is attributed from the gateway's fixed reason suffix ("Escalated to REVIEW by Risk Engine assessment" /
-  "… by trajectory analysis"), and shown as "Not recorded" if neither is present. The detail pane prefers the
-  audit row's recorded `escalatedBy`.
+- **Signal attribution** (`lib/reviews/signal.ts`): the review's recorded `escalatedBy` (V11, the same value as
+  the audit row): `NONE` is Policy, `RISK_ENGINE` and `TRAJECTORY` as named. Only when it is null (a review from
+  before V11 without attribution) does the old text rule apply: `originalDecision` REVIEW means Policy, and an
+  escalated ALLOW is read from the gateway's fixed reason suffix. Otherwise it shows "Not recorded". The detail
+  pane also tries the audit row's `escalatedBy` before the text rule.
 - **Keyboard** (`lib/reviews/queue-keys.ts`, built on `triageKey`): a listbox with one tab stop. J/K move, Enter
   opens, S starts (same mutation as the button), A/R only open the existing confirmation dialog. Decided or
   expired reviews explain why instead. Ignored while typing or while a dialog is open. A hint row shows the keys.

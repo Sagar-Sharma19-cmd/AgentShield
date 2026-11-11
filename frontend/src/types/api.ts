@@ -191,6 +191,11 @@ export interface ReviewRequestResponse {
   expired: boolean;
   /** When the owning agent claimed the approval (once). Null if not claimed. */
   consumedAt: string | null;
+  /**
+   * Which signal sent the request to review, as on the audit row: NONE (policy), RISK_ENGINE or TRAJECTORY.
+   * Null when not recorded (reviews created before V11 whose audit row had no attribution).
+   */
+  escalatedBy: EscalationSource | null;
 }
 
 /** Body of POST /reviews/{id}/approve and /reject. note is required for reject. */

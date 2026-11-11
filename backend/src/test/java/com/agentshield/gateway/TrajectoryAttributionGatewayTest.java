@@ -1,8 +1,10 @@
 package com.agentshield.gateway;
 
 import com.agentshield.audit.AuditLog;
+import com.agentshield.dto.ReviewRequestResponse;
 import com.agentshield.model.EscalationSource;
 import com.agentshield.model.RiskTier;
+import com.agentshield.review.ReviewRequest;
 import com.agentshield.riskengine.RiskAssessment;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -10,7 +12,9 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -44,6 +48,7 @@ class TrajectoryAttributionGatewayTest extends AbstractTrajectoryGatewayTest {
         assertEquals(RiskTier.HIGH, row.getTrajectoryTier());
         assertNotNull(row.getTrajectoryReason());
         assertEquals(10, row.getRiskScore(), "policy score is unchanged by trajectory");
+        assertReviewEscalatedBy(requestIdOf(result), EscalationSource.TRAJECTORY);
     }
 
     @Test
@@ -59,6 +64,7 @@ class TrajectoryAttributionGatewayTest extends AbstractTrajectoryGatewayTest {
         assertEquals(EscalationSource.RISK_ENGINE, row.getEscalatedBy());
         assertEquals(0, row.getTrajectoryScore(), "evaluated with an empty history");
         assertEquals(RiskTier.LOW, row.getTrajectoryTier());
+        assertReviewEscalatedBy(requestIdOf(result), EscalationSource.RISK_ENGINE);
     }
 
     @Test
@@ -75,6 +81,7 @@ class TrajectoryAttributionGatewayTest extends AbstractTrajectoryGatewayTest {
         assertEquals(EscalationSource.NONE, row.getEscalatedBy());
         assertNotNull(row.getTrajectoryScore(), "trajectory was evaluated, so the score is recorded");
         assertNotNull(row.getTrajectoryTier());
+        assertReviewEscalatedBy(requestIdOf(result), EscalationSource.NONE);
     }
 
     @Test
@@ -101,5 +108,14 @@ class TrajectoryAttributionGatewayTest extends AbstractTrajectoryGatewayTest {
         assertEquals(EscalationSource.NONE, row.getEscalatedBy());
         assertNull(row.getTrajectoryScore());
         assertNull(row.getTrajectoryTier());
+    }
+
+    /** The review row stores the same attribution as the audit row, and the review API returns it. */
+    private void assertReviewEscalatedBy(UUID requestId, EscalationSource expected) {
+        ReviewRequest review = reviewRequestRepository.findByRequestId(requestId)
+                .orElseThrow(() -> new AssertionError("a REVIEW decision creates a review request"));
+        assertEquals(auditFor(requestId).getEscalatedBy(), review.getEscalatedBy(), "same value as the audit row");
+        assertEquals(expected, review.getEscalatedBy());
+        assertEquals(expected, ReviewRequestResponse.from(review, Instant.now()).escalatedBy());
     }
 }

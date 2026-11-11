@@ -687,7 +687,9 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 | V10 | `V10__add_review_request_resolution.sql` | Human-review loop (B3): `review_requests.registered_agent_id` (UUID), `reviewer` (VARCHAR 100), `decision_note` (VARCHAR 1000), `consumed_at`, `expires_at` (NOT NULL after backfill), and a CHECK that only an `APPROVED` review can be consumed. Backfill: `registered_agent_id` from the `audit_logs` row with the same `request_id`; `expires_at = created_at + 30 minutes` |
 
-- **Reserved:** V11–V13 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; it was planned as V10–V12 before B3 took V10). They are design only, and no migration file exists for them yet.
+| V11 | `V11__add_review_request_escalated_by.sql` | Review attribution (F5.1): `review_requests.escalated_by` (VARCHAR 20, same CHECK values as `audit_logs.escalated_by`: `NONE`, `RISK_ENGINE`, `TRAJECTORY`; NULL = not recorded). Written by the gateway with the same value as the audit row. Backfill: from the `audit_logs` row with the same `request_id` |
+
+- **Reserved:** V12–V14 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; it was planned as V10–V12 before B3 took V10, then V11–V13 before F5.1 took V11). They are design only, and no migration file exists for them yet.
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.

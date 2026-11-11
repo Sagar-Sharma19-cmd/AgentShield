@@ -35,6 +35,7 @@ function makeReview(status: ReviewStatus): ReviewRequestResponse {
     expiresAt: "2026-01-01T00:30:00Z",
     expired: false,
     consumedAt: null,
+    escalatedBy: "NONE",
   };
 }
 

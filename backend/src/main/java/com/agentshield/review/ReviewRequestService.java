@@ -5,6 +5,7 @@ import com.agentshield.exception.ConflictException;
 import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
@@ -96,12 +97,28 @@ public class ReviewRequestService {
      * As above, plus the verified registered agent id ({@code AuthorizationDecision.agentId()}). Only that
      * agent can later read or claim the review. The claimed {@code request.getAgentId()} is stored for
      * display only and is never used for ownership. expires_at = timestamp + the configured TTL.
+     * escalated_by is not recorded (null) through this overload.
      */
     @Transactional
     public ReviewRequest createReviewRequest(UUID requestId, EvaluationRequest request,
                                               ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
                                               DecisionType originalDecision, String reason, Instant timestamp,
                                               TrajectoryEvaluation trajectory, UUID registeredAgentId) {
+        return createReviewRequest(requestId, request, resourceSensitivity, riskScore, riskTier, originalDecision,
+                reason, timestamp, trajectory, registeredAgentId, null);
+    }
+
+    /**
+     * As above, plus the signal that sent the request to review: the same {@link EscalationSource} the
+     * gateway writes to the audit row for this request (V11). It is stored as given; nothing here decides
+     * or changes it. Null means not recorded.
+     */
+    @Transactional
+    public ReviewRequest createReviewRequest(UUID requestId, EvaluationRequest request,
+                                              ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
+                                              DecisionType originalDecision, String reason, Instant timestamp,
+                                              TrajectoryEvaluation trajectory, UUID registeredAgentId,
+                                              EscalationSource escalatedBy) {
         return reviewRequestRepository.findByRequestId(requestId)
                 .orElseGet(() -> {
                     ReviewRequest reviewRequest = ReviewRequest.builder()
@@ -123,6 +140,7 @@ public class ReviewRequestService {
                             .createdAt(timestamp)
                             .updatedAt(timestamp)
                             .registeredAgentId(registeredAgentId)
+                            .escalatedBy(escalatedBy)
                             .expiresAt(timestamp.plus(ttl))
                             .build();
                     return reviewRequestRepository.save(reviewRequest);

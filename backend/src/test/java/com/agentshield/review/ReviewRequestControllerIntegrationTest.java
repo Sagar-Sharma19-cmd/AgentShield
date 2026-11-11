@@ -2,6 +2,7 @@ package com.agentshield.review;
 
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
+import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.ReviewStatus;
 import com.agentshield.model.RiskTier;
@@ -21,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.Instant;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -59,7 +61,20 @@ class ReviewRequestControllerIntegrationTest {
                 .andExpect(jsonPath("$.id").value(r.getId().toString()))
                 .andExpect(jsonPath("$.requestId").value(r.getRequestId().toString()))
                 .andExpect(jsonPath("$.status").value("PENDING"))
-                .andExpect(jsonPath("$.riskTier").value("HIGH"));
+                .andExpect(jsonPath("$.riskTier").value("HIGH"))
+                .andExpect(jsonPath("$.escalatedBy").value(nullValue()));
+    }
+
+    @Test
+    @DisplayName("C. GET /reviews/{id} returns the stored escalatedBy (V11)")
+    void testGetReviewEscalatedBy() throws Exception {
+        ReviewRequest stored = persistPending();
+        stored.setEscalatedBy(EscalationSource.TRAJECTORY);
+        ReviewRequest r = reviewRequestRepository.save(stored);
+
+        mockMvc.perform(get("/api/v1/reviews/{id}", r.getId()).header(AdminApiKeyAuthenticationFilter.HEADER, adminApiKey))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.escalatedBy").value("TRAJECTORY"));
     }
 
     @Test
