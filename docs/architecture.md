@@ -804,3 +804,39 @@ Each service will have its own `Dockerfile`.
   touches only the declared resource.
 - The token is a bearer value within its short lifetime, bound to the agent's key by the `sub` check.
 
+### Guarded Jenkins pipeline (E2)
+
+The root `Jenkinsfile` runs on a local Jenkins and wraps every side-effecting command in `agentshield-guard`.
+Setup, expected results and troubleshooting are in `ci/jenkins/README.md`.
+
+```
+ Jenkins build #n  (session = BUILD_TAG = jenkins-agentshield-guarded-deploy-n, agent jenkins-ci-agent)
+ │
+ ├─ Setup ─────────── venv: pip install -e sdk/python -e guard   (unguarded: local checks only)
+ │
+ ├─ Build and test ── guard ─► POST /gateway/evaluate  docker WRITE image:agentshield-risk-engine:n
+ │                             ◄─ ALLOW + decisionToken
+ │                    guard ─► POST /gateway/decisions/redeem   ◄─ 200 (jti recorded once)
+ │                    guard ─► docker build --target test       (pytest; failure fails the build)
+ │                    guard ─► … same for the final image localhost:5001/agentshield-risk-engine:n
+ │
+ ├─ Attack (ATTACK) ─ guard ─► filesystem READ $WORKSPACE/.env  ◄─ DENY (policy: secret resource)
+ │                    exit 3, cat never runs ─► "Blocked by AgentShield", build fails
+ │
+ ├─ Push ──────────── guard ─► docker EXTERNAL_REQUEST registry:localhost:5001/…  ◄─ REVIEW
+ │                    guard polls GET /gateway/reviews/{id} every 3 s  ◄── operator approves in console
+ │                    guard ─► POST /gateway/reviews/{id}/claim  ◄─ decisionToken (REVIEW_APPROVED)
+ │                    guard ─► redeem ─► docker push localhost:5001/agentshield-risk-engine:n
+ │
+ ├─ Deploy staging ── guard ─► docker WRITE deploy/staging/risk-engine ─► ALLOW ─► redeem
+ │                    ─► ci/jenkins/deploy-staging.sh (pull from registry, replace container, :8100)
+ │
+ └─ Smoke test ────── guard ─► http READ http://localhost:8100/health ─► ALLOW ─► redeem ─► curl
+```
+
+Guard exit codes map to stage failures: 3 becomes "Blocked by AgentShield (denied or rejected)", and 4 or 5
+becomes "AgentShield could not authorize (fail closed)". The console's CI/CD page groups sessions matching
+`^jenkins-.+-\d+$` or `^guard-[0-9a-f]{12}$` as **Real pipeline runs**. Their steps are the recorded requests in
+order, with no catalog. A run whose recorded steps were all allowed is labelled **Authorized**, not Succeeded:
+AgentShield sees decisions, not command results.
+

@@ -121,3 +121,21 @@ export function simulatorRunCommand(scenario: Pick<PipelineScenario, "id">): str
 
 /** One-time setup and shell environment for a run (scripts/demo.sh writes the agent key to that file). */
 export const SIMULATOR_SETUP_COMMANDS = ["scripts/demo.sh setup", "source ~/.agentshield-demo/env", "cd simulator"] as const;
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Real pipeline (E2): Jenkins with agentshield-guard. See ci/jenkins/README.md.                     */
+
+/** The agent scripts/setup-ci-agent.sh registers for the Jenkinsfile. */
+export const JENKINS_CI_AGENT = "jenkins-ci-agent";
+export const JENKINS_JOB_NAME = "agentshield-guarded-deploy";
+export const JENKINS_URL = "http://localhost:8080";
+
+/** One-time setup from the repository root, with the admin key in the shell (ci/jenkins/README.md). */
+export const JENKINS_SETUP_COMMANDS = ["scripts/setup-ci-agent.sh", "ci/jenkins/setup-local-infra.sh"] as const;
+
+const AGENT_FRIENDLY_LABELS: Readonly<Record<string, string>> = { [JENKINS_CI_AGENT]: "Jenkins" };
+
+/** A friendly label for a known agent name (e.g. "Jenkins"), or null. The name itself is always shown too. */
+export function agentFriendlyLabel(name: string): string | null {
+  return Object.hasOwn(AGENT_FRIENDLY_LABELS, name) ? AGENT_FRIENDLY_LABELS[name] : null;
+}

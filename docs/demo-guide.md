@@ -211,6 +211,29 @@ claimed again (HTTP 409).
 - Runs are rebuilt from the audit log (the agent's latest 100 requests) and the review requests; nothing is stored
   by the page.
 
+### Step 12b. Real CI/CD with Jenkins (E2)
+
+This step runs real commands: a real Jenkins build of the risk-engine image, a push to a local registry and a staging deploy. Each command runs only after AgentShield allows it and its one-time decision is redeemed. The one-time setup is in [`ci/jenkins/README.md`](../ci/jenkins/README.md):
+
+- `scripts/setup-ci-agent.sh`
+- the Jenkins credential `agentshield-ci-agent-key`
+- `ci/jenkins/setup-local-infra.sh`
+- the job `agentshield-guarded-deploy`
+
+Do this setup before the faculty arrive.
+
+1. **Jenkins** (http://localhost:8080): click **agentshield-guarded-deploy**, then **Build with Parameters** (leave ATTACK off), then **Build**.
+2. **Console → CI/CD**: pick **Jenkins · jenkins-ci-agent**. The build appears under **Real pipeline runs** as `Jenkins · agentshield-guarded-deploy #<n>`. Build and test shows two **Allowed** steps.
+3. The **Push** step shows **Waiting for review**, and the Jenkins console says it is waiting for an operator. The build is really paused. Open the review from the step card, read it, and **Approve**.
+4. Within a few seconds, Jenkins claims the approval, redeems it and pushes. Then Deploy staging and Smoke test run. The run shows **Authorized**, and `curl -s localhost:8100/health` answers from the freshly deployed container.
+5. **The attack:** build again with **ATTACK** ticked. The stage *Attack: read secrets* asks to read `$WORKSPACE/.env`.
+   - The build fails with **Blocked by AgentShield (denied or rejected)**, and nothing is pushed.
+   - The console shows the step **Blocked** at the **Policy** gate.
+   - The agent holds `filesystem READ`, so the denial comes from policy, not from a missing grant.
+6. Optional: reject the push instead of approving it. The stage fails with the same Blocked message, and nothing is deployed.
+
+Say plainly what this shows: every command inside the guarded stages was authorized and recorded, and each authorization worked once. It does not stop someone from running `docker` on this Mac without the guard.
+
 ### Step 13. Agent lifecycle (kill switch)
 1. **Agents**, then `faculty-demo-agent`, then **Suspend agent**.
 2. Terminal: `cd simulator && python3 simulator.py --scenario basic_read_write`. It is now blocked.
@@ -238,6 +261,8 @@ Also show the `.github/workflows/` folder: CI runs backend, risk engine and secu
 ## Part 6 — Be honest about limits (faculty respect this)
 
 - **Cooperative enforcement:** the agent must call AgentShield. An agent that calls Docker directly bypasses it.
+  In the Jenkins pipeline the guard makes each guarded command depend on a signed, one-time decision, but commands
+  run without the guard (or outside Jenkins) are not stopped; protecting the Jenkinsfile is what keeps stages guarded.
 - Rules and trajectory are **deterministic heuristics**, not a trained ML model.
 - Not built yet: prompt-injection detection, rate limiting, multi-tenancy, per-operator admin accounts.
 - The reviewer name is typed by the operator, not an authenticated identity (everyone shares one admin key), and

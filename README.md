@@ -131,6 +131,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 5 | ✅ Complete | CI/CD agent simulator (`simulator/`) — 5 scenarios, mock tools only, executes a tool only on ALLOW and fails closed otherwise |
 | Phase 6 | ✅ Complete | Deterministic trajectory analysis over the last 10 requests of a session, escalate-only, with a kill switch. Not ML, not calibrated against labelled data |
 | E1 | ✅ Complete | Signed one-time decision tokens (HS256) on ALLOW and claimed approvals, `POST /api/v1/gateway/decisions/redeem`, shared Python SDK (`sdk/python`) and a real command guard (`guard/`) that runs a command only after redeem. Still cooperative: a command run without the guard is not stopped |
+| E2 | ✅ Complete | Real Jenkins pipeline (`Jenkinsfile`, `ci/jenkins/`): build, test, push to a local registry (human review), deploy staging and smoke test, each command run through `agentshield-guard`; ATTACK parameter shows a policy DENY. Console CI/CD page shows real runs |
 | Phase 7 | 🔲 Planned | Full Docker Compose local deployment |
 
 ---
@@ -145,6 +146,8 @@ AgentShield/
 ├── simulator/          # AI agent request simulator
 ├── sdk/python/         # Shared Python client (agentshield-sdk)
 ├── guard/              # agentshield-guard: run a real command only after an AgentShield decision is redeemed
+├── ci/jenkins/         # Local Jenkins setup, registry and staging scripts for the guarded Jenkinsfile
+├── Jenkinsfile         # Real CI/CD pipeline guarded by AgentShield (E2)
 ├── docs/               # Architecture and design documentation
 ├── tests/              # Organised test suites
 ├── docker-compose.yml  # Local multi-service orchestration

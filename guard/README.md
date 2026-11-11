@@ -107,6 +107,11 @@ Which of these are ALLOW, REVIEW or DENY depends on the policy and the risk engi
 - **Not enforced:** anyone who runs `docker` or `kubectl` directly, without the guard. The target systems do not check AgentShield tokens. Keeping the deploy credentials only in the CI step that runs the guard is a deployment control, not something the guard can do.
 - **Not checked:** whether the command actually touches only the declared `--resource`. The guard does not parse commands.
 
+## In Jenkins
+
+The root `Jenkinsfile` runs every side-effecting stage through the guard; setup and expected results are in
+[`ci/jenkins/README.md`](../ci/jenkins/README.md). The default session id is `BUILD_TAG`, so one build is one session.
+
 ## Tests
 
 ```bash

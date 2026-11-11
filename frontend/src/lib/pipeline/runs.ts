@@ -6,6 +6,11 @@
  * that share such a session id. Each step's status is read from its row and, for a REVIEW, from its review
  * request. Nothing is inferred beyond that: a step with no row is "Not started" or "Skipped", never a guess.
  *
+ * Real pipeline runs (E2) come from agentshield-guard: its default session id is Jenkins' BUILD_TAG
+ * ("jenkins-<job>-<build>"), or "guard-<12 hex>" outside CI. They have no catalog, so their steps are the recorded
+ * requests in order. AgentShield records decisions, not command results: for a real run, "allowed" means the
+ * guard may run the command after redeeming the decision, and the command's own outcome is in Jenkins.
+ *
  * Pure: no React, no fetching. Tested in runs.test.ts.
  */
 import { gateFor, GATE_LABELS, type Gate } from "@/lib/checkpoint/gates";
@@ -14,6 +19,36 @@ import type { AuditLogResponse, ReviewRequestResponse } from "@/types/api";
 import { PIPELINE_SCENARIOS, type PipelineScenario } from "./catalog";
 
 export const RUN_SESSION_PATTERN = /^ci-([a-z0-9-]+)-([0-9a-f]{12})$/;
+/** Jenkins BUILD_TAG, as agentshield-guard uses it by default: "jenkins-<job>-<build number>". */
+export const JENKINS_SESSION_PATTERN = /^jenkins-(.+)-(\d+)$/;
+/** agentshield-guard's own session id when no CI variable is set. */
+export const GUARD_SESSION_PATTERN = /^guard-[0-9a-f]{12}$/;
+
+/** "simulator": a mock simulator run. "real": a guarded run of real commands (Jenkins or a bare guard). */
+export type RunKind = "simulator" | "real";
+
+export interface RealRunSource {
+  source: "jenkins" | "guard";
+  /** Jenkins job name (as in BUILD_TAG, folders joined by "-"); null for a bare guard session. */
+  job: string | null;
+  /** Jenkins build number; null for a bare guard session. */
+  build: number | null;
+}
+
+/** Which kind of run a session id belongs to, or null when it is not a pipeline run. */
+export function runKindOf(sessionId: string): RunKind | null {
+  if (RUN_SESSION_PATTERN.test(sessionId)) return "simulator";
+  if (JENKINS_SESSION_PATTERN.test(sessionId) || GUARD_SESSION_PATTERN.test(sessionId)) return "real";
+  return null;
+}
+
+/** Where a real run came from, parsed from its session id; null for anything else. */
+export function realRunSource(sessionId: string): RealRunSource | null {
+  const jenkins = JENKINS_SESSION_PATTERN.exec(sessionId);
+  if (jenkins) return { source: "jenkins", job: jenkins[1], build: Number(jenkins[2]) };
+  if (GUARD_SESSION_PATTERN.test(sessionId)) return { source: "guard", job: null, build: null };
+  return null;
+}
 
 export type RunRow = Pick<
   AuditLogResponse,
@@ -27,10 +62,13 @@ export type RunReview = Pick<
 
 export interface PipelineRun {
   sessionId: string;
-  /** The pipeline slug from the session id, e.g. "deploy-staging". */
+  kind: RunKind;
+  /** The pipeline slug from the session id, e.g. "deploy-staging"; for a real run, the Jenkins job or "guard". */
   slug: string;
-  /** The catalog scenario whose pipeline name gives this slug, or null ("Unknown pipeline"). */
+  /** The catalog scenario whose pipeline name gives this slug, or null ("Unknown pipeline"; always for real runs). */
   scenario: PipelineScenario | null;
+  /** Jenkins job and build of a real run; null for a simulator run. */
+  real: RealRunSource | null;
   /** The run's rows, oldest first. */
   rows: RunRow[];
   startedAt: string;
@@ -51,8 +89,10 @@ export function pipelineSlug(pipelineName: string): string {
   return slug || "pipeline";
 }
 
-/** The run's title: its scenario's title, or "Unknown pipeline". */
-export function runTitle(run: Pick<PipelineRun, "scenario">): string {
+/** The run's title: "Jenkins · <job> #<build>", "Guard run", its scenario's title, or "Unknown pipeline". */
+export function runTitle(run: Pick<PipelineRun, "scenario"> & Partial<Pick<PipelineRun, "real">>): string {
+  if (run.real?.source === "jenkins") return `Jenkins · ${run.real.job} #${run.real.build}`;
+  if (run.real?.source === "guard") return "Guard run";
   return run.scenario?.title ?? "Unknown pipeline";
 }
 
@@ -62,8 +102,9 @@ function time(iso: string): number {
 }
 
 /**
- * Groups simulator rows into runs, newest run first (by each run's first row). Rows whose session id is not a
- * simulator run id are left out. An unknown slug still makes a run, with scenario null, so it is not hidden.
+ * Groups rows into runs, newest run first (by each run's first row): simulator runs (kind "simulator") and real
+ * guarded runs (kind "real", never matched to the catalog). Rows whose session id is neither are left out. An
+ * unknown simulator slug still makes a run, with scenario null, so it is not hidden.
  * `sampleLimit` is the page size the rows came from; it only feeds possiblyTruncated.
  */
 export function groupRuns(
@@ -72,12 +113,17 @@ export function groupRuns(
   options: { sampleLimit?: number } = {},
 ): PipelineRun[] {
   const bySlug = new Map(scenarios.map((scenario) => [pipelineSlug(scenario.pipelineName), scenario]));
-  const groups = new Map<string, { slug: string; rows: { row: RunRow; order: number }[] }>();
+  const groups = new Map<string, { slug: string; real: RealRunSource | null; rows: { row: RunRow; order: number }[] }>();
 
   rows.forEach((row, order) => {
-    const match = RUN_SESSION_PATTERN.exec(row.sessionId);
-    if (!match) return;
-    const group = groups.get(row.sessionId) ?? { slug: match[1], rows: [] };
+    let group = groups.get(row.sessionId);
+    if (!group) {
+      const match = RUN_SESSION_PATTERN.exec(row.sessionId);
+      const real = match ? null : realRunSource(row.sessionId);
+      if (match) group = { slug: match[1], real: null, rows: [] };
+      else if (real) group = { slug: real.job ?? "guard", real, rows: [] };
+      else return;
+    }
     group.rows.push({ row, order });
     groups.set(row.sessionId, group);
   });
@@ -92,8 +138,10 @@ export function groupRuns(
       .map((entry) => entry.row);
     return {
       sessionId,
+      kind: group.real ? "real" : "simulator",
       slug: group.slug,
-      scenario: bySlug.get(group.slug) ?? null,
+      scenario: group.real ? null : (bySlug.get(group.slug) ?? null),
+      real: group.real,
       rows: ordered,
       startedAt: ordered[0].timestamp,
       lastActivityAt: ordered[ordered.length - 1].timestamp,
@@ -147,6 +195,31 @@ export const STEP_STATUS_META: Record<StepStatus, { label: string; tone: StatusT
   SKIPPED: { label: "Skipped", tone: "muted", detail: "No decision was recorded for this step." },
   NOT_STARTED: { label: "Not started", tone: "muted", detail: "No request recorded yet." },
 };
+
+/** Wording for real runs where the simulator wording would claim more than AgentShield records. */
+const REAL_STEP_TEXT: Partial<Record<StepStatus, { label: string; detail: string }>> = {
+  EXECUTED: {
+    label: "Allowed",
+    detail: "The gateway allowed it. The guard runs the command only after redeeming the decision; its result is in Jenkins.",
+  },
+  APPROVED_EXECUTED: {
+    label: "Approved, claimed",
+    detail: "An operator approved it and the guard claimed the approval, then redeemed it before running the command.",
+  },
+  APPROVED_UNCLAIMED: {
+    label: "Approved, not claimed",
+    detail: "Approved. The guard has not claimed the approval yet, so the command has not run.",
+  },
+  BLOCKED: { label: "Blocked", detail: "The gateway denied it, so the guard did not run the command and the stage failed." },
+  WAITING: { label: "Waiting for review", detail: "Sent to review. The build is paused until an operator decides." },
+};
+
+/** Label and detail for a step status, worded for the kind of run. */
+export function stepStatusText(status: StepStatus, kind: RunKind = "simulator"): { label: string; detail: string } {
+  const base = STEP_STATUS_META[status];
+  const real = kind === "real" ? REAL_STEP_TEXT[status] : undefined;
+  return real ?? { label: base.label, detail: base.detail };
+}
 
 export interface RunStep {
   /** 1-based position in the pipeline. */
@@ -254,6 +327,15 @@ export const RUN_STATUS_META: Record<RunStatus, { label: string; tone: StatusTon
 const DONE: ReadonlySet<StepStatus> = new Set(["EXECUTED", "APPROVED_EXECUTED"]);
 
 /**
+ * A real run whose recorded steps were all authorized is labelled "Authorized", not "Succeeded": AgentShield does
+ * not see whether the commands then succeeded, or whether the build has more stages to come.
+ */
+export function runStatusLabel(status: RunStatus, kind: RunKind = "simulator"): string {
+  if (kind === "real" && status === "SUCCEEDED") return "Authorized";
+  return RUN_STATUS_META[status].label;
+}
+
+/**
  * The first step that did not run decides:
  * BLOCKED or SKIPPED -> Blocked (a skipped step with later rows means the simulator failed closed on it),
  * REJECTED -> Rejected, EXPIRED -> Expired, WAITING or REVIEW_UNKNOWN -> Waiting for review,
@@ -295,10 +377,26 @@ export const IDLE_REFRESH_MS = 30_000;
  */
 export const STALE_RUN_MS = 10 * 60_000;
 
-export function pollIntervalFor(status: RunStatus | undefined, lastActivityAt: string | undefined, now: number): number {
+export function pollIntervalFor(
+  status: RunStatus | undefined,
+  lastActivityAt: string | undefined,
+  now: number,
+  kind: RunKind = "simulator",
+): number {
   if (status === "WAITING") return LIVE_REFRESH_MS;
-  if (status === "RUNNING" && lastActivityAt !== undefined && now - time(lastActivityAt) < STALE_RUN_MS) return LIVE_REFRESH_MS;
+  const recent = lastActivityAt !== undefined && now - time(lastActivityAt) < STALE_RUN_MS;
+  if (status === "RUNNING" && recent) return LIVE_REFRESH_MS;
+  // A real build whose steps so far were all authorized may still have stages to come.
+  if (kind === "real" && status === "SUCCEEDED" && recent) return LIVE_REFRESH_MS;
   return IDLE_REFRESH_MS;
+}
+
+/** Splits runs (or entries holding a run) into real and simulator groups, keeping their order. */
+export function splitByKind<T extends { run: Pick<PipelineRun, "kind"> }>(entries: readonly T[]): { real: T[]; simulator: T[] } {
+  return {
+    real: entries.filter((entry) => entry.run.kind === "real"),
+    simulator: entries.filter((entry) => entry.run.kind === "simulator"),
+  };
 }
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -322,16 +420,17 @@ export function diffSteps(previous: readonly Pick<RunStep, "index" | "status">[]
 }
 
 /** Sentence for the live region, e.g. "Step 3 approved by Sagar, executed." Null for NOT_STARTED. */
-export function describeStep(step: Pick<RunStep, "index" | "status" | "review" | "gate">): string | null {
+export function describeStep(step: Pick<RunStep, "index" | "status" | "review" | "gate">, kind: RunKind = "simulator"): string | null {
   const who = step.review?.reviewer?.trim() || "an operator";
   const lead = `Step ${step.index}`;
+  const real = kind === "real";
   switch (step.status) {
     case "EXECUTED":
-      return `${lead} allowed, executed.`;
+      return real ? `${lead} allowed.` : `${lead} allowed, executed.`;
     case "WAITING":
       return `${lead} sent to review, waiting for an operator.`;
     case "APPROVED_EXECUTED":
-      return `${lead} approved by ${who}, executed.`;
+      return real ? `${lead} approved by ${who}, claimed.` : `${lead} approved by ${who}, executed.`;
     case "APPROVED_UNCLAIMED":
       return `${lead} approved by ${who}, waiting for the agent to claim it.`;
     case "REJECTED":

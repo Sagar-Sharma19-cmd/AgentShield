@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PIPELINE_SCENARIOS, simulatorRunCommand, type PipelineScenario } from "./catalog";
+import { agentFriendlyLabel, JENKINS_CI_AGENT, PIPELINE_SCENARIOS, simulatorRunCommand, type PipelineScenario } from "./catalog";
 import {
   describeStep,
   diffSteps,
@@ -9,7 +9,12 @@ import {
   LIVE_REFRESH_MS,
   pollIntervalFor,
   pipelineSlug,
+  realRunSource,
   reviewsByRequest,
+  runKindOf,
+  runStatusLabel,
+  splitByKind,
+  stepStatusText,
   runStatus,
   runSteps,
   runTitle,
@@ -343,5 +348,122 @@ describe("diffSteps and describeStep", () => {
 describe("simulatorRunCommand", () => {
   it("is the exact simulator command", () => {
     expect(simulatorRunCommand(scenario("review_required"))).toBe("python3 simulator.py --scenario review_required --wait-for-review");
+  });
+});
+
+describe("real pipeline runs (agentshield-guard)", () => {
+  const JENKINS = "jenkins-agentshield-guarded-deploy-42";
+  const GUARD = "guard-0123456789ab";
+  const build = { tool: "docker", action: "WRITE" as const, resource: "image:agentshield-risk-engine:42" };
+  const push = { tool: "docker", action: "EXTERNAL_REQUEST" as const, resource: "registry:localhost:5001/agentshield-risk-engine:42" };
+  const deploy = { tool: "docker", action: "WRITE" as const, resource: "deploy/staging/risk-engine" };
+  const secret = { tool: "filesystem", action: "READ" as const, resource: "/ws/.env" };
+
+  it("recognises Jenkins BUILD_TAG and bare guard session ids", () => {
+    expect(runKindOf(JENKINS)).toBe("real");
+    expect(runKindOf("jenkins-folder-job-7")).toBe("real");
+    expect(runKindOf(GUARD)).toBe("real");
+    expect(runKindOf(SESSION)).toBe("simulator");
+    for (const other of ["jenkins-job", "jenkins--", "jenkins-job-12a", "guard-0123456789a", "guard-0123456789AB", "gh-1-build", "demo-1"]) {
+      expect(runKindOf(other), other).toBeNull();
+    }
+    expect(realRunSource(JENKINS)).toEqual({ source: "jenkins", job: "agentshield-guarded-deploy", build: 42 });
+    expect(realRunSource(GUARD)).toEqual({ source: "guard", job: null, build: null });
+    expect(realRunSource(SESSION)).toBeNull();
+  });
+
+  it("groups real runs apart from simulator runs, never matched to the catalog", () => {
+    const rows = [
+      row(JENKINS, at(30), deploy),
+      row(SESSION, at(20), DEPLOY.steps[0]),
+      row(JENKINS, at(10), build),
+      row(GUARD, at(5), build),
+      row("demo-trajectory-1", at(1), build),
+    ];
+    const runs = groupRuns(rows);
+    expect(runs.map((run) => [run.sessionId, run.kind])).toEqual([
+      [SESSION, "simulator"],
+      [JENKINS, "real"],
+      [GUARD, "real"],
+    ]);
+    const jenkins = runs[1];
+    expect(jenkins.scenario).toBeNull();
+    expect(jenkins.slug).toBe("agentshield-guarded-deploy");
+    expect(runTitle(jenkins)).toBe("Jenkins · agentshield-guarded-deploy #42");
+    expect(runTitle(runs[2])).toBe("Guard run");
+    expect(runs[0].real).toBeNull();
+    // A real run never takes a catalog scenario, even if its job name equals a simulator slug.
+    const lookalike = groupRuns([row("jenkins-deploy-staging-3", at(1), build)]);
+    expect(lookalike[0].scenario).toBeNull();
+
+    const { real, simulator } = splitByKind(runs.map((run) => ({ run })));
+    expect(real.map((entry) => entry.run.sessionId)).toEqual([JENKINS, GUARD]);
+    expect(simulator.map((entry) => entry.run.sessionId)).toEqual([SESSION]);
+  });
+
+  it("lists steps in recorded order with review linkage and claims", () => {
+    const rows = [row(JENKINS, at(1), build), row(JENKINS, at(2), push, { decision: "REVIEW" }), row(JENKINS, at(3), deploy)];
+    const [run] = groupRuns([...rows].reverse());
+    const reviews = reviewsByRequest([review(rows[1].requestId, { status: "APPROVED", reviewer: "sagar", consumedAt: at(2) })]);
+    const steps = runSteps(run, run.scenario, reviews, NOW);
+    expect(steps.map((step) => [step.index, step.resource, step.status])).toEqual([
+      [1, build.resource, "EXECUTED"],
+      [2, push.resource, "APPROVED_EXECUTED"],
+      [3, deploy.resource, "EXECUTED"],
+    ]);
+    expect(steps[1].review?.reviewer).toBe("sagar");
+    expect(steps.every((step) => step.summary === null)).toBe(true);
+    expect(runStatus(steps)).toBe("SUCCEEDED");
+    expect(runStatusLabel("SUCCEEDED", "real")).toBe("Authorized");
+    expect(runStatusLabel("SUCCEEDED")).toBe("Succeeded");
+    expect(runStatusLabel("BLOCKED", "real")).toBe("Blocked");
+  });
+
+  it("a waiting push keeps the build Waiting; an unclaimed approval is Running", () => {
+    const rows = [row(JENKINS, at(1), build), row(JENKINS, at(2), push, { decision: "REVIEW" })];
+    const [run] = groupRuns(rows);
+    expect(runStatus(runSteps(run, null, reviewsByRequest([review(rows[1].requestId)]), NOW))).toBe("WAITING");
+    const approved = reviewsByRequest([review(rows[1].requestId, { status: "APPROVED", reviewer: "sagar" })]);
+    const steps = runSteps(run, null, approved, NOW);
+    expect(steps[1].status).toBe("APPROVED_UNCLAIMED");
+    expect(runStatus(steps)).toBe("RUNNING");
+  });
+
+  it("the ATTACK stage is BLOCKED at the Policy gate", () => {
+    const rows = [row(JENKINS, at(1), build), row(JENKINS, at(2), secret, { decision: "DENY" })];
+    const [run] = groupRuns(rows);
+    const steps = runSteps(run, null, NO_REVIEWS, NOW);
+    expect(steps[1].status).toBe("BLOCKED");
+    expect(steps[1].gate).toBe("POLICY");
+    expect(runStatus(steps)).toBe("BLOCKED");
+  });
+
+  it("words real steps by what AgentShield records, not as executed", () => {
+    expect(stepStatusText("EXECUTED", "real").label).toBe("Allowed");
+    expect(stepStatusText("EXECUTED", "real").detail).toMatch(/Jenkins/);
+    expect(stepStatusText("APPROVED_EXECUTED", "real").label).toBe("Approved, claimed");
+    expect(stepStatusText("EXECUTED").label).toBe(STEP_STATUS_META.EXECUTED.label);
+    for (const status of STEP_STATUSES) {
+      expect(stepStatusText(status, "real").detail, status).not.toMatch(/mock/i);
+    }
+    const allowed = { index: 1, status: "EXECUTED" as const, review: null, gate: null };
+    expect(describeStep(allowed, "real")).toBe("Step 1 allowed.");
+    expect(describeStep(allowed)).toBe("Step 1 allowed, executed.");
+    const claimed = { index: 2, status: "APPROVED_EXECUTED" as const, review: review("r", { reviewer: "sagar" }), gate: null };
+    expect(describeStep(claimed, "real")).toBe("Step 2 approved by sagar, claimed.");
+  });
+
+  it("keeps polling a recently active real run whose steps were all authorized", () => {
+    const recent = new Date(NOW - 60_000).toISOString();
+    const old = new Date(NOW - 60 * 60_000).toISOString();
+    expect(pollIntervalFor("SUCCEEDED", recent, NOW, "real")).toBe(LIVE_REFRESH_MS);
+    expect(pollIntervalFor("SUCCEEDED", old, NOW, "real")).toBe(IDLE_REFRESH_MS);
+    expect(pollIntervalFor("SUCCEEDED", recent, NOW)).toBe(IDLE_REFRESH_MS);
+  });
+
+  it("labels the Jenkins agent", () => {
+    expect(agentFriendlyLabel(JENKINS_CI_AGENT)).toBe("Jenkins");
+    expect(agentFriendlyLabel("faculty-demo-agent")).toBeNull();
+    expect(agentFriendlyLabel("toString")).toBeNull();
   });
 });

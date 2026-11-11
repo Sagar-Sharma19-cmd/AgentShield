@@ -12,7 +12,16 @@ import {
   UserCheck,
   type LucideIcon,
 } from "lucide-react";
-import { RUN_STATUS_META, STEP_STATUS_META, type RunStatus, type StatusTone, type StepStatus } from "@/lib/pipeline/runs";
+import {
+  RUN_STATUS_META,
+  runStatusLabel,
+  STEP_STATUS_META,
+  stepStatusText,
+  type RunKind,
+  type RunStatus,
+  type StatusTone,
+  type StepStatus,
+} from "@/lib/pipeline/runs";
 import { cn } from "@/lib/utils";
 
 /** Text tone per status family. Every status also has its own icon shape and a label, so tone never stands alone. */
@@ -45,8 +54,9 @@ export const RUN_ICONS: Record<RunStatus, LucideIcon> = {
   RUNNING: CircleDot,
 };
 
-export function StepStatusMark({ status, className }: { status: StepStatus; className?: string }) {
-  const { label, tone } = STEP_STATUS_META[status];
+export function StepStatusMark({ status, kind, className }: { status: StepStatus; kind?: RunKind; className?: string }) {
+  const { tone } = STEP_STATUS_META[status];
+  const { label } = stepStatusText(status, kind);
   const Icon = STEP_ICONS[status];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", TONE_TEXT[tone], className)}>
@@ -56,8 +66,9 @@ export function StepStatusMark({ status, className }: { status: StepStatus; clas
   );
 }
 
-export function RunStatusMark({ status, className }: { status: RunStatus; className?: string }) {
-  const { label, tone } = RUN_STATUS_META[status];
+export function RunStatusMark({ status, kind, className }: { status: RunStatus; kind?: RunKind; className?: string }) {
+  const { tone } = RUN_STATUS_META[status];
+  const label = runStatusLabel(status, kind);
   const Icon = RUN_ICONS[status];
   return (
     <span className={cn("inline-flex items-center gap-1.5 text-xs font-medium", TONE_TEXT[tone], className)}>

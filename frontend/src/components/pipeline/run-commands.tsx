@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Copy, Terminal } from "lucide-react";
+import { Check, Copy, Terminal, Workflow } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PIPELINE_SCENARIOS, SIMULATOR_SETUP_COMMANDS, simulatorRunCommand, type PipelineScenario } from "@/lib/pipeline/catalog";
+import {
+  JENKINS_JOB_NAME,
+  JENKINS_SETUP_COMMANDS,
+  JENKINS_URL,
+  PIPELINE_SCENARIOS,
+  SIMULATOR_SETUP_COMMANDS,
+  simulatorRunCommand,
+  type PipelineScenario,
+} from "@/lib/pipeline/catalog";
 import { cn } from "@/lib/utils";
 
 const RESET_MS = 2000;
@@ -60,6 +68,28 @@ export function HowToRun({ scenario }: { scenario?: Pick<PipelineScenario, "id">
         stores its key in <span className="font-mono">~/.agentshield-demo/env</span>; it is never printed or shown here.
       </p>
       <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-xs leading-relaxed">{lines.join("\n")}</pre>
+    </div>
+  );
+}
+
+/** How a real, guarded Jenkins run is started (ci/jenkins/README.md has the full setup). */
+export function JenkinsHowTo() {
+  return (
+    <div className="flex flex-col gap-2 text-sm">
+      <p className="flex items-center gap-2 font-medium">
+        <Workflow aria-hidden="true" className="size-4 text-muted-foreground" />
+        Run the real pipeline
+      </p>
+      <p className="text-muted-foreground">
+        One-time setup from the repository root, with the admin key in your shell. The first script stores the CI
+        agent&apos;s key in <span className="font-mono">~/.agentshield-ci/env</span> for the Jenkins credential; it is never
+        printed. Full steps: <span className="font-mono">ci/jenkins/README.md</span>.
+      </p>
+      <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-xs leading-relaxed">{JENKINS_SETUP_COMMANDS.join("\n")}</pre>
+      <p className="text-muted-foreground">
+        Then start <span className="font-mono">{JENKINS_JOB_NAME}</span> with &ldquo;Build with Parameters&rdquo; in Jenkins (
+        <span className="font-mono">{JENKINS_URL}</span>). Set <span className="font-mono">ATTACK</span> to see a denied stage.
+      </p>
     </div>
   );
 }

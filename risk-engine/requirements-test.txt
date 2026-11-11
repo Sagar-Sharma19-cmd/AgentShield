@@ -1,0 +1,5 @@
+# Test-only dependencies (used by the Dockerfile "test" stage, not shipped in the final image).
+# httpx is pinned below 0.28: Starlette's TestClient in the pinned FastAPI release passes app= to httpx,
+# which 0.28 removed.
+pytest==8.2.2
+httpx==0.27.2

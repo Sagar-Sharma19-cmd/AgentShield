@@ -14,7 +14,10 @@ import {
   diffSteps,
   runTitle,
   STEP_STATUS_META,
+  stepStatusText,
   type PipelineRun,
+  type RealRunSource,
+  type RunKind,
   type RunStatus,
   type RunStep,
   type StatusTone,
@@ -60,7 +63,7 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
     const flashes = { ...seen.flashes };
     for (const change of changes) flashes[change.index] = (flashes[change.index] ?? 0) + 1;
     const message = changes
-      .map((change) => describeStep(steps[change.index - 1]))
+      .map((change) => describeStep(steps[change.index - 1], run.kind))
       .filter((text): text is string => text !== null)
       .join(" ");
     setSeen({ key: run.sessionId, signature, steps, flashes, message: message || seen.message });
@@ -85,7 +88,7 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
             ) : null}
           </p>
         </div>
-        <RunStatusMark status={status} className="text-sm [&_svg]:size-4" />
+        <RunStatusMark status={status} kind={run.kind} className="text-sm [&_svg]:size-4" />
       </header>
 
       {run.possiblyTruncated ? (
@@ -106,6 +109,7 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
             <StepWithConnector
               key={step.index}
               step={step}
+              kind={run.kind}
               position={i}
               last={i === steps.length - 1}
               flash={flashes[step.index] ?? 0}
@@ -119,7 +123,13 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
         {seen.message}
       </p>
 
-      {run.scenario ? <ScenarioDetails scenario={run.scenario} /> : <UnknownPipelineNote slug={run.slug} />}
+      {run.real ? (
+        <RealRunNote source={run.real} />
+      ) : run.scenario ? (
+        <ScenarioDetails scenario={run.scenario} />
+      ) : (
+        <UnknownPipelineNote slug={run.slug} />
+      )}
     </section>
   );
 }
@@ -131,23 +141,25 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
  */
 function StepWithConnector({
   step,
+  kind,
   position,
   last,
   flash,
   reducedMotion,
 }: {
   step: RunStep;
+  kind: RunKind;
   position: number;
   last: boolean;
   flash: number;
   reducedMotion: boolean;
 }) {
   const filled = DONE.has(step.status);
-  const meta = STEP_STATUS_META[step.status];
+  const { label } = stepStatusText(step.status, kind);
   const fill = "absolute inset-0 bg-primary transition-transform duration-300 ease-out motion-reduce:transition-none";
   return (
-    <div role="listitem" aria-label={`Step ${step.index}, ${step.tool}.${step.action.toLowerCase()}: ${meta.label}`} className="relative flex min-w-0">
-      <StepCard step={step} flash={flash} reducedMotion={reducedMotion} />
+    <div role="listitem" aria-label={`Step ${step.index}, ${step.tool}.${step.action.toLowerCase()}: ${label}`} className="relative flex min-w-0">
+      <StepCard step={step} kind={kind} flash={flash} reducedMotion={reducedMotion} />
       {last ? null : (
         <>
           <span aria-hidden="true" className="absolute top-full left-1/2 h-6 w-0.5 -translate-x-1/2 overflow-hidden rounded-full bg-border @min-[36rem]:hidden">
@@ -168,7 +180,7 @@ function StepWithConnector({
   );
 }
 
-function StepCard({ step, flash, reducedMotion }: { step: RunStep; flash: number; reducedMotion: boolean }) {
+function StepCard({ step, kind, flash, reducedMotion }: { step: RunStep; kind: RunKind; flash: number; reducedMotion: boolean }) {
   const meta = STEP_STATUS_META[step.status];
   const pending = step.status === "NOT_STARTED" || step.status === "SKIPPED";
 
@@ -193,7 +205,7 @@ function StepCard({ step, flash, reducedMotion }: { step: RunStep; flash: number
 
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-[0.6875rem] text-muted-foreground tabular-nums">{String(step.index).padStart(2, "0")}</span>
-        <StepStatusMark status={step.status} />
+        <StepStatusMark status={step.status} kind={kind} />
       </div>
 
       <div className="flex flex-col gap-0.5">
@@ -210,7 +222,7 @@ function StepCard({ step, flash, reducedMotion }: { step: RunStep; flash: number
 
       {/* Fixed-height outcome slot, so a status change does not move the cards around it. */}
       <div className="min-h-[3.75rem] text-xs leading-relaxed">
-        <StepOutcome step={step} />
+        <StepOutcome step={step} kind={kind} />
       </div>
 
       <StepLinks step={step} />
@@ -218,7 +230,7 @@ function StepCard({ step, flash, reducedMotion }: { step: RunStep; flash: number
   );
 }
 
-function StepOutcome({ step }: { step: RunStep }) {
+function StepOutcome({ step, kind }: { step: RunStep; kind: RunKind }) {
   const review = step.review;
   if (step.status === "BLOCKED" && step.gate) {
     return (
@@ -244,10 +256,13 @@ function StepOutcome({ step }: { step: RunStep }) {
         </p>
         {review.note ? <p className="line-clamp-2 text-muted-foreground">“{review.note}”</p> : null}
         {step.status === "EXPIRED" ? <p className="text-muted-foreground">Expired before the agent claimed it.</p> : null}
+        {kind === "real" && step.status === "APPROVED_UNCLAIMED" ? (
+          <p className="text-muted-foreground">The guard claims it on its next poll.</p>
+        ) : null}
       </div>
     );
   }
-  return <p className="text-muted-foreground">{STEP_STATUS_META[step.status].detail}</p>;
+  return <p className="text-muted-foreground">{stepStatusText(step.status, kind).detail}</p>;
 }
 
 function StepLinks({ step }: { step: RunStep }) {
@@ -293,6 +308,30 @@ function ScenarioDetails({ scenario }: { scenario: PipelineScenario }) {
         </ul>
       </div>
     </details>
+  );
+}
+
+function RealRunNote({ source }: { source: RealRunSource }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+      <p>
+        {source.source === "jenkins" ? (
+          <>
+            Recorded by <span className="font-mono">agentshield-guard</span> in Jenkins job{" "}
+            <span className="font-mono">{source.job}</span>, build {source.build}. One build is one AgentShield session.
+          </>
+        ) : (
+          <>
+            Recorded by <span className="font-mono">agentshield-guard</span> outside CI (its own session id).
+          </>
+        )}{" "}
+        Steps are the recorded requests, in order; there is no expected step list.
+      </p>
+      <p>
+        These are real commands. AgentShield records each decision and its one-time redemption check; whether a
+        command then succeeded, and any stages still to come, are shown in Jenkins.
+      </p>
+    </div>
   );
 }
 

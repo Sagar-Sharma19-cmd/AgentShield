@@ -111,7 +111,8 @@ print(f\"  {'$2':<17}{'$3':<11}{'$4':<34}{d.get('decision','?'):<8} risk={d.get(
 
 cmd_trajectory() {
   load_agent
-  local s="traj-demo-$(date +%H%M%S)"
+  local s
+  s="traj-demo-$(date +%H%M%S)"
   echo "Session $s: each request is judged alone, AND against this session's recent history."
   echo
   printf '  %-17s%-11s%-34s%s\n' ACTION TOOL RESOURCE DECISION
