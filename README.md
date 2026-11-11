@@ -130,6 +130,7 @@ Full API reference: [`docs/api-design.md`](docs/api-design.md).
 | Phase 4 | ✅ Complete | Frontend console — Next.js workspaces: Overview, Activity, Reviews, Agents, Tools, CI/CD demo, live alerts, light/dark theme |
 | Phase 5 | ✅ Complete | CI/CD agent simulator (`simulator/`) — 5 scenarios, mock tools only, executes a tool only on ALLOW and fails closed otherwise |
 | Phase 6 | ✅ Complete | Deterministic trajectory analysis over the last 10 requests of a session, escalate-only, with a kill switch. Not ML, not calibrated against labelled data |
+| E1 | ✅ Complete | Signed one-time decision tokens (HS256) on ALLOW and claimed approvals, `POST /api/v1/gateway/decisions/redeem`, shared Python SDK (`sdk/python`) and a real command guard (`guard/`) that runs a command only after redeem. Still cooperative: a command run without the guard is not stopped |
 | Phase 7 | 🔲 Planned | Full Docker Compose local deployment |
 
 ---
@@ -142,6 +143,8 @@ AgentShield/
 ├── frontend/           # Next.js dashboard
 ├── risk-engine/        # Python FastAPI risk scoring service
 ├── simulator/          # AI agent request simulator
+├── sdk/python/         # Shared Python client (agentshield-sdk)
+├── guard/              # agentshield-guard: run a real command only after an AgentShield decision is redeemed
 ├── docs/               # Architecture and design documentation
 ├── tests/              # Organised test suites
 ├── docker-compose.yml  # Local multi-service orchestration
@@ -153,12 +156,13 @@ AgentShield/
 
 ## Running Locally
 
-The backend **refuses to start** without two secrets (each ≥ 32 characters), supplied as environment variables:
+The backend **refuses to start** without three secrets (each ≥ 32 characters), supplied as environment variables:
 
 | Variable | Purpose |
 |----------|---------|
 | `AGENTSHIELD_API_KEY_PEPPER` | Server-side key used to HMAC agent API keys before storage. Changing it invalidates all agent keys. |
 | `AGENTSHIELD_ADMIN_API_KEY` | Value required in the `X-Admin-API-Key` header for admin APIs |
+| `AGENTSHIELD_DECISION_TOKEN_SECRET` | HS256 key that signs one-time decision tokens. Changing it invalidates unredeemed tokens (they live 60 s, `AGENTSHIELD_DECISION_TOKEN_TTL_SECONDS`) |
 | `AGENTSHIELD_TRAJECTORY_ENABLED` | Optional. Trajectory analysis kill switch, default `true`. `false` skips trajectory evaluation; existing decisions are unchanged by it (see [Trajectory Analysis](docs/architecture.md#trajectory-analysis)) |
 
 ```bash
@@ -167,6 +171,7 @@ docker compose up -d postgres
 
 export AGENTSHIELD_API_KEY_PEPPER="$(openssl rand -base64 48)"   # keep stable across restarts
 export AGENTSHIELD_ADMIN_API_KEY="$(openssl rand -base64 48)"
+export AGENTSHIELD_DECISION_TOKEN_SECRET="$(openssl rand -base64 48)"
 cd backend && mvn spring-boot:run      # http://localhost:8081 — Flyway migrates the schema on startup
 
 cd backend && mvn clean test package   # run the test suite (H2 + Flyway, no Docker or secrets needed)

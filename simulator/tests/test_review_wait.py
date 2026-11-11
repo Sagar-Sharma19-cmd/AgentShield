@@ -18,7 +18,7 @@ from unittest.mock import MagicMock
 from agentshield_client import AgentShieldClient, GatewayConfig, GatewayRejected, MalformedResponse
 from enforcement import Operation, Outcome, ReviewWait, run_operation
 
-from tests.test_enforcement import FAKE_KEY, gateway_body
+from tests.test_enforcement import FAKE_KEY, FAKE_TOKEN, gateway_body, redeem_body
 
 REVIEW_ID = "77777777-7777-7777-7777-777777777777"
 REQUEST_ID = "11111111-2222-3333-4444-555555555555"
@@ -36,7 +36,8 @@ def review_body(status, *, reviewer=None, note=None, expired=False, consumed=Fal
 
 def claim_body(*, tool=OPERATION.tool, action=OPERATION.action, resource=OPERATION.resource):
     return {"reviewId": REVIEW_ID, "requestId": REQUEST_ID, "sessionId": "ci-s", "tool": tool, "action": action,
-            "resource": resource, "reviewer": "alice", "consumedAt": "2026-11-10T12:05:00Z"}
+            "resource": resource, "reviewer": "alice", "consumedAt": "2026-11-10T12:05:00Z",
+            "decisionToken": FAKE_TOKEN}
 
 
 class ScriptedHandler(BaseHTTPRequestHandler):
@@ -54,6 +55,11 @@ class ScriptedHandler(BaseHTTPRequestHandler):
         if self.path == f"/api/v1/gateway/reviews/{REVIEW_ID}/claim":
             server.claims += 1
             status, body = server.claim_response
+            return self._send(status, body)
+        if self.path == "/api/v1/gateway/decisions/redeem":
+            length = int(self.headers.get("Content-Length", "0"))
+            server.redeems.append(json.loads(self.rfile.read(length).decode()))
+            status, body = server.redeem_response
             return self._send(status, body)
         return self._send(404, {"message": "Review request not found."})
 
@@ -106,6 +112,8 @@ class WaitForReviewTests(unittest.TestCase):
     def setUp(self):
         self.server.script = [(200, review_body("PENDING"))]
         self.server.claim_response = (200, claim_body())
+        self.server.redeem_response = (200, redeem_body(REQUEST_ID))
+        self.server.redeems = []
         self.server.gets = 0
         self.server.claims = 0
         self.server.seen_keys = []
@@ -138,6 +146,29 @@ class WaitForReviewTests(unittest.TestCase):
         self.assertEqual(self.time.sleeps, [3.0, 3.0], "polls every 3 s until decided")
         self.assertIn("Approved by alice", step.message)
         self.assert_key_never_leaked(step)
+        # Phase E1: the claim's token was redeemed once, for exactly the approved operation.
+        self.assertEqual(self.server.redeems, [{"token": FAKE_TOKEN, "tool": OPERATION.tool,
+                                                "action": OPERATION.action, "resource": OPERATION.resource}])
+        self.assertNotIn(FAKE_TOKEN, step.message)
+
+    def test_approved_and_claimed_but_redeem_refused_never_executes(self):
+        self.server.script = [(200, review_body("APPROVED", reviewer="alice"))]
+        self.server.redeem_response = (409, {"message": "This decision was already redeemed."})
+        step, executor = self.run_step()
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        executor.assert_not_called()
+        self.assertEqual(self.server.claims, 1)
+        self.assertIn("409", step.message)
+
+    def test_claim_without_token_never_executes(self):
+        body = claim_body()
+        del body["decisionToken"]
+        self.server.claim_response = (200, body)
+        self.server.script = [(200, review_body("APPROVED", reviewer="alice"))]
+        step, executor = self.run_step()
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        executor.assert_not_called()
+        self.assertEqual(self.server.redeems, [])
 
     def test_rejected_is_blocked_with_reviewer_and_note(self):
         self.server.script = [(200, review_body("IN_REVIEW")),

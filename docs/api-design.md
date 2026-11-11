@@ -45,6 +45,7 @@ Any other path is denied. Agent keys never work on admin APIs and the admin key 
 | `POST` | `/gateway/evaluate` | Submit an agent tool request for security evaluation | ✅ Implemented |
 | `GET` | `/gateway/reviews/{id}` | The calling agent's own review request (B3) | ✅ Implemented |
 | `POST` | `/gateway/reviews/{id}/claim` | Claim an approved review once and receive the exact approved operation (B3) | ✅ Implemented |
+| `POST` | `/gateway/decisions/redeem` | Redeem a signed one-time decision token before running the operation (E1) | ✅ Implemented |
 | `GET` | `/actuator/health` | Health check endpoint (public) | ✅ Implemented |
 
 ### Agent review endpoints — requires agent API key (B3)
@@ -85,15 +86,53 @@ authenticated key, recorded when the gateway created the review, never the `agen
   "action": "DELETE",
   "resource": "tmp/build-cache",
   "reviewer": "alice",
-  "consumedAt": "2026-11-10T12:05:00Z"
+  "consumedAt": "2026-11-10T12:05:00Z",
+  "decisionToken": "eyJhbGciOiJIUzI1NiJ9…"
 }
 ```
+
+`decisionToken` (E1) is a signed one-time token for exactly this operation, with source `REVIEW_APPROVED`.
+See "Decision tokens" below.
 
 The claim is one conditional update (`... WHERE consumed_at IS NULL AND status = 'APPROVED' AND
 expires_at > now`), so two concurrent claims cannot both succeed. A `409` body's `message` says why, for
 example `"This approval was already claimed at …. An approval can be used once."` A claim grants no
 permission and does not change any later gateway decision. The agent should run the operation only if
 `tool`, `action` and `resource` equal what it intended (the simulator fails closed otherwise).
+
+### Decision tokens and redemption (E1) — requires agent API key
+
+An `ALLOW` from `POST /gateway/evaluate` carries a `decisionToken`, and so does a successful review claim.
+`DENY` and `REVIEW` responses never carry one (the field is omitted). The token is an HS256 JWT signed with
+`AGENTSHIELD_DECISION_TOKEN_SECRET` (at least 32 characters; the backend refuses to start without it). It lives
+`AGENTSHIELD_DECISION_TOKEN_TTL_SECONDS` seconds (default 60).
+
+| Claim | Meaning |
+|-------|---------|
+| `jti` | The gateway `requestId` (the one-time id) |
+| `sub` | The verified registered agent id (UUID) of the key that received it |
+| `tool`, `action` | The decided operation |
+| `res` | SHA-256 hex of the exact resource string (the resource itself is not in the token) |
+| `src` | `ALLOW` or `REVIEW_APPROVED` |
+| `iat`, `exp` | Issue time and expiry (seconds) |
+
+An enforcing client redeems the token **before** it runs the operation and runs it only on `200`:
+
+`POST /gateway/decisions/redeem`
+```json
+{ "token": "eyJhbGciOiJIUzI1NiJ9…", "tool": "docker", "action": "WRITE", "resource": "image:agentshield-demo" }
+```
+
+| Status | When |
+|--------|------|
+| `200` | `{"requestId": "…", "redeemedAt": "…"}`. The token was valid and is now spent |
+| `400` | Malformed body, missing field or oversize value |
+| `401` | Missing, bad or admin API key; or the token is not valid (bad signature, wrong algorithm, malformed) or has expired |
+| `403` | Token issued to another agent; the agent is no longer `ACTIVE`; or the tool, action or resource differ from the token |
+| `409` | The token was already redeemed (one row per `jti` in `decision_redemptions`, a primary-key insert, so concurrent redeems have exactly one winner) |
+
+Redemption grants no permission and changes no gateway decision. The token is never logged; logs carry only
+the request id, source and agent id.
 
 ### Agents — requires admin API key
 
@@ -412,6 +451,9 @@ visible in the audit record and the review record (see those sections). Trajecto
 
 `authorizationResult` values: `AUTHORIZED`, `UNAUTHORIZED`, `AGENT_NOT_FOUND`, `AGENT_SUSPENDED`, `AGENT_REVOKED`, `AGENT_IDENTITY_MISMATCH`, `TOOL_NOT_FOUND`, `TOOL_DISABLED`, `PERMISSION_DISABLED`. Every value except `AUTHORIZED` yields `DENY`.
 
+`decisionToken` (E1): present only when `decision` is `ALLOW`, omitted otherwise. Redeem it with
+`POST /gateway/decisions/redeem` before running the operation (see "Decision tokens and redemption").
+
 ### `POST /agents`
 
 ```json
@@ -529,9 +571,10 @@ weights, and tier thresholds.
 | `201` | Agent, tool or permission created |
 | `204` | Permission revoked |
 | `400` | Invalid request body or malformed path parameter |
-| `401` | Missing, malformed, unknown, rotated-out or revoked API key; wrong admin key; unmapped path |
+| `401` | Missing, malformed, unknown, rotated-out or revoked API key; wrong admin key; unmapped path; invalid or expired decision token |
 | `404` | Agent, tool, permission or review not found (admin APIs); on `/gateway/reviews/**` also another agent's review |
-| `409` | Duplicate name / grant, invalid status transition, key rotation for a revoked agent, an expired review (start/approve/reject/claim), or a claim of a review that is not approved or was already claimed |
+| `403` | Decision token redeemed by another agent, by an agent that is not `ACTIVE`, or for a different operation |
+| `409` | Duplicate name / grant, invalid status transition, key rotation for a revoked agent, an expired review (start/approve/reject/claim), a claim of a review that is not approved or was already claimed, or a decision token that was already redeemed |
 | `500` | Internal server error |
 
 ---

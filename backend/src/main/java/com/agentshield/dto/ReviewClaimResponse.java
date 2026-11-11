@@ -18,10 +18,19 @@ public record ReviewClaimResponse(
         ActionType action,
         String resource,
         String reviewer,
-        Instant consumedAt
+        Instant consumedAt,
+        /** One-time decision token (src REVIEW_APPROVED) for the approved operation; redeem it before running. */
+        String decisionToken
 ) {
-    public static ReviewClaimResponse from(ReviewRequest r) {
+    public static ReviewClaimResponse from(ReviewRequest r, String decisionToken) {
         return new ReviewClaimResponse(r.getId(), r.getRequestId(), r.getSessionId(), r.getTool(), r.getAction(),
-                r.getResource(), r.getReviewer(), r.getConsumedAt());
+                r.getResource(), r.getReviewer(), r.getConsumedAt(), decisionToken);
+    }
+
+    /** Never prints the decision token. */
+    @Override
+    public String toString() {
+        return "ReviewClaimResponse[reviewId=" + reviewId + ", requestId=" + requestId + ", tool=" + tool
+                + ", action=" + action + ", consumedAt=" + consumedAt + ", decisionToken=<redacted>]";
     }
 }

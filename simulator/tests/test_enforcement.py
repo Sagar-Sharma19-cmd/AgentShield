@@ -19,6 +19,9 @@ from enforcement import Operation, Outcome, run_operation, run_pipeline
 FAKE_KEY = "agk_live_FAKE_TEST_KEY_NOT_REAL_0123456789"
 REQUEST_ID = "11111111-2222-3333-4444-555555555555"
 REVIEW_ID = "66666666-7777-8888-9999-000000000000"
+# Opaque to the client: never decoded, only sent back on redeem. Not a real token.
+FAKE_TOKEN = "eyJhbGciOiJIUzI1NiJ9.FAKE-TEST-DECISION-TOKEN.not-a-real-signature"
+REDEEM_PATH = "/api/v1/gateway/decisions/redeem"
 
 CONFIG = GatewayConfig(gateway_url="http://gateway.test", agent_id="ci-devops-agent", api_key=FAKE_KEY)
 
@@ -57,11 +60,28 @@ def gateway_body(decision, *, action="READ", resource="agentshield/repo/build-in
         "riskEngineAvailable": True,
         "reviewRequestId": review_id,
         "timestamp": "2026-11-02T10:00:00Z",
+        # Phase E1: only ALLOW carries a one-time decision token.
+        **({"decisionToken": FAKE_TOKEN} if decision == "ALLOW" else {}),
     }
 
 
-def opener_returning(body_bytes: bytes, status: int = 200):
+def redeem_body(request_id=REQUEST_ID):
+    return {"requestId": request_id, "redeemedAt": "2026-11-02T10:00:01Z"}
+
+
+def is_redeem(request) -> bool:
+    return request.full_url.endswith(REDEEM_PATH)
+
+
+def opener_returning(body_bytes: bytes, status: int = 200, redeem=(200, None)):
+    """Answers evaluate with body_bytes, and redeem with `redeem` (status, body) (default: 200, success)."""
     def opener(request, timeout):
+        if is_redeem(request):
+            redeem_status, body = redeem
+            if redeem_status >= 400:
+                raise urllib.error.HTTPError(request.full_url, redeem_status, "refused", {},
+                                             io.BytesIO(json.dumps({"message": "refused by stub"}).encode()))
+            return FakeResponse(redeem_status, json.dumps(body or redeem_body()).encode())
         return FakeResponse(status, body_bytes)
     return opener
 
@@ -90,6 +110,84 @@ class AllowExecutesTests(unittest.TestCase):
         self.assertEqual(step.outcome, Outcome.EXECUTED)
         executors[READ_OP.name].assert_called_once_with(READ_OP)
         self.assertEqual(step.execution_output, "mock ok")
+
+
+class RedeemBeforeExecuteTests(unittest.TestCase):
+    """Phase E1: an ALLOW runs only after its one-time decision token is redeemed for exactly this operation."""
+
+    def test_redeem_is_sent_with_token_and_operation_before_the_executor_runs(self):
+        order = []
+        body = json.dumps(gateway_body("ALLOW")).encode()
+        redeems = []
+
+        def opener(request, timeout):
+            if is_redeem(request):
+                redeems.append((json.loads(request.data.decode()), request.get_header("X-agent-api-key")))
+                order.append("redeem")
+                return FakeResponse(200, json.dumps(redeem_body()).encode())
+            order.append("evaluate")
+            return FakeResponse(200, body)
+
+        executor = MagicMock(side_effect=lambda op: order.append("execute") or "mock ok")
+        step = run_operation(client_with(opener), "s", READ_OP, {READ_OP.name: executor})
+
+        self.assertEqual(step.outcome, Outcome.EXECUTED)
+        self.assertEqual(order, ["evaluate", "redeem", "execute"])
+        payload, key = redeems[0]
+        self.assertEqual(payload, {"token": FAKE_TOKEN, "tool": READ_OP.tool, "action": READ_OP.action,
+                                   "resource": READ_OP.resource})
+        self.assertEqual(key, FAKE_KEY)
+        self.assertNotIn(FAKE_TOKEN, step.message)
+        self.assertNotIn(FAKE_TOKEN, repr(step))
+
+    def test_refused_redeem_never_executes(self):
+        for status in (401, 403, 409, 500):
+            with self.subTest(status=status):
+                executors = executors_for(READ_OP)
+                opener = opener_returning(json.dumps(gateway_body("ALLOW")).encode(), redeem=(status, None))
+                step = run_operation(client_with(opener), "s", READ_OP, executors)
+                self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+                executors[READ_OP.name].assert_not_called()
+                self.assertIn(str(status), step.message)
+                self.assertNotIn(FAKE_TOKEN, step.message)
+
+    def test_redeem_unreachable_never_executes(self):
+        body = json.dumps(gateway_body("ALLOW")).encode()
+
+        def opener(request, timeout):
+            if is_redeem(request):
+                raise urllib.error.URLError(ConnectionRefusedError())
+            return FakeResponse(200, body)
+
+        executors = executors_for(READ_OP)
+        step = run_operation(client_with(opener), "s", READ_OP, executors)
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        executors[READ_OP.name].assert_not_called()
+
+    def test_allow_without_token_never_executes(self):
+        body = gateway_body("ALLOW")
+        del body["decisionToken"]
+        executors = executors_for(READ_OP)
+        step = run_operation(client_with(opener_returning(json.dumps(body).encode())), "s", READ_OP, executors)
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        self.assertIn("no decision token", step.message)
+        executors[READ_OP.name].assert_not_called()
+
+    def test_redeem_answer_for_another_request_never_executes(self):
+        opener = opener_returning(json.dumps(gateway_body("ALLOW")).encode(),
+                                  redeem=(200, redeem_body("99999999-9999-9999-9999-999999999999")))
+        executors = executors_for(READ_OP)
+        step = run_operation(client_with(opener), "s", READ_OP, executors)
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        executors[READ_OP.name].assert_not_called()
+
+    def test_token_on_deny_is_contradictory_and_never_executes(self):
+        body = gateway_body("DENY")
+        body["decisionToken"] = FAKE_TOKEN
+        executors = executors_for(READ_OP)
+        step = run_operation(client_with(opener_returning(json.dumps(body).encode())), "s", READ_OP, executors)
+        self.assertEqual(step.outcome, Outcome.FAILED_CLOSED)
+        executors[READ_OP.name].assert_not_called()
 
 
 class ReviewNeverExecutesTests(unittest.TestCase):
@@ -217,6 +315,8 @@ class PipelineHaltTests(unittest.TestCase):
         calls = []
 
         def opener(request, timeout):
+            if is_redeem(request):
+                return FakeResponse(200, json.dumps(redeem_body()).encode())
             calls.append(json.loads(request.data.decode()))
             return FakeResponse(200, next(responses))
 
@@ -237,6 +337,8 @@ class PipelineHaltTests(unittest.TestCase):
         sessions = []
 
         def opener(request, timeout):
+            if is_redeem(request):
+                return FakeResponse(200, json.dumps(redeem_body()).encode())
             sessions.append(json.loads(request.data.decode())["sessionId"])
             return FakeResponse(200, allow_body)
 

@@ -2,7 +2,9 @@
 
 A Python simulator that behaves like an AI DevOps agent inside a CI/CD pipeline. Every mock tool
 operation is sent to the AgentShield gateway first. A mock tool runs **only** when the gateway
-decision is `ALLOW`.
+decision is `ALLOW` **and** the gateway accepts the one-time decision token at
+`POST /api/v1/gateway/decisions/redeem` (E1). A missing token or any redeem error (401/403/409/5xx) is
+`FAILED_CLOSED` and nothing runs. To guard real commands the same way, see [`guard/`](../guard/README.md).
 
 **Enforcement model: cooperative tool adapter.** The agent (here, this simulator) must call
 AgentShield before acting. AgentShield does not intercept network traffic, and it cannot stop an
@@ -174,8 +176,8 @@ Without the flag, a REVIEW stops the step exactly as before. With it, on REVIEW 
 1. Polls `GET /api/v1/gateway/reviews/{reviewRequestId}` every 3 seconds with its own agent key, and
    prints each status change (`PENDING`, `IN_REVIEW`, `APPROVED`/`REJECTED`, with the reviewer and note).
 2. **APPROVED:** calls `POST /api/v1/gateway/reviews/{id}/claim` once. It checks that the claimed `tool`,
-   `action` and `resource` equal the operation it asked for, and only then runs the mock and continues
-   the pipeline. A mismatch fails closed. The claim was spent, but nothing runs.
+   `action` and `resource` equal the operation it asked for, redeems the claim's decision token, and only
+   then runs the mock and continues the pipeline. A mismatch fails closed. The claim was spent, but nothing runs.
 3. **REJECTED:** the step is `BLOCKED`, showing who rejected it and their note.
 4. **Expired, timed out (`--review-timeout`, default 300 s), already claimed, 404/409/5xx, unreachable or
    malformed:** the step is `FAILED_CLOSED` and nothing runs.

@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 from agentshield_client import AgentShieldClient, GatewayConfig, GatewayRejected, GatewayUnavailable
 from enforcement import Operation, Outcome, run_operation
 
-from tests.test_enforcement import FAKE_KEY, gateway_body
+from tests.test_enforcement import FAKE_KEY, FAKE_TOKEN, gateway_body, redeem_body
 
 RESPONSES = {
     "allow-me": ("ALLOW", 200),
@@ -37,6 +37,11 @@ class StubHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length).decode())
+        if self.path == "/api/v1/gateway/decisions/redeem":
+            # Phase E1: accept the redemption only for the token the stub issued.
+            if payload.get("token") != FAKE_TOKEN:
+                return self._send(401, b'{"message":"The decision token is not valid."}')
+            return self._send(200, json.dumps(redeem_body()).encode())
         mode, status = RESPONSES.get(payload["resource"], ("ALLOW", 200))
 
         if mode == "SLOW":

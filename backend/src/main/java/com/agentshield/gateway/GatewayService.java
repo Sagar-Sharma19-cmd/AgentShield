@@ -3,6 +3,8 @@ package com.agentshield.gateway;
 import com.agentshield.audit.AuditService;
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.dto.EvaluationResponse;
+import com.agentshield.enforcement.DecisionSource;
+import com.agentshield.enforcement.DecisionTokenService;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
@@ -61,12 +63,13 @@ public class GatewayService {
     private final RiskAssessmentService riskAssessmentService;
     private final ReviewRequestService reviewRequestService;
     private final TrajectoryService trajectoryService;
+    private final DecisionTokenService decisionTokenService;
 
     @Autowired
     public GatewayService(PermissionEngine permissionEngine, PolicyEngine policyEngine, AuditService auditService,
                           RiskEngineClient riskEngineClient, DecisionEscalator decisionEscalator,
                           RiskAssessmentService riskAssessmentService, ReviewRequestService reviewRequestService,
-                          TrajectoryService trajectoryService) {
+                          TrajectoryService trajectoryService, DecisionTokenService decisionTokenService) {
         this.permissionEngine = permissionEngine;
         this.policyEngine = policyEngine;
         this.auditService = auditService;
@@ -75,6 +78,7 @@ public class GatewayService {
         this.riskAssessmentService = riskAssessmentService;
         this.reviewRequestService = reviewRequestService;
         this.trajectoryService = trajectoryService;
+        this.decisionTokenService = decisionTokenService;
     }
 
     /**
@@ -149,9 +153,18 @@ public class GatewayService {
             reviewRequestId = reviewRequest.getId();
         }
 
-        return buildResponse(requestId, request, finalResult, authorization,
+        EvaluationResponse response = buildResponse(requestId, request, finalResult, authorization,
                 riskAssessment.riskTier(), riskAssessment.engineAvailable(), riskAssessment.riskScore(),
                 trajectory.map(TrajectoryEvaluation::score).orElse(null), reviewRequestId, timestamp);
+
+        // 6. Final ALLOW -> a signed one-time decision token for exactly this operation (Phase E1). It is
+        //    issued after every stage has decided, so it never changes a decision; REVIEW and DENY get none.
+        //    The subject is the VERIFIED registered agent id, never the claimed agentId.
+        if (finalDecision == DecisionType.ALLOW) {
+            response.setDecisionToken(decisionTokenService.issue(requestId, authorization.agentId(),
+                    request.getTool(), request.getAction(), request.getResource(), DecisionSource.ALLOW));
+        }
+        return response;
     }
 
     /**

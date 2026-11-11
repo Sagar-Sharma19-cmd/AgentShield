@@ -53,6 +53,7 @@ services:
   #     RISK_ENGINE_URL: http://risk-engine:8000
   #     AGENTSHIELD_API_KEY_PEPPER: ${AGENTSHIELD_API_KEY_PEPPER:?set in .env}
   #     AGENTSHIELD_ADMIN_API_KEY: ${AGENTSHIELD_ADMIN_API_KEY:?set in .env}
+  #     AGENTSHIELD_DECISION_TOKEN_SECRET: ${AGENTSHIELD_DECISION_TOKEN_SECRET:?set in .env}
   #   depends_on:
   #     postgres:
   #       condition: service_healthy

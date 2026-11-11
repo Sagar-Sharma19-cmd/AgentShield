@@ -168,7 +168,7 @@ the simulator plan. The classification below was checked against the contract.
 
 ## 4. Resource inventory model
 
-Planned table `resources` (Flyway V12, not yet written):
+Planned table `resources` (Flyway V15, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -192,7 +192,7 @@ inventoried.
 
 ## 5. Resource relationship model
 
-Planned table `resource_relationships` (Flyway V13, not yet written):
+Planned table `resource_relationships` (Flyway V16, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -437,7 +437,7 @@ be updated with the endpoints, not before.
 
 ## 10. Persistence and audit correlation
 
-### 10.1 `impact_assessments` (planned, Flyway V14)
+### 10.1 `impact_assessments` (planned, Flyway V17)
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -474,9 +474,9 @@ This is listed as a risk (section 13).
 
 | Migration | Content | Dependency |
 |---|---|---|
-| V12 | `resources` table, its unique constraint and indexes | none |
-| V13 | `resource_relationships` table, constraints and indexes | V12 |
-| V14 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
+| V15 | `resources` table, its unique constraint and indexes | none |
+| V16 | `resource_relationships` table, constraints and indexes | V15 |
+| V17 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
 
 > **Renumbering (M4.3).** This plan was originally written as V7–V9. Those numbers are now used by the
 > trajectory-analysis migrations (V7 `audit_logs` session/agent index, V8 `review_requests` trajectory
@@ -492,6 +492,11 @@ This is listed as a risk (section 13).
 > **Renumbering (F5.1).** V11 is now used by `V11__add_review_request_escalated_by.sql`
 > (`review_requests.escalated_by`, backfilled from `audit_logs`), so the M3.4 migrations move again, to
 > V12–V14, in the same order and with the same dependencies. Nothing else changes, and no M3.4 migration
+> file exists yet.
+>
+> **Renumbering (E1).** V12 is now used by `V12__add_decision_redemptions.sql` (one-time decision tokens),
+> and V13 and V14 are reserved for content inspection and the ML risk model. The M3.4 migrations move to
+> V15–V17, in the same order and with the same dependencies. Nothing else changes, and no M3.4 migration
 > file exists yet.
 
 Rules for all three:
@@ -592,7 +597,7 @@ Confirm that no combination can produce DENY from REVIEW or ALLOW.
 - Canary test: a resource name placed in the inventory must not appear anywhere in the gateway
   response body.
 
-**Persistence and migrations.** `DatabaseMigrationTest` for V12–V14. Repository tests for the unique
+**Persistence and migrations.** `DatabaseMigrationTest` for V15–V17. Repository tests for the unique
 constraints and the self-loop CHECK. Run the same tests on PostgreSQL 16 (a disposable container, as
 in M3.3), not only on H2.
 
@@ -609,9 +614,9 @@ and 404 or 403 for an unknown path under the admin matcher.
 |---|---|---|
 | 0 | This document. Documentation corrections. No code. | Review |
 | 1 | Canonicalizer (pure function) and its unit tests. No persistence. | Canonicalizer matrix passes |
-| 2 | V12 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
-| 3 | V13 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
-| 4 | V14 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
+| 2 | V15 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
+| 3 | V16 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
+| 4 | V17 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
 | 5 | Admin impact endpoint under `/api/v1/audit/{requestId}/impact` | Names appear only in the admin view |
 | 6 | Frontend impact panel (branch) | Browser checks |
 

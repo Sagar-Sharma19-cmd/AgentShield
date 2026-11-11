@@ -1,5 +1,6 @@
 package com.agentshield.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
@@ -44,6 +45,12 @@ public class EvaluationResponse {
     private int effectiveRiskScore;
     private UUID reviewRequestId;
     private Instant timestamp;
+    /**
+     * One-time decision token (HS256 JWT), present only when the final decision is ALLOW. Redeem it at
+     * POST /api/v1/gateway/decisions/redeem before running the operation. Omitted for REVIEW and DENY.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String decisionToken;
 
     public EvaluationResponse() {
     }
@@ -182,6 +189,14 @@ public class EvaluationResponse {
 
     public void setTrajectoryScore(Integer trajectoryScore) {
         this.trajectoryScore = trajectoryScore;
+    }
+
+    public String getDecisionToken() {
+        return decisionToken;
+    }
+
+    public void setDecisionToken(String decisionToken) {
+        this.decisionToken = decisionToken;
     }
 
     public int getEffectiveRiskScore() {

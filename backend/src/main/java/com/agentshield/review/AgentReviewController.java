@@ -1,5 +1,7 @@
 package com.agentshield.review;
 
+import com.agentshield.enforcement.DecisionSource;
+import com.agentshield.enforcement.DecisionTokenService;
 import com.agentshield.dto.AgentReviewResponse;
 import com.agentshield.dto.ReviewClaimResponse;
 import com.agentshield.security.AuthenticatedAgent;
@@ -26,10 +28,12 @@ import java.util.UUID;
 public class AgentReviewController {
 
     private final ReviewRequestService reviewRequestService;
+    private final DecisionTokenService decisionTokenService;
 
     @Autowired
-    public AgentReviewController(ReviewRequestService reviewRequestService) {
+    public AgentReviewController(ReviewRequestService reviewRequestService, DecisionTokenService decisionTokenService) {
         this.reviewRequestService = reviewRequestService;
+        this.decisionTokenService = decisionTokenService;
     }
 
     /** 200 for the owning agent; 404 for an unknown id or another agent's review. */
@@ -41,12 +45,16 @@ public class AgentReviewController {
     }
 
     /**
-     * Claims an approval once. 200 with the exact approved tool/action/resource; 409 when the review is
-     * not APPROVED, has expired or was already claimed; 404 for an unknown id or another agent's review.
+     * Claims an approval once. 200 with the exact approved tool/action/resource and a one-time decision token
+     * (src REVIEW_APPROVED, jti = the original requestId) issued only after the claim committed; 409 when the
+     * review is not APPROVED, has expired or was already claimed; 404 for an unknown id or another agent's review.
      */
     @PostMapping("/{id}/claim")
     public ResponseEntity<ReviewClaimResponse> claim(@PathVariable UUID id,
                                                      @AuthenticationPrincipal AuthenticatedAgent caller) {
-        return ResponseEntity.ok(ReviewClaimResponse.from(reviewRequestService.claimForAgent(id, caller.id())));
+        ReviewRequest claimed = reviewRequestService.claimForAgent(id, caller.id());
+        String token = decisionTokenService.issue(claimed.getRequestId(), caller.id(), claimed.getTool(),
+                claimed.getAction(), claimed.getResource(), DecisionSource.REVIEW_APPROVED);
+        return ResponseEntity.ok(ReviewClaimResponse.from(claimed, token));
     }
 }

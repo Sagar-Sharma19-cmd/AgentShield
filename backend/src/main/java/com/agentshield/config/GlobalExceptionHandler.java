@@ -2,6 +2,8 @@ package com.agentshield.config;
 
 import com.agentshield.dto.ErrorResponse;
 import com.agentshield.exception.ConflictException;
+import com.agentshield.exception.DecisionTokenForbiddenException;
+import com.agentshield.exception.InvalidDecisionTokenException;
 import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
 import jakarta.validation.ConstraintViolation;
@@ -86,6 +88,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException ex) {
         return error(HttpStatus.NOT_FOUND, "Not Found", ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidDecisionTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidDecisionToken(InvalidDecisionTokenException ex) {
+        return error(HttpStatus.UNAUTHORIZED, "Unauthorized", ex.getMessage());
+    }
+
+    @ExceptionHandler(DecisionTokenForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleDecisionTokenForbidden(DecisionTokenForbiddenException ex) {
+        return error(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage());
     }
 
     @ExceptionHandler(ConflictException.class)

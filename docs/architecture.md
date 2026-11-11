@@ -435,7 +435,9 @@ fails the request rather than producing a silent decision.
 
 - **Cooperative enforcement.** The gateway is the only path AgentShield controls. A tool that the
   agent calls directly, without going through `/api/v1/gateway/evaluate`, is not seen by trajectory
-  analysis or by any other gateway check.
+  analysis or by any other gateway check. Decision tokens (see "Enforcement: decision tokens and the
+  command guard") make a guarded command depend on a real, unspent decision, but they do not stop an
+  agent that bypasses the guard.
 - **Bounded window.** Only the last 10 audit rows for the session are considered. Older behaviour
   is invisible, and a sequence longer than 10 requests can be missed.
 - **Client-supplied session identity.** `sessionId` comes from the request body. Each agent chooses
@@ -689,7 +691,9 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 | V11 | `V11__add_review_request_escalated_by.sql` | Review attribution (F5.1): `review_requests.escalated_by` (VARCHAR 20, same CHECK values as `audit_logs.escalated_by`: `NONE`, `RISK_ENGINE`, `TRAJECTORY`; NULL = not recorded). Written by the gateway with the same value as the audit row. Backfill: from the `audit_logs` row with the same `request_id` |
 
-- **Reserved:** V12–V14 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; it was planned as V10–V12 before B3 took V10, then V11–V13 before F5.1 took V11). They are design only, and no migration file exists for them yet.
+| V12 | `V12__add_decision_redemptions.sql` | Decision tokens (E1): `decision_redemptions` (`jti` UUID PK = gateway request id, `registered_agent_id` UUID NOT NULL, `tool`, `action` with CHECK, `resource_hash` VARCHAR(64), `redeemed_at`) and index `idx_decision_redemptions_agent`. The primary key makes each token redeemable once |
+
+- **Reserved:** V13 is reserved for content inspection and V14 for the ML risk model. V15–V17 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; planned as V10–V12, then V11–V13, then V12–V14, and moved each time a later phase took a number). They are design only, and no migration file exists for them yet.
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.
@@ -770,3 +774,33 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 All services will be orchestrated with Docker Compose for local development.
 Each service will have its own `Dockerfile`.
+
+---
+
+## Enforcement: decision tokens and the command guard (E1)
+
+**What is enforced now.**
+
+- Every `ALLOW` and every successful review claim returns a signed one-time decision token
+  (HS256, `nimbus-jose-jwt`). It names the verified agent, the tool, the action, a SHA-256 of the resource,
+  its source (`ALLOW` or `REVIEW_APPROVED`) and a short expiry (default 60 s). `DENY` and `REVIEW` never
+  carry a token.
+- `POST /api/v1/gateway/decisions/redeem` checks, in order: signature and expiry (401), that the token was
+  issued to the calling agent (403), that the agent is still `ACTIVE` (403, so suspending an agent stops
+  pending redemptions), that the tool, action and resource match (403), and then inserts the `jti` into
+  `decision_redemptions` (409 if it is already there). The insert is the one-time guarantee: concurrent
+  redeems have exactly one winner.
+- `agentshield-guard` (`guard/`) wraps a real command. It evaluates, waits for review if asked, redeems, and
+  only then runs the command with `subprocess.run(argv, shell=False)`. Any gateway or redeem error exits 5
+  without running anything (fail closed). The simulator's mock executor follows the same redeem-first rule.
+- Tokens and API keys are never logged by the backend, the SDK, the simulator or the guard.
+
+**What is still cooperative.**
+
+- The guard protects only commands run through it. An agent, script or person that runs `docker`,
+  `kubectl` or `git` directly is not stopped. The target systems (Docker, Kubernetes, registries) do not
+  check AgentShield tokens; doing that would need a plugin or admission controller in each target.
+- The resource string is what the caller declares. The guard does not parse the command to prove that it
+  touches only the declared resource.
+- The token is a bearer value within its short lifetime, bound to the agent's key by the `sub` check.
+

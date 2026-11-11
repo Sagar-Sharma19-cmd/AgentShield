@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentshield-sdk"
+version = "0.1.0"
+description = "AgentShield gateway client: evaluate, reviews, claim and one-time decision redemption (standard library only)."
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools]
+packages = ["agentshield"]

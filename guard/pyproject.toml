@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentshield-guard"
+version = "0.1.0"
+description = "Run a command only after AgentShield allows it and the one-time decision is redeemed (standard library only)."
+requires-python = ">=3.9"
+# Standard library only. The AgentShield client comes from sdk/python: installed (pip install -e sdk/python)
+# or, from a repository checkout, found next to this package (see agentshield_guard/cli.py, _import_sdk).
+dependencies = []
+
+[project.scripts]
+agentshield-guard = "agentshield_guard.cli:console_main"
+
+[tool.setuptools]
+packages = ["agentshield_guard"]

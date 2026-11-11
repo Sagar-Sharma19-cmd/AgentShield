@@ -3,8 +3,10 @@ Enforcement gate: the only code path that can execute a simulated tool operation
 
 Invariant: an executor is called only when the parsed AgentShield decision is ALLOW, or (with
 --wait-for-review) when a REVIEW was APPROVED by an operator, the approval was claimed exactly once,
-and the claimed tool/action/resource equal the operation. DENY, REJECTED, any gateway failure,
-timeout, expiry, mismatch and any malformed response all stop before execution.
+and the claimed tool/action/resource equal the operation. In both cases the one-time decision token
+(Phase E1) must then be redeemed for exactly this operation, and the executor runs only after the
+gateway accepts the redemption. DENY, REJECTED, any gateway failure, timeout, expiry, mismatch, a
+missing token, a refused redemption and any malformed response all stop before execution.
 """
 
 from __future__ import annotations
@@ -107,7 +109,8 @@ def run_operation(client: AgentShieldClient, session_id: str, operation: Operati
                           f"Gateway did not return a usable decision ({error}). Not executed.")
 
     if evaluation.decision == "ALLOW":
-        return _execute(operation, evaluation, executors, "Executed (mock).")
+        return _execute(client, operation, evaluation, executors, "Executed (mock).",
+                        token=evaluation.decision_token, request_id=evaluation.request_id)
 
     if evaluation.decision == "REVIEW" and review_wait is not None:
         return wait_for_review(client, operation, evaluation, executors, review_wait)
@@ -125,8 +128,19 @@ def run_operation(client: AgentShieldClient, session_id: str, operation: Operati
                       f"Denied by AgentShield: {evaluation.reason} Not executed.")
 
 
-def _execute(operation: Operation, evaluation: Evaluation, executors: dict, message: str,
-             review: Optional[ReviewStatus] = None) -> StepResult:
+def _execute(client: AgentShieldClient, operation: Operation, evaluation: Evaluation, executors: dict,
+             message: str, review: Optional[ReviewStatus] = None, *, token: Optional[str],
+             request_id: Optional[str]) -> StepResult:
+    """Redeems the one-time decision token for exactly this operation, then (and only then) runs the mock."""
+    if not token:
+        return StepResult(operation, Outcome.FAILED_CLOSED, evaluation,
+                          "The gateway returned no decision token to redeem. Not executed.", review=review)
+    try:
+        client.redeem(token=token, tool=operation.tool, action=operation.action, resource=operation.resource,
+                      expected_request_id=request_id)
+    except GatewayError as error:  # 401 expired/invalid, 403 mismatch/other agent, 409 replay, outage...
+        return StepResult(operation, Outcome.FAILED_CLOSED, evaluation,
+                          f"Could not redeem the decision ({error}). Not executed.", review=review)
     executor = executors[operation.name]
     try:
         output = executor(operation)
@@ -188,9 +202,10 @@ def wait_for_review(client: AgentShieldClient, operation: Operation, evaluation:
             if approved != requested:
                 return failed("The approved operation " + " ".join(approved)
                               + " does not match the requested " + " ".join(requested) + ".", review)
-            return _execute(operation, evaluation, executors,
+            return _execute(client, operation, evaluation, executors,
                             f"Approved by {claim.reviewer or review.reviewer or 'an operator'}; "
-                            "approval claimed and executed (mock).", review=review)
+                            "approval claimed, redeemed and executed (mock).", review=review,
+                            token=claim.decision_token, request_id=claim.request_id)
 
         remaining = deadline - wait.monotonic()
         if remaining <= 0:
