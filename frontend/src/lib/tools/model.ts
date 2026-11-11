@@ -82,5 +82,5 @@ export function describeToolError(error: unknown): string {
 
 /** Consequence text for disabling a tool, shown before the operator confirms. */
 export function describeToolDisableEffect(toolName: string): string {
-  return `Gateway requests to ${toolName} will be denied for every agent (TOOL_DISABLED) until it is enabled again. Existing grants are kept and become effective again when the tool is enabled.`;
+  return `Every agent that uses ${toolName} will be denied at the Permission gate (TOOL_DISABLED) until it is enabled again. Existing grants are kept and become effective again when the tool is enabled.`;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import Link from "next/link";
 import { Clock, KeyRound, LoaderCircle, ServerCog, ShieldCheck } from "lucide-react";
 import { SlideUp } from "@/components/motion/slide-up";
 import { LogoTile } from "@/components/shell/logo-mark";
@@ -97,12 +98,18 @@ export function AdminUnlockPanel() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter className="border-t px-6 py-4">
+          <CardFooter className="flex-col items-start gap-3 border-t px-6 py-4">
             <ul className="flex flex-col gap-2 text-xs text-muted-foreground">
               <KeyFact icon={ServerCog}>Checked against the backend with one audit read before it is used.</KeyFact>
               <KeyFact icon={Clock}>Kept in this browser tab only and cleared when the tab closes.</KeyFact>
               <KeyFact icon={ShieldCheck}>Development access: every request is still authorised by the backend.</KeyFact>
             </ul>
+            <Link
+              href="/welcome"
+              className="text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:underline"
+            >
+              New here? See how AgentShield works
+            </Link>
           </CardFooter>
         </Card>
       </SlideUp>

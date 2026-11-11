@@ -279,7 +279,7 @@ Import each from its own file (no barrel), so unused primitives stay out of the 
 
 ---
 
-## 5. Page-by-page redesign plan (Shell, Overview, Activity and Reviews implemented; the rest planned)
+## 5. Page-by-page redesign plan (Shell, Overview, Activity, Reviews, Agents, Tools and Landing implemented; the rest planned)
 
 Constraints for every page: no changes to API calls, query keys, React Query logic, admin-key handling or
 security semantics. Every state needs Loading, Empty, Error and Unauthorized views. The layout must work at
@@ -409,17 +409,66 @@ Statuses: passed, decided here, checked with no change, not reached, not recorde
 - **States**: two-pane skeletons, the existing `SectionError`, and an empty state for each tab. Needs action points
   to `python3 simulator.py --scenario review_required` and the CI/CD demo.
 
-### Agents (`components/agents/*`)
-- A registry table (desktop) or cards (mobile) with status badge (ACTIVE/SUSPENDED/REVOKED, each with an icon).
-- Register flow: the one-time key dialog stays as is (security-critical copy and a copy button). No
-  animation on the key itself.
-- Detail sheet: summary, lifecycle actions with confirmation, and grants. Destructive lifecycle actions
-  use `--danger`.
+### Agents (`components/agents/*`): implemented (Phase F6)
+- **Layout**: like Reviews. From `lg` up, the registry (left) and the selected agent in a sticky pane (right);
+  below `lg`, the existing sheet. Both render one `AgentDetailBody` from one `useAgentDetailController` owned by
+  the workspace, so the rotation hold (`lib/agents/rotation-hold.ts`) and the one-time key protections are the
+  same in both. While a hold is set the layout is frozen, so a resize cannot swap containers and drop a key.
+- **Registry**: a dense table from `md` (name + description, status badge with icon, key prefix in mono, created
+  date with the full time on hover) and compact rows below `md`. Status filter (URL) and search (local) as before.
+  The selected row has a left rule and `aria-current`. There is **no "tools granted" column**: grants are only
+  listed per agent (`GET /permissions/agent/{id}`), so a count per row would need one request per agent.
+- **Identity header**: status stamp, name (mono), key prefix, agent id, created/updated, description, and the
+  plain-language status effect. Only the key prefix is ever shown.
+- **Lifecycle**: unchanged logic, confirmations and one-time key dialog. Revoke is the only solid danger button,
+  with a one-line note that it is permanent and that Suspend is the reversible option.
+- **Permission matrix** (`lib/agents/permission-matrix.ts`): rows are registered tools (plus any grant whose
+  tool is not in the loaded list), columns READ / WRITE / DELETE / EXECUTE / EXTERNAL_REQUEST. A cell is a check
+  in a solid box (granted), a check in a dashed box (granted, not in effect, with the reason on the row: agent
+  suspended/revoked, tool disabled, grant disabled) or a dash (not granted), and always has screen-reader text.
+  High-risk columns carry a shield icon and "(higher risk)" text.
+  - **It is a read view.** The API has no endpoint that changes a grant's actions (POST and DELETE only), so
+    "Edit grant" explains that, and offers the existing revoke confirmation. After a revoke started there, the
+    grant form is pre-filled with the same tool and actions to adjust and grant again. "Revoke" on a row is the
+    existing revoke flow; "Grant" on an ungranted row pre-selects the tool in the existing grant form.
+  - Granting DELETE, EXECUTE or EXTERNAL_REQUEST opens a confirmation with one line of risk per action
+    (`HIGH_RISK_ACTION_COPY` in `lib/agents/permission-grant.ts`). The request is the same `POST /permissions`.
+- **Recent activity** (`lib/agents/activity-sample.ts`): `useAgentAuditSample(agent.name)` (audit rows record the
+  agentId the request claimed, which is the registered name). A gate breakdown (`gateFor`) for the whole sample,
+  labelled "Latest 100 requests" (or the real count), and the 8 newest requests with `DecisionIcon` + `GateMark`,
+  each linking to the request in Activity. "Open in Activity" filters by the agent's name.
+- **Register flow**: logic unchanged; step labels added. The key dialog keeps every protection (shown once, copy
+  button, closes only through "I have saved this key" or the explicit discard choice). No animation on the key.
 
-### Tools (`components/tools/*`)
-- A compact registry table: name (mono), description, status badge (ACTIVE/DISABLED with icon), and a
-  register dialog.
-- Empty state explains what a tool is and links to the register action.
+### Tools (`components/tools/*`): implemented (Phase F6)
+- Rows with a type icon per tool type (`tool-type-icon.tsx`, always next to the type label), name (mono), type,
+  description, status badge and an enable switch. Status filter with counts and search
+  (`lib/tools/registry.ts`, local state).
+- Enabling calls the existing status endpoint directly, as before. Turning the switch off opens the existing
+  confirmation, which now says every agent using the tool is denied at the Permission gate (TOOL_DISABLED) and
+  that grants are kept.
+- No "used by" count: it cannot be derived from data the page loads without one grants request per agent.
+- Empty state explains what a tool is and offers the register action.
+
+### Landing (`/welcome`, `components/landing/*`): implemented (Phase F8)
+- Public route outside the `(console)` group, so no AppShell and no admin key. Linked from the unlock card.
+- Sections: Intro (outlined "Runtime" / "Security", a prompt box typing real requests with their verdicts),
+  Product (pipeline stages as WAI-ARIA tabs, auto-advance with a Pause control), Scenarios (the five simulator
+  scenarios and the trajectory demo with their documented outcomes), Footer. Content in `lib/landing/content.ts`.
+- The robot (`sentinel-scene.tsx`, three.js) is loaded with `next/dynamic` (`ssr: false`), so three.js is only
+  in the `/welcome` on-demand chunk. It is `aria-hidden`; every meaning is in the HTML. Camera states blend with
+  scroll (`lib/landing/camera.ts`), plus pointer parallax, idle bob, head sway and blink. The face shows a check
+  (ALLOW), an eye (REVIEW) or a barred circle (DENY) for the selected scenario. Colours are read from the tokens.
+- Reduced motion: fixed camera, static pose, no typing (all requests shown), no auto-advance. Rendering pauses
+  when the tab is hidden or the sections are off screen; pixel ratio is capped at 2 (1.5 at 900 px and below);
+  everything is disposed on unmount. Without WebGL, a large logo mark is shown instead.
+- Framing (F8.1, `lib/landing/camera-states.ts` + `frameCamera`): each camera state names where the robot sits
+  on screen and the largest share of the viewport it may take, so it backs off instead of reaching the text.
+  Intro and product frame it in the right half (text columns stop at 50vw); scenarios in the left half. The
+  camera reaches a state when its section is centred and dwells there (`CAMERA_HOLD`).
+- The right rail is shown from 1200 px. At 900 px and below the guides are hidden, the robot sits centred in
+  the top part of the screen with the text below it, and each text block (not the whole column) gets a tight
+  paper backing. The prompt-box header shows only "Agent request" below 640 px.
 
 ### CI/CD demo (`components/pipeline/*`)
 - Keep the "Mock execution only" note at the top (warning tone, icon, text).

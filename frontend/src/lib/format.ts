@@ -16,3 +16,9 @@ export function toDateTimeLocalValue(iso: string): string {
 export function shortId(id: string): string {
   return id.slice(0, 8);
 }
+
+/** Local date only, for dense lists. The full timestamp belongs in a title or the detail view. */
+export function formatDate(iso: string): string {
+  const date = parseISO(iso);
+  return isValid(date) ? format(date, "MMM d, yyyy") : iso;
+}

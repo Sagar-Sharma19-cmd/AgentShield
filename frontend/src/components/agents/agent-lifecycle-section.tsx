@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useState } from "react";
+import { OctagonAlert } from "lucide-react";
 import { AgentLifecycleConfirmDialog } from "@/components/agents/agent-lifecycle-confirm-dialog";
 import { OneTimeKeyDialog } from "@/components/agents/one-time-key-dialog";
 import { Button } from "@/components/ui/button";
@@ -123,7 +124,7 @@ export function AgentLifecycleSection({
 
   return (
     <section aria-labelledby="agent-lifecycle-heading" className="flex flex-col gap-3">
-      <h3 id="agent-lifecycle-heading" className="text-sm font-medium">
+      <h3 id="agent-lifecycle-heading" className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">
         Lifecycle
       </h3>
 
@@ -132,19 +133,32 @@ export function AgentLifecycleSection({
           This agent is revoked. Its key was destroyed, so no lifecycle changes are available.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {actions.map((action) => (
-            <Button
-              key={action}
-              variant={action === "revoke" ? "destructive" : "outline"}
-              size="sm"
-              disabled={busy}
-              onClick={() => openConfirmation(action)}
-            >
-              {LIFECYCLE_BUTTON_LABELS[action]}
-            </Button>
-          ))}
-        </div>
+        <>
+          <div className="flex flex-wrap gap-2">
+            {actions.map((action) => (
+              <Button
+                key={action}
+                variant={action === "revoke" ? "destructive" : "outline"}
+                size="sm"
+                disabled={busy}
+                onClick={() => openConfirmation(action)}
+                // Revoke is the only irreversible action, so it is the only solid danger button on the page.
+                className={
+                  action === "revoke"
+                    ? "bg-danger text-danger-foreground hover:bg-danger/90 dark:bg-danger dark:hover:bg-danger/90"
+                    : undefined
+                }
+              >
+                {LIFECYCLE_BUTTON_LABELS[action]}
+              </Button>
+            ))}
+          </div>
+          <p className="flex items-start gap-1.5 text-xs text-danger-text">
+            <OctagonAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            Revoke is permanent: the key is destroyed and this agent can never authenticate again. Suspend is the
+            reversible way to stop it.
+          </p>
+        </>
       )}
 
       <p role="status" aria-live="polite" className="text-xs text-muted-foreground">

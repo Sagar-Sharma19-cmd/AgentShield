@@ -30,3 +30,9 @@ describe("tool type catalogue", () => {
     expect(describeToolDisableEffect("jenkins")).toMatch(/Existing grants are kept/);
   });
 });
+
+describe("describeToolDisableEffect", () => {
+  it("says every agent using the tool is denied at the Permission gate", () => {
+    expect(describeToolDisableEffect("jenkins")).toMatch(/Every agent that uses jenkins will be denied at the Permission gate/);
+  });
+});

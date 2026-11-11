@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { PermissionResponse, ToolResponse } from "@/types/api";
-import { grantableTools, toggleAction, validatePermissionGrant } from "./permission-grant";
+import {
+  HIGH_RISK_ACTION_COPY,
+  HIGH_RISK_ACTIONS,
+  grantableTools,
+  highRiskActionsIn,
+  isHighRiskAction,
+  toggleAction,
+  validatePermissionGrant,
+} from "./permission-grant";
 
 const tool = (id: string): ToolResponse => ({
   id,
@@ -50,5 +58,22 @@ describe("toggleAction", () => {
     expect(toggleAction(start, "WRITE")).toEqual(["READ", "WRITE"]);
     expect(toggleAction(start, "READ")).toEqual([]);
     expect(start).toEqual(["READ"]);
+  });
+});
+
+describe("high-risk actions", () => {
+  it("are DELETE, EXECUTE and EXTERNAL_REQUEST, each with one line of risk copy", () => {
+    expect(HIGH_RISK_ACTIONS).toEqual(["DELETE", "EXECUTE", "EXTERNAL_REQUEST"]);
+    for (const action of HIGH_RISK_ACTIONS) {
+      expect(HIGH_RISK_ACTION_COPY[action]).toMatch(/\S/);
+      expect(HIGH_RISK_ACTION_COPY[action]).not.toContain("\n");
+    }
+  });
+
+  it("finds the high-risk actions in a selection, in canonical order without duplicates", () => {
+    expect(highRiskActionsIn(["EXTERNAL_REQUEST", "READ", "DELETE", "DELETE"])).toEqual(["DELETE", "EXTERNAL_REQUEST"]);
+    expect(highRiskActionsIn(["READ", "WRITE"])).toEqual([]);
+    expect(isHighRiskAction("WRITE")).toBe(false);
+    expect(isHighRiskAction("EXECUTE")).toBe(true);
   });
 });

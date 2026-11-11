@@ -6,6 +6,26 @@ import type { FieldErrors } from "@/lib/agents/registration";
 /** Grantable actions, in the order the backend enum declares them. */
 export const GRANTABLE_ACTIONS = ["READ", "WRITE", "DELETE", "EXECUTE", "EXTERNAL_REQUEST"] as const satisfies readonly ActionType[];
 
+/** Actions whose grant asks for an extra confirmation, because their effect is destructive or leaves the system. */
+export const HIGH_RISK_ACTIONS = ["DELETE", "EXECUTE", "EXTERNAL_REQUEST"] as const satisfies readonly ActionType[];
+export type HighRiskAction = (typeof HIGH_RISK_ACTIONS)[number];
+
+/** One line per high-risk action, shown in the grant confirmation. */
+export const HIGH_RISK_ACTION_COPY: Record<HighRiskAction, string> = {
+  DELETE: "Delete lets the agent remove data through this tool, and the gateway cannot undo a deletion it allowed.",
+  EXECUTE: "Execute lets the agent run commands or jobs through this tool.",
+  EXTERNAL_REQUEST: "External request lets the agent send data to systems outside your network through this tool.",
+};
+
+export function isHighRiskAction(action: ActionType): action is HighRiskAction {
+  return (HIGH_RISK_ACTIONS as readonly ActionType[]).includes(action);
+}
+
+/** The high-risk actions in a selection, in canonical order, without duplicates. */
+export function highRiskActionsIn(actions: readonly ActionType[]): HighRiskAction[] {
+  return HIGH_RISK_ACTIONS.filter((action) => actions.includes(action));
+}
+
 export interface PermissionGrantInput {
   toolId: string;
   actions: ActionType[];

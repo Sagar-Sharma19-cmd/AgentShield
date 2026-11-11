@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Copy, KeyRound, TriangleAlert } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -112,7 +113,13 @@ export function OneTimeKeyDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>New API key for {agentName}</DialogTitle>
+              <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">
+                {mode === "register" ? "Step 2 of 2 · API key" : "Key rotated · API key"}
+              </p>
+              <DialogTitle className="flex items-center gap-2">
+                <KeyRound aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                New API key for {agentName}
+              </DialogTitle>
               <DialogDescription>
                 This key is shown only once. Copy it now and store it where the agent can read it. It cannot be shown
                 again.
@@ -134,6 +141,7 @@ export function OneTimeKeyDialog({
               />
               <div className="flex flex-wrap items-center gap-3">
                 <Button variant="outline" size="sm" onClick={() => void copyKey()}>
+                  {copyState === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                   Copy key
                 </Button>
                 <p role="status" aria-live="polite" className="text-xs text-muted-foreground">
@@ -144,6 +152,7 @@ export function OneTimeKeyDialog({
             </div>
 
             <Alert>
+              <TriangleAlert aria-hidden="true" />
               <AlertTitle>AgentShield cannot clear your clipboard</AlertTitle>
               <AlertDescription>
                 After you copy the key, clear the clipboard yourself once it is stored.

@@ -100,6 +100,7 @@ function RegisterAgentForm({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
+          <p className="font-mono text-[0.6875rem] tracking-[0.08em] text-muted-foreground uppercase">Step 1 of 2 · Identity</p>
           <DialogTitle>Register an agent</DialogTitle>
           <DialogDescription>
             Creates an ACTIVE agent identity and returns its API key. The key is shown once, on the next screen.
