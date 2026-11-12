@@ -161,3 +161,11 @@ surefire-reports/
 .claude/skills/ui-ux-pro-max/
 .shared/ui-ux-pro-max/
 .agents/
+
+# AI tool setup (local only)
+.codex/
+.github/agents/
+.github/hooks/
+.github/skills/
+.claude/settings.local.json
+.impeccable/config.local.json

@@ -1,0 +1,614 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-12T14:40:25.432296+00:00",
+  "title": "Design System: AgentShield",
+  "extensions": {
+    "colorMeta": {
+      "signal-indigo": {
+        "role": "primary",
+        "displayName": "Signal Indigo",
+        "canonical": "oklch(0.5 0.17 268)",
+        "tonalRamp": [
+          "oklch(0.15 0.071 268)",
+          "oklch(0.27 0.101 268)",
+          "oklch(0.39 0.13 268)",
+          "oklch(0.51 0.16 268)",
+          "oklch(0.63 0.15 268)",
+          "oklch(0.75 0.121 268)",
+          "oklch(0.86 0.093 268)",
+          "oklch(0.95 0.071 268)"
+        ]
+      },
+      "signal-indigo-dark": {
+        "role": "primary",
+        "displayName": "Signal Indigo (dark)",
+        "canonical": "oklch(0.72 0.13 268)",
+        "tonalRamp": [
+          "oklch(0.15 0.054 268)",
+          "oklch(0.27 0.077 268)",
+          "oklch(0.39 0.1 268)",
+          "oklch(0.51 0.122 268)",
+          "oklch(0.63 0.115 268)",
+          "oklch(0.75 0.092 268)",
+          "oklch(0.86 0.071 268)",
+          "oklch(0.95 0.054 268)"
+        ]
+      },
+      "cool-paper": {
+        "role": "neutral",
+        "displayName": "Cool Paper",
+        "canonical": "oklch(0.985 0.002 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 265)",
+          "oklch(0.27 0.009 265)",
+          "oklch(0.39 0.012 265)",
+          "oklch(0.51 0.014 265)",
+          "oklch(0.63 0.013 265)",
+          "oklch(0.75 0.011 265)",
+          "oklch(0.86 0.008 265)",
+          "oklch(0.95 0.006 265)"
+        ]
+      },
+      "white-card": {
+        "role": "neutral",
+        "displayName": "White Card",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 0)",
+          "oklch(0.27 0.002 0)",
+          "oklch(0.39 0.002 0)",
+          "oklch(0.51 0.002 0)",
+          "oklch(0.63 0.002 0)",
+          "oklch(0.75 0.002 0)",
+          "oklch(0.86 0.002 0)",
+          "oklch(0.95 0.002 0)"
+        ]
+      },
+      "graphite-ink": {
+        "role": "neutral",
+        "displayName": "Graphite Ink",
+        "canonical": "oklch(0.21 0.015 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 265)",
+          "oklch(0.27 0.009 265)",
+          "oklch(0.39 0.012 265)",
+          "oklch(0.51 0.014 265)",
+          "oklch(0.63 0.013 265)",
+          "oklch(0.75 0.011 265)",
+          "oklch(0.86 0.008 265)",
+          "oklch(0.95 0.006 265)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.5 0.015 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.006 265)",
+          "oklch(0.27 0.009 265)",
+          "oklch(0.39 0.012 265)",
+          "oklch(0.51 0.014 265)",
+          "oklch(0.63 0.013 265)",
+          "oklch(0.75 0.011 265)",
+          "oklch(0.86 0.008 265)",
+          "oklch(0.95 0.006 265)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.915 0.005 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 265)",
+          "oklch(0.27 0.005 265)",
+          "oklch(0.39 0.006 265)",
+          "oklch(0.51 0.008 265)",
+          "oklch(0.63 0.007 265)",
+          "oklch(0.75 0.006 265)",
+          "oklch(0.86 0.004 265)",
+          "oklch(0.95 0.003 265)"
+        ]
+      },
+      "input-stroke": {
+        "role": "neutral",
+        "displayName": "Input Stroke",
+        "canonical": "oklch(0.88 0.006 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 265)",
+          "oklch(0.27 0.005 265)",
+          "oklch(0.39 0.006 265)",
+          "oklch(0.51 0.008 265)",
+          "oklch(0.63 0.007 265)",
+          "oklch(0.75 0.006 265)",
+          "oklch(0.86 0.004 265)",
+          "oklch(0.95 0.003 265)"
+        ]
+      },
+      "side-rail": {
+        "role": "neutral",
+        "displayName": "Side Rail",
+        "canonical": "oklch(0.97 0.003 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 265)",
+          "oklch(0.27 0.005 265)",
+          "oklch(0.39 0.006 265)",
+          "oklch(0.51 0.008 265)",
+          "oklch(0.63 0.007 265)",
+          "oklch(0.75 0.006 265)",
+          "oklch(0.86 0.004 265)",
+          "oklch(0.95 0.003 265)"
+        ]
+      },
+      "night-graphite": {
+        "role": "neutral",
+        "displayName": "Night Graphite",
+        "canonical": "oklch(0.16 0.008 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 265)",
+          "oklch(0.27 0.007 265)",
+          "oklch(0.39 0.009 265)",
+          "oklch(0.51 0.011 265)",
+          "oklch(0.63 0.011 265)",
+          "oklch(0.75 0.009 265)",
+          "oklch(0.86 0.007 265)",
+          "oklch(0.95 0.005 265)"
+        ]
+      },
+      "night-card": {
+        "role": "neutral",
+        "displayName": "Night Card",
+        "canonical": "oklch(0.195 0.009 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 265)",
+          "oklch(0.27 0.007 265)",
+          "oklch(0.39 0.009 265)",
+          "oklch(0.51 0.011 265)",
+          "oklch(0.63 0.011 265)",
+          "oklch(0.75 0.009 265)",
+          "oklch(0.86 0.007 265)",
+          "oklch(0.95 0.005 265)"
+        ]
+      },
+      "night-popover": {
+        "role": "neutral",
+        "displayName": "Night Popover",
+        "canonical": "oklch(0.215 0.01 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 265)",
+          "oklch(0.27 0.007 265)",
+          "oklch(0.39 0.009 265)",
+          "oklch(0.51 0.011 265)",
+          "oklch(0.63 0.011 265)",
+          "oklch(0.75 0.009 265)",
+          "oklch(0.86 0.007 265)",
+          "oklch(0.95 0.005 265)"
+        ]
+      },
+      "night-rail": {
+        "role": "neutral",
+        "displayName": "Night Rail",
+        "canonical": "oklch(0.145 0.008 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 265)",
+          "oklch(0.27 0.007 265)",
+          "oklch(0.39 0.009 265)",
+          "oklch(0.51 0.011 265)",
+          "oklch(0.63 0.011 265)",
+          "oklch(0.75 0.009 265)",
+          "oklch(0.86 0.007 265)",
+          "oklch(0.95 0.005 265)"
+        ]
+      },
+      "moonlight-ink": {
+        "role": "neutral",
+        "displayName": "Moonlight Ink",
+        "canonical": "oklch(0.96 0.004 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.003 265)",
+          "oklch(0.27 0.005 265)",
+          "oklch(0.39 0.006 265)",
+          "oklch(0.51 0.008 265)",
+          "oklch(0.63 0.007 265)",
+          "oklch(0.75 0.006 265)",
+          "oklch(0.86 0.004 265)",
+          "oklch(0.95 0.003 265)"
+        ]
+      },
+      "night-muted-ink": {
+        "role": "neutral",
+        "displayName": "Night Muted Ink",
+        "canonical": "oklch(0.72 0.012 265)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 265)",
+          "oklch(0.27 0.007 265)",
+          "oklch(0.39 0.009 265)",
+          "oklch(0.51 0.011 265)",
+          "oklch(0.63 0.011 265)",
+          "oklch(0.75 0.009 265)",
+          "oklch(0.86 0.007 265)",
+          "oklch(0.95 0.005 265)"
+        ]
+      },
+      "allow-green": {
+        "role": "semantic",
+        "displayName": "Allow Green",
+        "canonical": "oklch(0.52 0.13 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.054 155)",
+          "oklch(0.27 0.077 155)",
+          "oklch(0.39 0.1 155)",
+          "oklch(0.51 0.122 155)",
+          "oklch(0.63 0.115 155)",
+          "oklch(0.75 0.092 155)",
+          "oklch(0.86 0.071 155)",
+          "oklch(0.95 0.054 155)"
+        ]
+      },
+      "allow-green-text": {
+        "role": "semantic",
+        "displayName": "Allow Green (text)",
+        "canonical": "oklch(0.45 0.12 155)",
+        "tonalRamp": [
+          "oklch(0.15 0.05 155)",
+          "oklch(0.27 0.071 155)",
+          "oklch(0.39 0.092 155)",
+          "oklch(0.51 0.113 155)",
+          "oklch(0.63 0.106 155)",
+          "oklch(0.75 0.085 155)",
+          "oklch(0.86 0.066 155)",
+          "oklch(0.95 0.05 155)"
+        ]
+      },
+      "review-amber": {
+        "role": "semantic",
+        "displayName": "Review Amber",
+        "canonical": "oklch(0.8 0.15 80)",
+        "tonalRamp": [
+          "oklch(0.15 0.063 80)",
+          "oklch(0.27 0.089 80)",
+          "oklch(0.39 0.115 80)",
+          "oklch(0.51 0.141 80)",
+          "oklch(0.63 0.133 80)",
+          "oklch(0.75 0.106 80)",
+          "oklch(0.86 0.082 80)",
+          "oklch(0.95 0.063 80)"
+        ]
+      },
+      "review-amber-text": {
+        "role": "semantic",
+        "displayName": "Review Amber (text)",
+        "canonical": "oklch(0.48 0.11 65)",
+        "tonalRamp": [
+          "oklch(0.15 0.046 65)",
+          "oklch(0.27 0.065 65)",
+          "oklch(0.39 0.084 65)",
+          "oklch(0.51 0.104 65)",
+          "oklch(0.63 0.097 65)",
+          "oklch(0.75 0.078 65)",
+          "oklch(0.86 0.06 65)",
+          "oklch(0.95 0.046 65)"
+        ]
+      },
+      "deny-red": {
+        "role": "semantic",
+        "displayName": "Deny Red",
+        "canonical": "oklch(0.54 0.2 27)",
+        "tonalRamp": [
+          "oklch(0.15 0.084 27)",
+          "oklch(0.27 0.119 27)",
+          "oklch(0.39 0.153 27)",
+          "oklch(0.51 0.188 27)",
+          "oklch(0.63 0.177 27)",
+          "oklch(0.75 0.142 27)",
+          "oklch(0.86 0.11 27)",
+          "oklch(0.95 0.084 27)"
+        ]
+      },
+      "deny-red-text": {
+        "role": "semantic",
+        "displayName": "Deny Red (text)",
+        "canonical": "oklch(0.5 0.19 27)",
+        "tonalRamp": [
+          "oklch(0.15 0.079 27)",
+          "oklch(0.27 0.113 27)",
+          "oklch(0.39 0.146 27)",
+          "oklch(0.51 0.179 27)",
+          "oklch(0.63 0.168 27)",
+          "oklch(0.75 0.135 27)",
+          "oklch(0.86 0.104 27)",
+          "oklch(0.95 0.079 27)"
+        ]
+      },
+      "high-orange": {
+        "role": "semantic",
+        "displayName": "High Orange",
+        "canonical": "oklch(0.66 0.17 50)",
+        "tonalRamp": [
+          "oklch(0.15 0.071 50)",
+          "oklch(0.27 0.101 50)",
+          "oklch(0.39 0.13 50)",
+          "oklch(0.51 0.16 50)",
+          "oklch(0.63 0.15 50)",
+          "oklch(0.75 0.121 50)",
+          "oklch(0.86 0.093 50)",
+          "oklch(0.95 0.071 50)"
+        ]
+      },
+      "high-orange-text": {
+        "role": "semantic",
+        "displayName": "High Orange (text)",
+        "canonical": "oklch(0.5 0.14 50)",
+        "tonalRamp": [
+          "oklch(0.15 0.059 50)",
+          "oklch(0.27 0.083 50)",
+          "oklch(0.39 0.107 50)",
+          "oklch(0.51 0.132 50)",
+          "oklch(0.63 0.124 50)",
+          "oklch(0.75 0.099 50)",
+          "oklch(0.86 0.077 50)",
+          "oklch(0.95 0.059 50)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Page title",
+        "purpose": "One per page."
+      },
+      "title": {
+        "displayName": "Sheet / dialog title",
+        "purpose": "Overlays."
+      },
+      "card-title": {
+        "displayName": "Card title",
+        "purpose": "Cards and sections."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "UI text, table cells, controls."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, metadata, table headers."
+      },
+      "data-mono": {
+        "displayName": "Data mono",
+        "purpose": "IDs, keys, resources, JSON, scores."
+      },
+      "kpi": {
+        "displayName": "KPI",
+        "purpose": "Overview headline numbers."
+      }
+    },
+    "shadows": [
+      {
+        "name": "overlay",
+        "value": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "purpose": "Tailwind shadow-md: dropdowns, popovers, toasts."
+      },
+      {
+        "name": "modal",
+        "value": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "purpose": "Tailwind shadow-lg: dialogs and sheets over an overlay."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.2, 0.7, 0.2, 1)",
+        "purpose": "Default for state changes."
+      },
+      {
+        "name": "ease-enter",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Decelerate in."
+      },
+      {
+        "name": "ease-exit",
+        "value": "cubic-bezier(0.4, 0, 1, 1)",
+        "purpose": "Accelerate out."
+      },
+      {
+        "name": "duration-fast",
+        "value": "120ms",
+        "purpose": "Hover, press, toggles, status change."
+      },
+      {
+        "name": "duration-base",
+        "value": "200ms",
+        "purpose": "Entrances, popovers, page fade."
+      },
+      {
+        "name": "duration-slow",
+        "value": "320ms",
+        "purpose": "Sheets, dialogs."
+      },
+      {
+        "name": "spring-snappy",
+        "value": "stiffness 500, damping 40, mass 1",
+        "purpose": "Toggles, nav pill."
+      },
+      {
+        "name": "spring-layout",
+        "value": "stiffness 380, damping 36, mass 1",
+        "purpose": "Reorders, row insertion."
+      },
+      {
+        "name": "spring-gentle",
+        "value": "stiffness 260, damping 30, mass 1",
+        "purpose": "Panels, sheets."
+      },
+      {
+        "name": "stagger",
+        "value": "40ms each, 300ms max total",
+        "purpose": "First render of a list; one per view."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "xl",
+        "value": "1280px"
+      },
+      {
+        "name": "2xl",
+        "value": "1536px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The main action on a surface: Signal Indigo fill.",
+      "html": "<button class=\"ds-btn-primary\">Approve request</button>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:10px;border:1px solid transparent;font:500 14px/20px var(--font-inter, Inter, system-ui, sans-serif);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms,box-shadow 120ms;background:var(--primary);color:var(--primary-foreground);} .ds-btn-primary:hover{background:color-mix(in oklch, var(--primary) 80%, transparent);} .ds-btn-primary:focus-visible{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);} .ds-btn-primary:active{transform:translateY(1px);}"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary actions: a hairline border on the page.",
+      "html": "<button class=\"ds-btn-outline\">Refresh</button>",
+      "css": ".ds-btn-outline{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:10px;border:1px solid transparent;font:500 14px/20px var(--font-inter, Inter, system-ui, sans-serif);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms,box-shadow 120ms;background:var(--background);color:var(--foreground);border-color:var(--border);} .ds-btn-outline:hover{background:var(--muted);} .ds-btn-outline:focus-visible{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);} .ds-btn-outline:active{transform:translateY(1px);}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Toolbar and icon actions with no resting fill.",
+      "html": "<button class=\"ds-btn-ghost\">Copy ID</button>",
+      "css": ".ds-btn-ghost{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:10px;border:1px solid transparent;font:500 14px/20px var(--font-inter, Inter, system-ui, sans-serif);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms,box-shadow 120ms;background:transparent;color:var(--foreground);} .ds-btn-ghost:hover{background:var(--muted);} .ds-btn-ghost:focus-visible{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);}"
+    },
+    {
+      "name": "Destructive Button",
+      "kind": "button",
+      "refersTo": "button-destructive",
+      "description": "Reject, revoke, suspend: a red tint, never a solid block.",
+      "html": "<button class=\"ds-btn-destructive\">Revoke agent</button>",
+      "css": ".ds-btn-destructive{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:10px;border:1px solid transparent;font:500 14px/20px var(--font-inter, Inter, system-ui, sans-serif);cursor:pointer;transition:background-color 120ms cubic-bezier(0.2,0.7,0.2,1),border-color 120ms,box-shadow 120ms;background:color-mix(in oklch, var(--destructive) 10%, transparent);color:var(--destructive);} .ds-btn-destructive:hover{background:color-mix(in oklch, var(--destructive) 20%, transparent);} .ds-btn-destructive:focus-visible{outline:none;box-shadow:0 0 0 3px color-mix(in oklch, var(--destructive) 20%, transparent);}"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Filters and form fields: compact, hairline stroke, indigo focus.",
+      "html": "<input class=\"ds-input\" placeholder=\"Filter by agent\" aria-label=\"Filter by agent\" />",
+      "css": ".ds-input{height:32px;width:240px;padding:4px 10px;border-radius:10px;border:1px solid var(--input);background:transparent;color:var(--foreground);font:400 14px/20px var(--font-inter, Inter, system-ui, sans-serif);transition:border-color 120ms,box-shadow 120ms;} .ds-input::placeholder{color:var(--muted-foreground);} .ds-input:focus-visible{outline:none;border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 50%, transparent);} .ds-input[aria-invalid=true]{border-color:var(--destructive);}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Level-1 container: card surface plus a 1px ring, no shadow.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Review triage</h3><p class=\"ds-card-body\">3 reviews need action. The soonest expires in 12 min.</p></div>",
+      "css": ".ds-card{width:320px;padding:16px;border-radius:14px;background:var(--card);color:var(--card-foreground);box-shadow:0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent);} .ds-card-title{margin:0 0 6px;font:500 16px/24px var(--font-space-grotesk, 'Space Grotesk', system-ui, sans-serif);letter-spacing:-0.01em;} .ds-card-body{margin:0;font:400 14px/20px var(--font-inter, Inter, system-ui, sans-serif);color:var(--muted-foreground);}"
+    },
+    {
+      "name": "Sidebar Nav Item",
+      "kind": "nav",
+      "refersTo": "nav-item",
+      "description": "Active state is pill + 3px indigo bar + weight + aria-current.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item\" href=\"#\">Overview</a><a class=\"ds-nav-item\" href=\"#\" aria-current=\"page\">Reviews <span class=\"ds-nav-count\">3</span></a><a class=\"ds-nav-item\" href=\"#\">Agents</a></nav>",
+      "css": ".ds-nav{display:flex;flex-direction:column;gap:2px;width:220px;padding:8px;background:var(--sidebar);border-radius:10px;} .ds-nav-item{position:relative;display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 10px;border-radius:8px;color:var(--sidebar-foreground);text-decoration:none;font:400 14px/20px var(--font-inter, Inter, system-ui, sans-serif);transition:background-color 120ms;} .ds-nav-item:hover{background:var(--sidebar-accent);} .ds-nav-item:focus-visible{outline:2px solid var(--ring);outline-offset:2px;} .ds-nav-item[aria-current=page]{background:var(--sidebar-accent);font-weight:500;} .ds-nav-item[aria-current=page]::before{content:'';position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:3px;background:var(--sidebar-primary);} .ds-nav-count{font:500 12px/16px var(--font-jetbrains-mono, 'JetBrains Mono', monospace);font-variant-numeric:tabular-nums;color:var(--warning-text);}"
+    },
+    {
+      "name": "Decision Badges",
+      "kind": "chip",
+      "refersTo": "badge-allow",
+      "description": "Signature mark: tint + text tone + icon + label for ALLOW / REVIEW / DENY.",
+      "html": "<div class=\"ds-badges\"><span class=\"ds-badge ds-badge-allow\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/></svg>Allowed</span><span class=\"ds-badge ds-badge-review\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 6v6l4 2\"/></svg>Review required</span><span class=\"ds-badge ds-badge-deny\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m4.9 4.9 14.2 14.2\"/></svg>Denied</span></div>",
+      "css": ".ds-badges{display:flex;gap:8px;flex-wrap:wrap;} .ds-badge{display:inline-flex;align-items:center;gap:6px;height:22px;padding:2px 8px;border-radius:8px;font:500 12px/16px var(--font-inter, Inter, system-ui, sans-serif);} .ds-badge-allow{background:color-mix(in oklch, var(--success) 10%, transparent);color:var(--success-text);} .ds-badge-review{background:color-mix(in oklch, var(--warning) 20%, transparent);color:var(--warning-text);} .ds-badge-deny{background:color-mix(in oklch, var(--danger) 10%, transparent);color:var(--danger-text);}"
+    },
+    {
+      "name": "Content Findings",
+      "kind": "custom",
+      "refersTo": "content-findings",
+      "description": "Signature V13 list: decision icon + category + type, then Location and redacted Preview in mono. Never a raw value.",
+      "html": "<div class=\"ds-findings\"><ul class=\"ds-findings-list\" aria-label=\"Content findings\"><li class=\"ds-finding\"><p class=\"ds-finding-head\"><span class=\"ds-finding-icon ds-tone-deny\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m4.9 4.9 14.2 14.2\"/></svg></span><span class=\"ds-finding-cat\">Secret</span><span class=\"ds-finding-sep\" aria-hidden=\"true\">·</span><span>AWS access key</span></p><dl class=\"ds-finding-dl\"><dt>Location</dt><dd>arguments.env.AWS_ACCESS_KEY_ID</dd><dt>Preview</dt><dd>AKIA… (20 chars)</dd></dl></li><li class=\"ds-finding\"><p class=\"ds-finding-head\"><span class=\"ds-finding-icon ds-tone-review\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 6v6l4 2\"/></svg></span><span class=\"ds-finding-cat\">Personal data</span><span class=\"ds-finding-sep\" aria-hidden=\"true\">·</span><span>Email address</span></p><dl class=\"ds-finding-dl\"><dt>Location</dt><dd>arguments.body</dd><dt>Preview</dt><dd>j…@… (17 chars)</dd></dl></li></ul><p class=\"ds-findings-note\">Previews are redacted by the gateway. The raw values are never stored, so they cannot be shown here.</p></div>",
+      "css": ".ds-findings{display:flex;flex-direction:column;gap:8px;width:360px;font-family:var(--font-inter, Inter, system-ui, sans-serif);color:var(--foreground);} .ds-findings-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;} .ds-finding{border:1px solid var(--border);border-radius:8px;padding:8px 12px;} .ds-finding-head{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;font:400 14px/20px var(--font-inter, Inter, system-ui, sans-serif);} .ds-finding-icon{display:inline-flex;} .ds-tone-deny{color:var(--danger-text);} .ds-tone-review{color:var(--warning-text);} .ds-finding-cat{font-weight:500;} .ds-finding-sep{color:var(--muted-foreground);} .ds-finding-dl{margin:6px 0 0;display:grid;grid-template-columns:4.5rem 1fr;gap:4px 12px;font-size:12px;line-height:16px;} .ds-finding-dl dt{color:var(--muted-foreground);} .ds-finding-dl dd{margin:0;min-width:0;font-family:var(--font-jetbrains-mono, 'JetBrains Mono', monospace);word-break:break-all;} .ds-findings-note{margin:0;font-size:12px;line-height:16px;color:var(--muted-foreground);}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Graphite Checkpoint",
+    "overview": "**Creative North Star: \"The Graphite Checkpoint\"**\n\nThe console is a neutral, graphite-toned checkpoint. Nearly everything an operator sees is quiet: near-neutral surfaces with a faint blue cast, hairline borders and compact type. One indigo accent marks interaction and focus. Saturated colour is reserved for verdicts. When green, amber, orange or red appears, a gate has made a decision, and the colour always arrives with an icon and a label that say the same thing.\n\nThe system is dense but readable. It is built for an operator triaging reviews against an expiry clock. Tables beat cards wherever the content is rows. Identifiers, keys, request IDs and scores are set in monospace with tabular figures so they can be compared at a glance. Motion confirms state changes and never decorates. Dark is the primary theme, but light is a complete, independently tuned map, not an inversion. Both are held to the same contrast tests.\n\nThe rejected direction is the neon \"hacker\" console: no glowing text, no vibrant neon accents, no matrix green.\n\nThe canonical source of every token is `frontend/src/app/globals.css`, authored in OKLCH. `docs/frontend-design-system.md` holds the full rationale, the page-by-page specs and the contrast evidence.",
+    "keyCharacteristics": [
+      "Graphite neutrals with a faint blue cast (hue 265) in both themes",
+      "A single indigo accent (hue 268) for interaction, focus and active navigation",
+      "Saturated colour only for security state, always paired with an icon and a text label",
+      "Hairline borders and surface steps instead of shadows",
+      "Three typefaces with strict jobs: Inter for UI, Space Grotesk for headings, JetBrains Mono for data",
+      "Short, damped motion (120–320 ms) that respects reduced motion"
+    ],
+    "rules": [
+      {
+        "name": "The Verdict-Only Saturation Rule",
+        "body": "Green, amber, orange and red mean a security state, and nothing else. Brand tones (`--brand-*`) are decorative backgrounds only and never signal severity.",
+        "section": "colors"
+      },
+      {
+        "name": "The Never-Alone Rule",
+        "body": "Every decision and risk tier pairs an icon, a label and a tone: CircleCheck \"Allowed\", Clock \"Review required\", Ban \"Denied\"; ShieldCheck, ShieldHalf, ShieldAlert and Flame for LOW to CRITICAL. If the colour were removed, the state must still read correctly.",
+        "section": "colors"
+      },
+      {
+        "name": "The Paired-Theme Rule",
+        "body": "A new colour token gets a light value and a separately tuned dark value, and its text/background pairs are added to the contrast tests (`theme-contrast.test.ts`, `semantic-contrast.test.ts`, minimum 4.5:1).",
+        "section": "colors"
+      },
+      {
+        "name": "The Tabular Rule",
+        "body": "Every number that updates or sits in a column uses tabular figures.",
+        "section": "typography"
+      },
+      {
+        "name": "The Heading-Only Grotesk Rule",
+        "body": "Space Grotesk is for h1–h4 only. Body text, tables and controls stay in Inter.",
+        "section": "typography"
+      },
+      {
+        "name": "The Rows-Are-Tables Rule",
+        "body": "Content that is a list of comparable records is a table (or a compact list on mobile), not a grid of cards.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-At-Rest Rule",
+        "body": "Cards and tables never carry a shadow. Only floating layers do.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One-Border Rule",
+        "body": "One border colour (`--border`) everywhere. Never stack borders on adjacent surfaces.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** read colours through the semantic tokens (`bg-card`, `text-danger-text`). Never use raw OKLCH in components.",
+      "**Do** pair every security state with an icon and a label. Colour only reinforces them.",
+      "**Do** set identifiers, keys, resources and scores in JetBrains Mono with tabular figures.",
+      "**Do** keep motion to transform and opacity: 120 ms for state changes, 200 ms for entrances, 320 ms for sheets, springs damped at ζ ≥ 0.8, and no more than one stagger per view.",
+      "**Do** give every surface its Loading, Empty, Error and Unauthorized states.",
+      "**Do** test new text/background pairs in both themes at a minimum of 4.5:1."
+    ],
+    "donts": [
+      "**Don't** use neon accents, glowing text or a \"hacker\" aesthetic.",
+      "**Don't** use green, amber, orange or red for anything other than a security state, and never use a brand tone to signal severity.",
+      "**Don't** put shadows on cards or tables, or stack borders on adjacent surfaces.",
+      "**Don't** replay entrance animations on a refetch, animate table cells, or use infinite decorative loops. Spinners and skeleton pulses are the only exceptions.",
+      "**Don't** delay a verdict with motion. A DENY must be legible immediately.",
+      "**Don't** show raw secrets or PII. Display only the gateway's redacted previews."
+    ]
+  }
+}
