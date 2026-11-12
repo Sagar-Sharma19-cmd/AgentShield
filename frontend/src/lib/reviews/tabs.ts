@@ -7,8 +7,13 @@
  *   decided reviews once expiresAt passes, so it does not move them; the timeline shows what it means.
  * - Expired: PENDING and IN_REVIEW reviews whose backend `expired` flag is true. They timed out before a
  *   decision and are never offered as actionable.
+ *
+ * Given the local clock (`now`), Needs action and Expired also use isEffectivelyExpired (flag OR expiresAt
+ * reached), so a review leaves Needs action the moment it expires instead of at the next poll. The sidebar
+ * badge counts exactly the Needs action tab (needsActionCount), so the two always agree.
  */
 import { z } from "zod";
+import { isEffectivelyExpired } from "@/lib/reviews/expiry";
 import { CONFIRMABLE_ACTIONS, parseReviewParams, type ConfirmableAction } from "@/lib/reviews/model";
 import type { ReviewRequestResponse, ReviewStatus } from "@/types/api";
 
@@ -32,9 +37,25 @@ export const TAB_STATUSES: Record<ReviewTab, readonly ReviewStatus[]> = {
 
 const OPEN_STATUSES: ReadonlySet<ReviewStatus> = new Set(["PENDING", "IN_REVIEW"]);
 
-/** The tab a review belongs on, by the backend's status and expired flag. */
-export function tabFor(review: Pick<ReviewRequestResponse, "status" | "expired">): ReviewTab {
-  if (OPEN_STATUSES.has(review.status)) return review.expired ? "expired" : "needs-action";
+/**
+ * True for a review an operator can still act on: PENDING or IN_REVIEW and not expired. With `now`, expiry is
+ * isEffectivelyExpired (the backend flag, or expiresAt reached); without it, the backend flag alone.
+ */
+export function needsAction(
+  review: Pick<ReviewRequestResponse, "status" | "expired"> & Partial<Pick<ReviewRequestResponse, "expiresAt">>,
+  now?: number,
+): boolean {
+  if (!OPEN_STATUSES.has(review.status)) return false;
+  if (now === undefined || review.expiresAt === undefined) return !review.expired;
+  return !isEffectivelyExpired({ expired: review.expired, expiresAt: review.expiresAt }, now);
+}
+
+/** The tab a review belongs on, by the backend's status and expiry (see needsAction for `now`). */
+export function tabFor(
+  review: Pick<ReviewRequestResponse, "status" | "expired"> & Partial<Pick<ReviewRequestResponse, "expiresAt">>,
+  now?: number,
+): ReviewTab {
+  if (OPEN_STATUSES.has(review.status)) return needsAction(review, now) ? "needs-action" : "expired";
   return review.status === "APPROVED" ? "approved" : "rejected";
 }
 
@@ -62,6 +83,7 @@ type Review = Pick<ReviewRequestResponse, "id" | "status" | "expired" | "created
  */
 export function partitionReviews<T extends Review>(
   lists: Partial<Record<ReviewStatus, readonly T[] | undefined>>,
+  now?: number,
 ): Record<ReviewTab, T[] | undefined> {
   const byId = new Map<string, T>();
   for (const status of ["PENDING", "IN_REVIEW", "APPROVED", "REJECTED"] as const) {
@@ -78,10 +100,21 @@ export function partitionReviews<T extends Review>(
       result[tab] = undefined;
       continue;
     }
-    const rows = all.filter((review) => tabFor(review) === tab);
+    const rows = all.filter((review) => tabFor(review, now) === tab);
     result[tab] = rows.sort(tab === "needs-action" ? soonestFirst : newestFirst);
   }
   return result;
+}
+
+/**
+ * The sidebar Reviews badge: the size of the Needs action tab for the PENDING and IN_REVIEW lists at `now`.
+ * Undefined until both lists have loaded, so the badge never shows a partial count.
+ */
+export function needsActionCount<T extends Review>(
+  lists: Partial<Record<"PENDING" | "IN_REVIEW", readonly T[] | undefined>>,
+  now: number,
+): number | undefined {
+  return partitionReviews(lists, now)["needs-action"]?.length;
 }
 
 /** Counts for the tab labels. Undefined while unknown, so the UI shows a dash instead of a false 0. */

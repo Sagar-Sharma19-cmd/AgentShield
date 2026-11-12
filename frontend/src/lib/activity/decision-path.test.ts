@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthorizationResult, DecisionType, EscalationSource } from "@/types/api";
-import { decidingStepIndex, decisionPath, STEP_STATUS_LABELS, type PathInput, type StepStatus } from "./decision-path";
+import { decidingStepIndex, decisionPath, STEP_STATUS_LABELS, type PathInput, type ReviewOutcome, type StepStatus } from "./decision-path";
 
 function row(
   authorizationResult: AuthorizationResult,
@@ -123,5 +123,82 @@ describe("decisionPath", () => {
 
   it("labels every status", () => {
     for (const label of Object.values(STEP_STATUS_LABELS)) expect(label.length).toBeGreaterThan(0);
+  });
+});
+
+describe("decisionPath with a review outcome (review detail panel)", () => {
+  const held = row("AUTHORIZED", "REVIEW", "NONE", 10);
+  const outcome = (status: ReviewOutcome["status"], claimed: boolean, expired: boolean, reviewer: string | null = "sagar"): PathInput => ({
+    ...held,
+    reviewOutcome: { status, reviewer, claimed, expired },
+  });
+  const last = (input: PathInput) => decisionPath(input)[5];
+
+  it("APPROVED and claimed: decided after review", () => {
+    expect(last(outcome("APPROVED", true, false))).toEqual({
+      gate: "PASSED",
+      status: "decided-after-review",
+      note: "Approved by sagar, then claimed once by the agent.",
+    });
+    // Claimed counts even once the review window has passed.
+    expect(last(outcome("APPROVED", true, true)).status).toBe("decided-after-review");
+  });
+
+  it("APPROVED, not claimed, not expired: waiting for the claim", () => {
+    expect(last(outcome("APPROVED", false, false))).toMatchObject({
+      status: "not-reached",
+      note: "Approved by sagar. Waiting for the agent to claim it.",
+    });
+  });
+
+  it("APPROVED, not claimed, expired: nothing ran", () => {
+    expect(last(outcome("APPROVED", false, true)).note).toBe("Approved by sagar, but the approval expired unclaimed. Nothing ran.");
+  });
+
+  it("REJECTED: nothing ran", () => {
+    expect(last(outcome("REJECTED", false, false))).toMatchObject({ status: "not-reached", note: "Rejected by sagar. Nothing ran." });
+  });
+
+  it("PENDING or IN_REVIEW: the current hold text", () => {
+    const hold = last(held);
+    expect(last(outcome("PENDING", false, false))).toEqual(hold);
+    expect(last(outcome("IN_REVIEW", false, false))).toEqual(hold);
+    expect(hold.note).toBe("Not allowed yet: the request is held for review.");
+  });
+
+  it("PENDING after expiry: expired before anyone decided", () => {
+    expect(last(outcome("PENDING", false, true))).toMatchObject({
+      status: "not-reached",
+      note: "Expired before anyone decided. Nothing ran.",
+    });
+    expect(last(outcome("IN_REVIEW", false, true)).note).toBe("Expired before anyone decided. Nothing ran.");
+  });
+
+  it("names an operator when the reviewer was not recorded", () => {
+    expect(last(outcome("REJECTED", false, false, null)).note).toBe("Rejected by an operator. Nothing ran.");
+    expect(last(outcome("APPROVED", true, false, "  ")).note).toBe("Approved by an operator, then claimed once by the agent.");
+  });
+
+  it("leaves the first five steps, and the single deciding gate, unchanged", () => {
+    const base = decisionPath(held);
+    for (const input of [outcome("APPROVED", true, false), outcome("REJECTED", false, false), outcome("PENDING", false, true)]) {
+      const path = decisionPath(input);
+      expect(path.slice(0, 5)).toEqual(base.slice(0, 5));
+      expect(path.filter((step) => step.status === "decided")).toHaveLength(1);
+      expect(decidingStepIndex(input)).toBe(decidingStepIndex(held));
+    }
+  });
+
+  it("without an outcome (Activity rows) the path is exactly as before; an outcome never changes ALLOW or DENY", () => {
+    expect(decisionPath(held)[5].note).toBe("Not allowed yet: the request is held for review.");
+    const allow = row("AUTHORIZED", "ALLOW", "NONE", 20);
+    const deny = row("AUTHORIZED", "DENY", "NONE");
+    const approved = { status: "APPROVED" as const, reviewer: "sagar", claimed: true, expired: false };
+    expect(decisionPath({ ...allow, reviewOutcome: approved })).toEqual(decisionPath(allow));
+    expect(decisionPath({ ...deny, reviewOutcome: approved })).toEqual(decisionPath(deny));
+  });
+
+  it("labels the new status", () => {
+    expect(STEP_STATUS_LABELS["decided-after-review"]).toBe("Decided after review");
   });
 });

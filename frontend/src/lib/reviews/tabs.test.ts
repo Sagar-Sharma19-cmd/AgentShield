@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewStatus } from "@/types/api";
-import { buildWorkspaceHref, parseWorkspaceParams, partitionReviews, tabCounts, tabFor } from "./tabs";
+import { buildWorkspaceHref, needsAction, needsActionCount, parseWorkspaceParams, partitionReviews, tabCounts, tabFor } from "./tabs";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 
@@ -49,6 +49,56 @@ describe("partitionReviews", () => {
     const tabs = partitionReviews({ PENDING: [row("x", "PENDING")], IN_REVIEW: [], APPROVED: [row("x", "APPROVED")], REJECTED: [] });
     expect(tabs["needs-action"]).toEqual([]);
     expect(tabs.approved?.map((r) => r.id)).toEqual(["x"]);
+  });
+});
+
+describe("needsAction and the sidebar badge (needsActionCount)", () => {
+  // Expiry is derived from expiresAt and never stored: an expired review keeps status PENDING, and between polls
+  // the backend's expired flag can still say false.
+  const BEFORE = Date.parse("2026-11-10T10:20:00Z");
+  const AFTER = Date.parse("2026-11-10T10:40:00Z");
+
+  it("counts only open reviews whose expiresAt is later than now", () => {
+    const lists = {
+      PENDING: [
+        row("live", "PENDING", false, "2026-11-10T10:00:00Z", "2026-11-10T11:00:00Z"),
+        row("stale", "PENDING", false, "2026-11-10T09:00:00Z", "2026-11-10T09:30:00Z"),
+        row("flagged", "PENDING", true, "2026-11-10T10:00:00Z", "2026-11-10T11:00:00Z"),
+      ],
+      IN_REVIEW: [row("working", "IN_REVIEW", false, "2026-11-10T10:00:00Z", "2026-11-10T11:00:00Z")],
+    };
+    expect(needsActionCount(lists, BEFORE)).toBe(2);
+  });
+
+  it("drops an expired PENDING row whose flag still says false, as soon as the clock passes expiresAt", () => {
+    const lists = { PENDING: [row("p", "PENDING", false, "2026-11-10T10:00:00Z", "2026-11-10T10:30:00Z")], IN_REVIEW: [] };
+    expect(needsActionCount(lists, BEFORE)).toBe(1);
+    expect(needsActionCount(lists, AFTER)).toBe(0);
+    expect(needsActionCount(lists, Date.parse("2026-11-10T10:30:00Z"))).toBe(0);
+  });
+
+  it("is exactly the Needs action tab at the same instant", () => {
+    const lists = {
+      PENDING: [row("a", "PENDING", false, "2026-11-10T10:00:00Z", "2026-11-10T10:30:00Z"), row("b", "PENDING")],
+      IN_REVIEW: [row("c", "IN_REVIEW", false, "2026-11-10T10:00:00Z", "2026-11-10T12:00:00Z")],
+    };
+    for (const now of [BEFORE, AFTER]) {
+      expect(needsActionCount(lists, now)).toBe(partitionReviews(lists, now)["needs-action"]?.length);
+    }
+    expect(partitionReviews(lists, AFTER).expired?.map((r) => r.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("counts a review in both lists once, and is unknown until both lists load", () => {
+    const moved = row("m", "IN_REVIEW", false, "2026-11-10T10:00:00Z", "2026-11-10T11:00:00Z");
+    expect(needsActionCount({ PENDING: [{ ...moved, status: "PENDING" as const }], IN_REVIEW: [moved] }, BEFORE)).toBe(1);
+    expect(needsActionCount({ PENDING: [row("p", "PENDING")] }, BEFORE)).toBeUndefined();
+  });
+
+  it("needsAction: decided reviews never need action; without a clock the backend flag decides", () => {
+    expect(needsAction(row("a", "APPROVED"), BEFORE)).toBe(false);
+    expect(needsAction(row("r", "REJECTED"), BEFORE)).toBe(false);
+    expect(needsAction(row("p", "PENDING", false, "2026-11-10T09:00:00Z", "2026-11-10T09:30:00Z"))).toBe(true);
+    expect(tabFor(row("p", "PENDING", false, "2026-11-10T09:00:00Z", "2026-11-10T09:30:00Z"), AFTER)).toBe("expired");
   });
 });
 

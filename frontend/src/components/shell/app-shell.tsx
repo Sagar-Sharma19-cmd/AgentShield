@@ -18,7 +18,9 @@ import { LogoTile } from "@/components/shell/logo-mark";
 import { SidebarNav } from "@/components/shell/sidebar-nav";
 import { useAdminKey } from "@/lib/auth/admin-key";
 import { useSidebarCollapsed } from "@/lib/hooks/use-sidebar-collapsed";
+import { useNow } from "@/components/reviews/use-review-clock";
 import { useReviewsByStatus } from "@/lib/queries/reviews";
+import { needsActionCount } from "@/lib/reviews/tabs";
 import { isApplePlatform, paletteAriaShortcut, paletteShortcutLabel } from "@/lib/shell/commands";
 import { environmentLabel } from "@/lib/shell/environment";
 import { badgeCountLabel, breadcrumbsFor } from "@/lib/shell/navigation";
@@ -63,9 +65,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 function UnlockedShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
-  // The existing PENDING review query (same key, endpoint and refresh interval as the Reviews page).
+  // The existing PENDING and IN_REVIEW list queries (same keys, endpoint and refresh interval as the Reviews
+  // page). The badge counts reviews that need action, exactly like the Needs action tab: open and not expired.
+  // Recomputed on every refetch, and on the 30 s clock tick so a review drops out when it expires.
+  const now = useNow();
   const pending = useReviewsByStatus("PENDING");
-  const pendingReviews = pending.isError ? undefined : pending.data?.length;
+  const inReview = useReviewsByStatus("IN_REVIEW");
+  const pendingReviews =
+    pending.isError || inReview.isError ? undefined : needsActionCount({ PENDING: pending.data, IN_REVIEW: inReview.data }, now);
 
   return (
     <SecurityAlertsProvider>

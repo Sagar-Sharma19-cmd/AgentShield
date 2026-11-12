@@ -9,7 +9,8 @@ import {
   describeActionError,
   initialConfirmation,
   parseReviewParams,
-  resolveAgent,
+  grantRequestFor,
+  resolveAgentLookup,
   sortNewestFirst,
   transitionLabel,
 } from "./model";
@@ -142,7 +143,7 @@ describe("describeActionError", () => {
   });
 });
 
-describe("resolveAgent", () => {
+describe("resolveAgentLookup", () => {
   const agent = {
     id: "agent-1",
     name: "Deploy bot",
@@ -154,19 +155,52 @@ describe("resolveAgent", () => {
   };
 
   it("reports loading while the registry request is in flight, even if the agent is not known yet", () => {
-    expect(resolveAgent({ state: "loading" }, "agent-1")).toEqual({ kind: "loading" });
+    expect(resolveAgentLookup({ state: "loading" }, "agent-1")).toEqual({ kind: "loading" });
   });
 
   it("reports error when the registry failed, so absence is not claimed", () => {
-    expect(resolveAgent({ state: "error" }, "agent-1")).toEqual({ kind: "error" });
+    expect(resolveAgentLookup({ state: "error" }, "agent-1")).toEqual({ kind: "error" });
   });
 
   it("reports absent only when the registry loaded and does not contain the agent", () => {
-    expect(resolveAgent({ state: "ready", agents: [agent] }, "agent-2")).toEqual({ kind: "absent" });
+    expect(resolveAgentLookup({ state: "ready", agents: [agent] }, "agent-2")).toEqual({ kind: "absent" });
   });
 
   it("returns the agent when the registry loaded and contains it", () => {
-    expect(resolveAgent({ state: "ready", agents: [agent] }, "agent-1")).toEqual({ kind: "found", agent });
+    expect(resolveAgentLookup({ state: "ready", agents: [agent] }, "agent-1")).toEqual({ kind: "found", agent });
+  });
+
+  it("finds an agent that sent its name instead of its id", () => {
+    expect(resolveAgentLookup({ state: "ready", agents: [agent] }, "Deploy bot")).toEqual({ kind: "found", agent });
+  });
+});
+
+describe("grantRequestFor (the grant section only ever requests a resolved UUID)", () => {
+  const agent = {
+    id: "11111111-2222-4333-8444-555555555555",
+    name: "jenkins-ci-agent",
+    description: null,
+    status: "ACTIVE" as const,
+    apiKeyPrefix: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("fetches with the registry UUID, even when the review named the agent", () => {
+    const resolution = resolveAgentLookup({ state: "ready", agents: [agent] }, "jenkins-ci-agent");
+    expect(grantRequestFor(resolution)).toEqual({ kind: "fetch", agentId: agent.id });
+  });
+
+  it("skips the request with a calm note when the agent is not in the registry", () => {
+    const request = grantRequestFor(resolveAgentLookup({ state: "ready", agents: [agent] }, "someone-else"));
+    expect(request.kind).toBe("skip");
+    expect(request).not.toHaveProperty("agentId");
+    expect(request.kind === "skip" && request.note).toMatch(/not in the agent registry/);
+  });
+
+  it("waits while the registry loads, and skips if it failed", () => {
+    expect(grantRequestFor({ kind: "loading" })).toEqual({ kind: "waiting" });
+    expect(grantRequestFor({ kind: "error" }).kind).toBe("skip");
   });
 });
 

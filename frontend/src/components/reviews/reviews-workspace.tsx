@@ -10,6 +10,7 @@ import { Kbd } from "@/components/shell/command-palette";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { resolveAgent } from "@/lib/agents/resolve";
 import { useAgentRegistry } from "@/lib/queries/agents";
 import { refreshReviewWorkspace, useReviewAction, useReviewLists } from "@/lib/queries/reviews";
 import type { AgentLookup } from "@/lib/reviews/model";
@@ -53,7 +54,8 @@ export function ReviewsWorkspace({ state }: { state: ReviewWorkspaceState }) {
   const data = Object.fromEntries(Object.entries(lists).map(([status, query]) => [status, query.data])) as Partial<
     Record<ReviewStatus, ReviewRequestResponse[] | undefined>
   >;
-  const tabs = partitionReviews(data);
+  // With the clock, so a review leaves Needs action when it expires, at the same moment as the sidebar badge.
+  const tabs = partitionReviews(data, now);
   const counts = tabCounts(tabs);
   const sources = TAB_STATUSES[state.tab].map((status) => lists[status]);
   const reviews = tabs[state.tab];
@@ -67,7 +69,13 @@ export function ReviewsWorkspace({ state }: { state: ReviewWorkspaceState }) {
     : registry.isError
       ? { state: "error" }
       : { state: "loading" };
-  const agentNames = new Map((registry.data ?? []).map((agent) => [agent.id, agent.name]));
+  // Keyed by the review's agentId (a UUID, or a name some agents send), resolved with the shared helper.
+  const agentNames = new Map(
+    Object.values(data)
+      .flatMap((list) => list ?? [])
+      .map((review) => [review.agentId, resolveAgent(review.agentId, registry.data ?? [])?.name] as const)
+      .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
+  );
 
   function navigate(next: ReviewWorkspaceState) {
     router.push(buildWorkspaceHref(next));

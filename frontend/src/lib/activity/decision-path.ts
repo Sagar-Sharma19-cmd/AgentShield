@@ -13,7 +13,7 @@
  * the step says so instead of guessing.
  */
 import { GATE_INDEX, GATES, gateFor, HIGH_RISK_THRESHOLD, type Gate } from "@/lib/checkpoint/gates";
-import type { AuditLogResponse } from "@/types/api";
+import type { AuditLogResponse, ReviewStatus } from "@/types/api";
 
 export type StepStatus =
   /** The request got through this gate. */
@@ -25,7 +25,9 @@ export type StepStatus =
   /** The gate did not run for this request. */
   | "not-reached"
   /** The record cannot say whether or how this gate ran. */
-  | "not-recorded";
+  | "not-recorded"
+  /** Held for review, then approved by an operator and claimed once by the agent (review detail only). */
+  | "decided-after-review";
 
 export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   passed: "Passed",
@@ -33,6 +35,7 @@ export const STEP_STATUS_LABELS: Record<StepStatus, string> = {
   evaluated: "Checked, no change",
   "not-reached": "Not reached",
   "not-recorded": "Not recorded",
+  "decided-after-review": "Decided after review",
 };
 
 /** Which recorded field explains the deciding gate. */
@@ -50,10 +53,23 @@ export interface PathStep {
   detail?: StepDetail;
 }
 
+/**
+ * What happened to the review a REVIEW row created. Only the review detail panel knows this; Activity rows
+ * leave it out and keep the hold wording.
+ */
+export interface ReviewOutcome {
+  status: ReviewStatus;
+  reviewer: string | null;
+  /** The agent claimed the approval (consumedAt is set). */
+  claimed: boolean;
+  /** Effectively expired (lib/reviews/expiry.ts isEffectivelyExpired). */
+  expired: boolean;
+}
+
 export type PathInput = Pick<
   AuditLogResponse,
   "authorizationResult" | "authorizationReason" | "decision" | "escalatedBy" | "reason" | "trajectoryScore"
->;
+> & { reviewOutcome?: ReviewOutcome };
 
 function trajectoryNote(score: number | null): string {
   if (score === null) return "No trajectory score was recorded for this request.";
@@ -172,9 +188,33 @@ function trajectoryStep(decided: Gate, row: PathInput): PathStep {
   };
 }
 
+/** The decision step of a held request once its review outcome is known; null keeps the hold wording. */
+function reviewedDecisionStep(outcome: ReviewOutcome): PathStep | null {
+  const who = outcome.reviewer?.trim() || "an operator";
+  switch (outcome.status) {
+    case "APPROVED":
+      if (outcome.claimed) {
+        return { gate: "PASSED", status: "decided-after-review", note: `Approved by ${who}, then claimed once by the agent.` };
+      }
+      return outcome.expired
+        ? { gate: "PASSED", status: "not-reached", note: `Approved by ${who}, but the approval expired unclaimed. Nothing ran.` }
+        : { gate: "PASSED", status: "not-reached", note: `Approved by ${who}. Waiting for the agent to claim it.` };
+    case "REJECTED":
+      return { gate: "PASSED", status: "not-reached", note: `Rejected by ${who}. Nothing ran.` };
+    case "PENDING":
+    case "IN_REVIEW":
+      // An open review that expired can no longer be decided.
+      return outcome.expired ? { gate: "PASSED", status: "not-reached", note: "Expired before anyone decided. Nothing ran." } : null;
+  }
+}
+
 function decisionStep(decided: Gate, row: PathInput): PathStep {
   if (decided === "PASSED") {
     return { gate: "PASSED", status: "decided", note: "Allowed.", detail: { kind: "reason", text: row.reason } };
+  }
+  if (row.decision === "REVIEW" && row.reviewOutcome) {
+    const reviewed = reviewedDecisionStep(row.reviewOutcome);
+    if (reviewed) return reviewed;
   }
   return {
     gate: "PASSED",
@@ -183,7 +223,10 @@ function decisionStep(decided: Gate, row: PathInput): PathStep {
   };
 }
 
-/** The six steps in pipeline order. Exactly one step is "decided". */
+/**
+ * The six steps in pipeline order. Exactly one step is "decided". With an approved and claimed review outcome,
+ * the final step is additionally "decided-after-review".
+ */
 export function decisionPath(row: PathInput): PathStep[] {
   const decided = gateFor(row);
   return [

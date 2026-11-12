@@ -7,12 +7,13 @@ import { SectionError } from "@/components/dashboard/section-states";
 import { RiskTierBadge } from "@/components/security/risk-tier-badge";
 import { TrajectorySummary } from "@/components/trajectory/trajectory-evidence";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { ReviewOutcome } from "@/lib/activity/decision-path";
 import { ApiError } from "@/lib/api/client";
 import { ACTION_LABELS } from "@/lib/labels";
 import { useAuditEvent } from "@/lib/queries/audit";
 import { useReview } from "@/lib/queries/reviews";
 import { isEffectivelyExpired } from "@/lib/reviews/expiry";
-import { resolveAgent, type AgentLookup, type ConfirmableAction } from "@/lib/reviews/model";
+import { resolveAgentLookup, type AgentLookup, type ConfirmableAction } from "@/lib/reviews/model";
 import { resolvedSignal } from "@/lib/reviews/signal";
 import { REVIEW_TAB_LABELS, buildWorkspaceHref, tabFor, type ReviewTab } from "@/lib/reviews/tabs";
 import { trajectoryEvidence } from "@/lib/trajectory/model";
@@ -58,10 +59,10 @@ function ReviewDetailBody({
   onConfirmHandled,
   renderTitle,
 }: Omit<ReviewDetailProps, "reviewId"> & { review: ReviewRequestResponse }) {
-  const agent = resolveAgent(agentLookup, review.agentId);
+  const agent = resolveAgentLookup(agentLookup, review.agentId);
   const agentName = agent.kind === "found" ? agent.agent.name : null;
   const expired = isEffectivelyExpired(review, now);
-  const homeTab = tabFor(review);
+  const homeTab = tabFor(review, now);
   const showCountdown = review.status === "PENDING" || review.status === "IN_REVIEW" || (review.status === "APPROVED" && !review.consumedAt);
   const title = (
     <>
@@ -119,7 +120,7 @@ function ReviewDetailBody({
         ) : null}
       </header>
 
-      <WhySection review={review} />
+      <WhySection review={review} now={now} />
 
       <section aria-labelledby="review-timeline-heading" className="flex flex-col gap-3">
         <h3 id="review-timeline-heading" className="text-sm font-medium">
@@ -131,7 +132,7 @@ function ReviewDetailBody({
       <ReviewActions review={review} now={now} requestedConfirm={requestedConfirm} onConfirmHandled={onConfirmHandled} />
 
       <RequestFacts review={review} agentName={agentName} />
-      <GrantSection agentId={review.agentId} tool={review.tool} />
+      <GrantSection agent={agent} tool={review.tool} />
     </article>
   );
 }
@@ -140,8 +141,15 @@ function ReviewDetailBody({
  * Why the gateway held it: the signal that escalated it, the recorded reason, the decision path from the
  * audit row (the same DecisionPath as Activity) and, when present, the trajectory factors.
  */
-function WhySection({ review }: { review: ReviewRequestResponse }) {
+function WhySection({ review, now }: { review: ReviewRequestResponse; now: number }) {
   const audit = useAuditEvent(review.requestId);
+  // What happened after the hold, so the decision step does not keep saying "held for review" once decided.
+  const reviewOutcome: ReviewOutcome = {
+    status: review.status,
+    reviewer: review.reviewer,
+    claimed: review.consumedAt !== null,
+    expired: isEffectivelyExpired(review, now),
+  };
   const signal = resolvedSignal(review, audit.data);
   const evidence = trajectoryEvidence(review);
   const notFound = audit.error instanceof ApiError && audit.error.status === 404;
@@ -180,7 +188,7 @@ function WhySection({ review }: { review: ReviewRequestResponse }) {
             The decision path could not be loaded: {audit.error.message}
           </p>
         ) : (
-          <DecisionPath event={audit.data} />
+          <DecisionPath event={audit.data} reviewOutcome={reviewOutcome} />
         )}
       </div>
     </section>

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolveAgent } from "@/lib/agents/resolve";
 import { ApiError } from "@/lib/api/client";
 import type { AgentResponse, ReviewDecisionBody, ReviewRequestResponse, ReviewStatus } from "@/types/api";
 
@@ -131,11 +132,37 @@ export type AgentResolution =
   | { kind: "absent" }
   | { kind: "found"; agent: AgentResponse };
 
-export function resolveAgent(lookup: AgentLookup, agentId: string): AgentResolution {
+/** Resolves a review's agentId (a UUID or the agent's name) against the registry state (lib/agents/resolve.ts). */
+export function resolveAgentLookup(lookup: AgentLookup, agentIdOrName: string): AgentResolution {
   if (lookup.state === "loading") return { kind: "loading" };
   if (lookup.state === "error") return { kind: "error" };
-  const agent = lookup.agents.find((item) => item.id === agentId);
+  const agent = resolveAgent(agentIdOrName, lookup.agents);
   return agent ? { kind: "found", agent } : { kind: "absent" };
+}
+
+/**
+ * What the grant section may request. Only a resolved registry UUID is ever sent to the grants endpoint; an
+ * unresolved agent (absent, or the registry not loaded) gets a calm note instead of a failing request.
+ */
+export type GrantRequest =
+  | { kind: "fetch"; agentId: string }
+  | { kind: "waiting" }
+  | { kind: "skip"; note: string };
+
+export function grantRequestFor(agent: AgentResolution): GrantRequest {
+  switch (agent.kind) {
+    case "found":
+      return { kind: "fetch", agentId: agent.agent.id };
+    case "loading":
+      return { kind: "waiting" };
+    case "error":
+      return { kind: "skip", note: "Grants cannot be shown until the agent registry loads." };
+    case "absent":
+      return {
+        kind: "skip",
+        note: "This agent is not in the agent registry, so there are no grants to show.",
+      };
+  }
 }
 
 /** Maps backend failures to plain language. The refused-transition text is the backend's own message. */

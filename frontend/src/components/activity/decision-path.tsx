@@ -1,7 +1,7 @@
 import { Check, CircleDashed, CircleHelp, Minus } from "lucide-react";
 import { GateIcon } from "@/components/checkpoint/gate-mark";
 import { DecisionIcon } from "@/components/checkpoint/decision-mark";
-import { decisionPath, STEP_STATUS_LABELS, type PathInput, type StepStatus } from "@/lib/activity/decision-path";
+import { decisionPath, STEP_STATUS_LABELS, type PathInput, type ReviewOutcome, type StepStatus } from "@/lib/activity/decision-path";
 import { GATE_LABELS } from "@/lib/checkpoint/gates";
 import { cn } from "@/lib/utils";
 import type { DecisionType } from "@/types/api";
@@ -11,6 +11,9 @@ function StatusIcon({ status, decision }: { status: StepStatus; decision: Decisi
   switch (status) {
     case "decided":
       return <DecisionIcon decision={decision} className="size-4" />;
+    case "decided-after-review":
+      // The operator's approval let the held request go ahead: the same mark as an allowed decision.
+      return <DecisionIcon decision="ALLOW" className="size-4" />;
     case "passed":
       return <Check aria-hidden="true" className="size-4 text-success-text" />;
     case "evaluated":
@@ -24,19 +27,20 @@ function StatusIcon({ status, decision }: { status: StepStatus; decision: Decisi
 
 /**
  * The six gates as a vertical timeline. Each step says what the record shows about that gate; the
- * deciding step is emphasised and carries the backend's own reason text.
+ * deciding step is emphasised and carries the backend's own reason text. The review detail passes the
+ * review's outcome, so a held request's final step says what the operator and the agent did.
  */
-export function DecisionPath({ event }: { event: PathInput }) {
-  const steps = decisionPath(event);
+export function DecisionPath({ event, reviewOutcome }: { event: PathInput; reviewOutcome?: ReviewOutcome }) {
+  const steps = decisionPath(reviewOutcome ? { ...event, reviewOutcome } : event);
 
   return (
     <ol className="flex flex-col" aria-label="Decision path through the gateway">
       {steps.map((step, index) => {
-        const decided = step.status === "decided";
+        const decided = step.status === "decided" || step.status === "decided-after-review";
         const faded = step.status === "not-reached";
         const last = index === steps.length - 1;
         return (
-          <li key={step.gate} aria-current={decided ? "step" : undefined} className="grid grid-cols-[1.75rem_1fr] gap-x-3">
+          <li key={step.gate} aria-current={step.status === "decided" ? "step" : undefined} className="grid grid-cols-[1.75rem_1fr] gap-x-3">
             <div className="flex flex-col items-center">
               <span
                 className={cn(

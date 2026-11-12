@@ -1,9 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { DecisionBadge } from "@/components/security/decision-badge";
 import { RiskScore } from "@/components/security/risk-score";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { resolveAgent } from "@/lib/agents/resolve";
+import { buildAgentsHref } from "@/lib/agents/model";
+import { useAgentRegistry } from "@/lib/queries/agents";
 import { useAuditEvent } from "@/lib/queries/audit";
 import {
   ACTION_LABELS,
@@ -100,7 +104,7 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
             <span className="font-mono text-xs break-all">{event.sessionId}</span>
           </Field>
           <Field label="Agent">
-            <span className="font-mono text-xs break-all">{event.agentId}</span>
+            <AgentValue agentIdOrName={event.agentId} />
           </Field>
           <Field label="Tool">
             <span className="font-mono text-xs break-all">{event.tool}</span>
@@ -216,4 +220,28 @@ function IdentifierValue({ value }: { value: string | null }) {
     return <span className="text-muted-foreground">Not registered</span>;
   }
   return <span className="font-mono text-xs break-all">{value}</span>;
+}
+
+/**
+ * The recorded agent value (a UUID, or the name some agents send) and, when the shared resolveAgent helper finds
+ * it in the registry, a link to that agent by its UUID. Unresolved values are shown as recorded, without a link.
+ */
+function AgentValue({ agentIdOrName }: { agentIdOrName: string }) {
+  const registry = useAgentRegistry();
+  const agent = registry.data ? resolveAgent(agentIdOrName, registry.data) : null;
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="font-mono text-xs break-all">{agentIdOrName}</span>
+      {agent ? (
+        <Link
+          href={buildAgentsHref({ status: "ALL", agent: agent.id })}
+          className="w-fit rounded-sm text-xs text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Open {agent.name} in Agents
+        </Link>
+      ) : registry.data ? (
+        <span className="text-xs text-muted-foreground">Not in the agent registry</span>
+      ) : null}
+    </span>
+  );
 }

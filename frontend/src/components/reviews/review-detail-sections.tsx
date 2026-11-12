@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatTimestamp } from "@/lib/format";
 import { ACTION_LABELS, DECISION_LABELS, SENSITIVITY_LABELS } from "@/lib/labels";
 import { useAgentGrants } from "@/lib/queries/agents";
+import { grantRequestFor, type AgentResolution } from "@/lib/reviews/model";
 import type { ReviewRequestResponse } from "@/types/api";
 
 /** Label and value pair. Values are shown exactly as the backend returned them, with no paraphrase. */
@@ -80,16 +81,22 @@ export function RequestFacts({ review, agentName }: { review: ReviewRequestRespo
   );
 }
 
-/** The agent's current grant for the requested tool. An approval never changes this. */
-export function GrantSection({ agentId, tool }: { agentId: string; tool: string }) {
-  const query = useAgentGrants(agentId);
+/**
+ * The agent's current grant for the requested tool. An approval never changes this. Grants are requested only
+ * with the resolved registry UUID; an agent that is not in the registry gets a note, not a failed request.
+ */
+export function GrantSection({ agent, tool }: { agent: AgentResolution; tool: string }) {
+  const request = grantRequestFor(agent);
+  const query = useAgentGrants(request.kind === "fetch" ? request.agentId : undefined);
 
   return (
     <section aria-labelledby="review-grant-heading" className="flex flex-col gap-3">
       <h3 id="review-grant-heading" className="text-sm font-medium">
         Current permission grant
       </h3>
-      {query.isPending ? (
+      {request.kind === "skip" ? (
+        <p className="text-sm text-muted-foreground">{request.note}</p>
+      ) : request.kind === "waiting" || query.isPending ? (
         <Skeleton className="h-10 w-full" />
       ) : query.isError ? (
         <p role="alert" className="text-sm text-danger-text">
