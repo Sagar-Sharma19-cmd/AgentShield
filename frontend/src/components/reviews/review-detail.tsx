@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { DecisionPath } from "@/components/activity/decision-path";
+import { ContentFindings } from "@/components/inspection/content-findings";
 import { SectionError } from "@/components/dashboard/section-states";
 import { RiskTierBadge } from "@/components/security/risk-tier-badge";
 import { TrajectorySummary } from "@/components/trajectory/trajectory-evidence";
@@ -121,6 +122,13 @@ function ReviewDetailBody({
       </header>
 
       <WhySection review={review} now={now} />
+
+      <section aria-labelledby="review-findings-heading" className="flex flex-col gap-3">
+        <h3 id="review-findings-heading" className="text-sm font-medium">
+          Content findings
+        </h3>
+        <ContentFindings findings={review.inspectionFindings} />
+      </section>
 
       <section aria-labelledby="review-timeline-heading" className="flex flex-col gap-3">
         <h3 id="review-timeline-heading" className="text-sm font-medium">

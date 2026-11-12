@@ -1,10 +1,14 @@
 /**
- * "Decision path" for one audit row: what each of the six gates did, as far as the recorded fields
- * (authorizationResult, decision, escalatedBy, trajectoryScore) and the documented pipeline rules allow us
- * to say. Pure; tested in decision-path.test.ts.
+ * "Decision path" for one audit row: what each of the seven gates did, as far as the recorded fields
+ * (authorizationResult, decision, escalatedBy, inspectionVerdict, trajectoryScore) and the documented pipeline
+ * rules allow us to say. Pure; tested in decision-path.test.ts.
  *
  * Pipeline rules used (docs/architecture.md, "Authorization flow"):
  * - An authorization failure (identity or permission) stops evaluation: nothing after it runs.
+ * - Content inspection (V13, V13.1) runs next on every authorized request: the resource always, the arguments when sent. A secret is a final DENY
+ *   (nothing after it runs); PII or prompt injection raises an ALLOW to REVIEW. Both record escalatedBy INSPECTION.
+ *   inspectionVerdict is null when inspection did not run (inspection disabled, a row from before V13, or a
+ *   V13 row without arguments written before V13.1).
  * - The Risk Engine is consulted only for a policy ALLOW or REVIEW, never after a DENY. It only escalates.
  * - Trajectory runs only when the decision is not DENY. It only escalates ALLOW to REVIEW.
  * - escalatedBy records which stage changed the decision (null on rows written before V9).
@@ -68,7 +72,13 @@ export interface ReviewOutcome {
 
 export type PathInput = Pick<
   AuditLogResponse,
-  "authorizationResult" | "authorizationReason" | "decision" | "escalatedBy" | "reason" | "trajectoryScore"
+  | "authorizationResult"
+  | "authorizationReason"
+  | "decision"
+  | "escalatedBy"
+  | "reason"
+  | "trajectoryScore"
+  | "inspectionVerdict"
 > & { reviewOutcome?: ReviewOutcome };
 
 function trajectoryNote(score: number | null): string {
@@ -103,9 +113,46 @@ function permissionStep(decided: Gate, row: PathInput): PathStep {
   return { gate: "PERMISSION", status: "passed", note: "Tool active and the agent's grant allows this action." };
 }
 
+function inspectionStep(decided: Gate, row: PathInput): PathStep {
+  if (decided === "IDENTITY" || decided === "PERMISSION") {
+    return { gate: "INSPECTION", status: "not-reached", note: "Authorization failed, so the arguments were not inspected." };
+  }
+  if (decided === "INSPECTION") {
+    return {
+      gate: "INSPECTION",
+      status: "decided",
+      note:
+        row.decision === "DENY"
+          ? "Content inspection found a secret in the request."
+          : "Content inspection found sensitive content and held the request for review.",
+      detail: { kind: "reason", text: row.reason },
+    };
+  }
+  switch (row.inspectionVerdict ?? null) {
+    case null:
+      return {
+        gate: "INSPECTION",
+        status: "not-recorded",
+        note: "Not recorded: this was logged before content inspection, or inspection did not run.",
+      };
+    case "CLEAN":
+      return { gate: "INSPECTION", status: "passed", note: "Resource and any arguments inspected. No sensitive content found." };
+    default:
+      // Flagged, but policy set an equal or stricter decision (it already held or denied the request).
+      return {
+        gate: "INSPECTION",
+        status: "evaluated",
+        note: "Flagged content for review, but a later gate set an equal or stricter decision.",
+      };
+  }
+}
+
 function policyStep(decided: Gate, row: PathInput): PathStep {
   if (decided === "IDENTITY" || decided === "PERMISSION") {
     return { gate: "POLICY", status: "not-reached", note: "Authorization failed, so policy was not evaluated." };
+  }
+  if (decided === "INSPECTION" && row.decision === "DENY") {
+    return { gate: "POLICY", status: "not-reached", note: "Content inspection denied the request, so policy was not evaluated." };
   }
   if (decided === "POLICY") {
     return {
@@ -130,6 +177,15 @@ function policyStep(decided: Gate, row: PathInput): PathStep {
 function riskEngineStep(decided: Gate, row: PathInput): PathStep {
   if (decided === "IDENTITY" || decided === "PERMISSION") {
     return { gate: "RISK_ENGINE", status: "not-reached", note: "Authorization failed, so the Risk Engine was not consulted." };
+  }
+  if (decided === "INSPECTION") {
+    return row.decision === "DENY"
+      ? { gate: "RISK_ENGINE", status: "not-reached", note: "The Risk Engine is never consulted after a content inspection DENY." }
+      : {
+          gate: "RISK_ENGINE",
+          status: "evaluated",
+          note: "Consulted for the review and did not raise it. Its score is not stored on the audit row.",
+        };
   }
   if (decided === "POLICY") {
     if (row.decision === "DENY") {
@@ -174,7 +230,7 @@ function trajectoryStep(decided: Gate, row: PathInput): PathStep {
   if (decided === "PASSED") {
     return { gate: "TRAJECTORY", status: "passed", note: trajectoryNote(row.trajectoryScore) };
   }
-  // Decided earlier at Policy or the Risk Engine.
+  // Decided earlier at Inspection, Policy or the Risk Engine.
   if (row.decision === "DENY") {
     return { gate: "TRAJECTORY", status: "not-reached", note: "Trajectory analysis does not run once the decision is DENY." };
   }
@@ -224,7 +280,7 @@ function decisionStep(decided: Gate, row: PathInput): PathStep {
 }
 
 /**
- * The six steps in pipeline order. Exactly one step is "decided". With an approved and claimed review outcome,
+ * The seven steps in pipeline order. Exactly one step is "decided". With an approved and claimed review outcome,
  * the final step is additionally "decided-after-review".
  */
 export function decisionPath(row: PathInput): PathStep[] {
@@ -232,6 +288,7 @@ export function decisionPath(row: PathInput): PathStep[] {
   return [
     identityStep(decided, row),
     permissionStep(decided, row),
+    inspectionStep(decided, row),
     policyStep(decided, row),
     riskEngineStep(decided, row),
     trajectoryStep(decided, row),

@@ -25,8 +25,29 @@ export type DecisionType = "ALLOW" | "REVIEW" | "DENY";
 
 export type RiskTier = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
-/** What changed the decision after the policy stage. Null on audit rows written before V9. */
-export type EscalationSource = "NONE" | "RISK_ENGINE" | "TRAJECTORY";
+/**
+ * What changed the decision. Null on audit rows written before V9. INSPECTION (V13): content inspection of the
+ * arguments denied the request (a secret) or raised an ALLOW to REVIEW (PII, prompt injection).
+ */
+export type EscalationSource = "NONE" | "RISK_ENGINE" | "TRAJECTORY" | "INSPECTION";
+
+/** Content inspection verdict (V13). */
+export type InspectionVerdict = "CLEAN" | "REVIEW" | "DENY";
+
+export type FindingCategory = "SECRET" | "PII" | "PROMPT_INJECTION";
+
+/**
+ * One redacted content finding (V13). Never the raw value: `preview` is e.g. "AKIA… (20 chars)" for a secret,
+ * or "[EMAIL] (17 chars)" for PII.
+ */
+export interface ContentFinding {
+  category: FindingCategory;
+  /** For example AWS_ACCESS_KEY, EMAIL, INSTRUCTION_OVERRIDE. */
+  type: string;
+  /** JSON path such as arguments[3] or arguments.body.to, or "resource". */
+  location: string;
+  preview: string;
+}
 
 export type AuthorizationResult =
   | "AUTHORIZED"
@@ -196,6 +217,11 @@ export interface ReviewRequestResponse {
    * Null when not recorded (reviews created before V11 whose audit row had no attribution).
    */
   escalatedBy: EscalationSource | null;
+  /**
+   * Redacted content findings of the request (V13). Null (or absent, from an older backend) when inspection did
+   * not run: the review predates content inspection (or, before V13.1, no arguments were sent).
+   */
+  inspectionFindings?: ContentFinding[] | null;
 }
 
 /** Body of POST /reviews/{id}/approve and /reject. note is required for reject. */
@@ -231,6 +257,10 @@ export interface AuditLogResponse {
   trajectoryReason: string | null;
   /** Null on rows written before escalation tracking existed (not recorded). */
   escalatedBy: EscalationSource | null;
+  /** Content inspection verdict (V13). Null (or absent) when inspection did not run or the row predates V13. */
+  inspectionVerdict?: InspectionVerdict | null;
+  /** Redacted content findings (V13). Null (or absent) when inspection did not run; [] when nothing was found. */
+  inspectionFindings?: ContentFinding[] | null;
   timestamp: string;
 }
 

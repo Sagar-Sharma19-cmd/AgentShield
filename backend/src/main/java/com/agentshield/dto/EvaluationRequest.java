@@ -1,6 +1,7 @@
 package com.agentshield.dto;
 
 import com.agentshield.model.ActionType;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -13,6 +14,11 @@ import java.util.Map;
  * Size limits match the audit_logs / review_requests columns (V1, V5). Without them an oversized
  * value failed the audit insert after the decision was computed, so the request was answered with
  * a 409 and never audited. Now it is rejected up front with a 400.
+ *
+ * {@code arguments} (Phase V13) is optional: the JSON value (string, array or object) the agent is about to send
+ * to the tool. The gateway inspects it for secrets, PII and prompt injection, and binds a SHA-256 of it to the
+ * decision token. It is never persisted, logged or echoed; {@link #toString()} leaves it out. Absent (or null)
+ * means nothing to inspect, exactly as before V13.
  */
 public class EvaluationRequest {
 
@@ -39,6 +45,8 @@ public class EvaluationRequest {
     private String tool;
 
     private Map<String, Object> metadata;
+
+    private JsonNode arguments;
 
     public EvaluationRequest() {
     }
@@ -100,6 +108,22 @@ public class EvaluationRequest {
         this.metadata = metadata;
     }
 
+    public JsonNode getArguments() {
+        return arguments;
+    }
+
+    public void setArguments(JsonNode arguments) {
+        this.arguments = arguments;
+    }
+
+    /** Never prints arguments or metadata, which can hold the content being inspected. */
+    @Override
+    public String toString() {
+        return "EvaluationRequest[agentId=" + agentId + ", sessionId=" + sessionId + ", tool=" + tool + ", action="
+                + action + ", resource=" + resource + ", arguments=" + (arguments == null ? "none" : "<redacted>")
+                + ", metadata=" + (metadata == null ? "none" : "<redacted>") + "]";
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -111,6 +135,7 @@ public class EvaluationRequest {
         private String resource;
         private String tool;
         private Map<String, Object> metadata;
+        private JsonNode arguments;
 
         public Builder agentId(String agentId) {
             this.agentId = agentId;
@@ -142,8 +167,15 @@ public class EvaluationRequest {
             return this;
         }
 
+        public Builder arguments(JsonNode arguments) {
+            this.arguments = arguments;
+            return this;
+        }
+
         public EvaluationRequest build() {
-            return new EvaluationRequest(agentId, sessionId, action, resource, tool, metadata);
+            EvaluationRequest request = new EvaluationRequest(agentId, sessionId, action, resource, tool, metadata);
+            request.setArguments(arguments);
+            return request;
         }
     }
 }

@@ -15,7 +15,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Callable, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence
 
 from agentshield_client import AgentShieldClient, Evaluation, GatewayError, ReviewStatus
 
@@ -37,6 +37,9 @@ class Operation:
     action: str        # ActionType: READ, WRITE, DELETE, EXECUTE or EXTERNAL_REQUEST
     resource: str      # resource string sent to the gateway unchanged
     description: str   # human-readable purpose, shown in the CLI
+    # What the tool would be sent (Phase V13): inspected by the gateway and bound to the decision token, so the
+    # same value is sent again on redeem. None (the default) sends no arguments, as before V13.
+    arguments: Any = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,7 @@ def run_operation(client: AgentShieldClient, session_id: str, operation: Operati
             action=operation.action,
             resource=operation.resource,
             tool=operation.tool,
+            arguments=operation.arguments,
         )
     except GatewayError as error:
         return StepResult(operation, Outcome.FAILED_CLOSED, None,
@@ -137,7 +141,7 @@ def _execute(client: AgentShieldClient, operation: Operation, evaluation: Evalua
                           "The gateway returned no decision token to redeem. Not executed.", review=review)
     try:
         client.redeem(token=token, tool=operation.tool, action=operation.action, resource=operation.resource,
-                      expected_request_id=request_id)
+                      expected_request_id=request_id, arguments=operation.arguments)
     except GatewayError as error:  # 401 expired/invalid, 403 mismatch/other agent, 409 replay, outage...
         return StepResult(operation, Outcome.FAILED_CLOSED, evaluation,
                           f"Could not redeem the decision ({error}). Not executed.", review=review)

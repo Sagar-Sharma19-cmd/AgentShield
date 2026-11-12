@@ -27,6 +27,7 @@ describe("gateBreakdown", () => {
     expect(Object.fromEntries(breakdown.map((item) => [item.gate, item.count]))).toEqual({
       IDENTITY: 0,
       PERMISSION: 1,
+      INSPECTION: 0,
       POLICY: 0,
       RISK_ENGINE: 0,
       TRAJECTORY: 1,

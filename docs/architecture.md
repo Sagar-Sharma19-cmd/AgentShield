@@ -40,6 +40,13 @@ Milestone 1C makes the **WHO** verifiable: every gateway request must be authent
 │              │ AUTHORIZED                   │ anything else   │
 │              ▼                              ▼                 │
 │   ┌───────────────────────┐          DENY (risk 100)          │
+│   │   ContentInspector    │               │                   │
+│   │ (V13: the resource,   │               │                   │
+│   │  plus any arguments)  │               │                   │
+│   └──────────┬────────────┘               │                   │
+│ CLEAN/REVIEW │ DENY: secret ──────────────┤ (risk 90, no      │
+│              ▼                            │  Risk Engine)     │
+│   ┌───────────────────────┐               │                   │
 │   │     PolicyEngine      │               │                   │
 │   │ resource/action risk  │               │                   │
 │   └──────────┬────────────┘               │                   │
@@ -290,7 +297,9 @@ Authentication happens first, in the Spring Security filter. Authorization is th
 | 5 | No grant for (agent, tool) | `UNAUTHORIZED` | **DENY** |
 | 6 | Grant disabled | `PERMISSION_DISABLED` | **DENY** |
 | 7 | Action not in grant | `UNAUTHORIZED` | **DENY** |
-| 8 | All checks pass | `AUTHORIZED` | → continue to PolicyEngine |
+| 8 | All checks pass | `AUTHORIZED` | → continue to content inspection |
+| 8a | Content inspection (V13; V13.1: the resource on every request, plus `arguments` when sent): a secret | `AUTHORIZED` | **DENY** (`escalatedBy = INSPECTION`, risk 90; Policy, Risk Engine and trajectory not consulted; no decision token) |
+| 8b | Content inspection: personal data or prompt injection | `AUTHORIZED` | Raises a policy ALLOW to **REVIEW** (`escalatedBy = INSPECTION`); a policy REVIEW/DENY keeps its own attribution |
 | 9 | Policy: dangerous resource/action (secrets, prod DELETE) | `AUTHORIZED` | **DENY** (Risk Engine not consulted) |
 | 10 | Policy: potentially risky (non-prod DELETE, EXECUTE, EXTERNAL_REQUEST) | `AUTHORIZED` | **REVIEW** → Risk Engine may escalate to DENY |
 | 11 | Otherwise | `AUTHORIZED` | **ALLOW** → Risk Engine may escalate to REVIEW/DENY |
@@ -302,6 +311,7 @@ Key properties:
 - **The PolicyEngine is never consulted for unauthorized requests**, so it cannot override a missing permission. It can only tighten (REVIEW / DENY) what authorization already permitted.
 - **The Risk Engine is never consulted after a DENY** (from either PermissionEngine or PolicyEngine) — see [Risk Engine Integration](#risk-engine-integration). It can only escalate an ALLOW or REVIEW, never grant or downgrade.
 - **Trajectory analysis is also escalate-only.** It runs after the Risk Engine, only when the decision is not already DENY. It can change an ALLOW to REVIEW and nothing else. It never produces DENY and never downgrades a decision. See [Trajectory Analysis](#trajectory-analysis).
+- **Content inspection** runs after authorization and before policy. It inspects the resource string on every request (V13.1) and the `arguments` when they are sent; with no arguments and a clean resource the row records `CLEAN` and `[]`. It never lowers a decision. Findings are stored redacted (category, type, JSON path, preview such as `AKIA… (20 chars)`); raw argument values are never persisted, logged or returned. The decision token carries an `args` claim (SHA-256 of the canonical arguments), and redeem rejects different arguments. `POST /api/v1/gateway/inspect` scans tool output and returns it with each finding replaced by `[REDACTED:<TYPE>]`. Each detector can be switched off with `agentshield.inspection.<name>.enabled=false`, and the whole stage with `agentshield.inspection.enabled=false`.
 - **Authorization denials** are returned with `riskScore = 100` and recorded with `resourceSensitivity = CRITICAL` (fail-closed maximum). These values describe the authorization failure; the resource itself was not classified.
 - Every response includes `authorizationResult`, and every decision — authorization, policy, or risk-escalated — is written to `audit_logs`.
 - **Impersonation is blocked and audited:** an agent that authenticates with its own key but claims another agent's `agentId` gets `AGENT_IDENTITY_MISMATCH`. It can never borrow the other agent's permissions.
@@ -735,6 +745,13 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
   [Trajectory Analysis](#trajectory-analysis).
 - The live alert feed (M4.2, frontend) polls `GET /api/v1/audit` every 10 seconds. It is pull-based,
   not push-based, so alerts can be up to one poll interval late.
+- Content inspection (V13) stores personal data found in the **resource** as-is: on the audit row and on the
+  review row, because review claim and decision-token redeem compare the exact resource string (redacting it
+  would break them). Only a secret in the resource is redacted, on the audit row (`[REDACTED:<TYPE>]`); that
+  request is denied, so no review row or token exists for it. Inspection is pattern-based (regex, checksums,
+  entropy), so it can miss encoded or split values and can flag ordinary text that matches an injection phrase.
+  Audit rows written before V13, and V13 rows without arguments written before V13.1, have NULL inspection
+  columns and show "Not recorded".
 - The human review workflow has no notifications (agents poll `GET /api/v1/gateway/reviews/{id}`), and
   no authenticated reviewer identity or RBAC: `reviewer` is a name the operator types while using the
   single shared admin key. Decisions and claims are stored on the review row but are not written to an

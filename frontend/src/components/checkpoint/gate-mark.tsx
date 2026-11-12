@@ -1,4 +1,4 @@
-import { CircleCheck, Fingerprint, Gauge, KeyRound, Route, ScrollText, type LucideIcon } from "lucide-react";
+import { CircleCheck, Fingerprint, Gauge, KeyRound, Route, ScanSearch, ScrollText, type LucideIcon } from "lucide-react";
 import { GATE_LABELS, type Gate } from "@/lib/checkpoint/gates";
 import { cn } from "@/lib/utils";
 
@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 export const GATE_ICONS: Record<Gate, LucideIcon> = {
   IDENTITY: Fingerprint,
   PERMISSION: KeyRound,
+  INSPECTION: ScanSearch,
   POLICY: ScrollText,
   RISK_ENGINE: Gauge,
   TRAJECTORY: Route,

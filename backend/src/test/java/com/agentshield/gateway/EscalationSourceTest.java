@@ -49,4 +49,29 @@ class EscalationSourceTest {
         assertEquals(EscalationSource.NONE,
                 GatewayService.escalationSource(DecisionType.DENY, DecisionType.DENY, DecisionType.DENY));
     }
+
+    // ------------------------------------------------------------------ Phase V13: content inspection
+
+    @Test
+    @DisplayName("Inspection raised a policy ALLOW to REVIEW: INSPECTION")
+    void inspectionRaiseIsInspection() {
+        assertEquals(EscalationSource.INSPECTION, GatewayService.escalationSource(DecisionType.ALLOW,
+                DecisionType.REVIEW, DecisionType.REVIEW, DecisionType.REVIEW));
+    }
+
+    @Test
+    @DisplayName("The Risk Engine raising an inspection REVIEW to DENY is RISK_ENGINE")
+    void riskAfterInspectionIsRiskEngine() {
+        assertEquals(EscalationSource.RISK_ENGINE, GatewayService.escalationSource(DecisionType.ALLOW,
+                DecisionType.REVIEW, DecisionType.DENY, DecisionType.DENY));
+    }
+
+    @Test
+    @DisplayName("Inspection that changed nothing falls back to the old attribution (trajectory, none)")
+    void unchangedInspectionKeepsOldRules() {
+        assertEquals(EscalationSource.TRAJECTORY, GatewayService.escalationSource(DecisionType.ALLOW,
+                DecisionType.ALLOW, DecisionType.ALLOW, DecisionType.REVIEW));
+        assertEquals(EscalationSource.NONE, GatewayService.escalationSource(DecisionType.REVIEW,
+                DecisionType.REVIEW, DecisionType.REVIEW, DecisionType.REVIEW));
+    }
 }

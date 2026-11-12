@@ -65,6 +65,14 @@ class MockDevOps:
     def filesystem_read(self, operation: Operation) -> str:
         return self._record(operation, "MOCK file read (no filesystem access)")
 
+    # curl: an outbound HTTP request (simulated; nothing is sent).
+    def curl_post_data(self, operation: Operation) -> str:
+        return self._record(operation, "MOCK HTTP POST (no network call)")
+
+    # Filesystem: write an export file (simulated; nothing is written).
+    def filesystem_write_export(self, operation: Operation) -> str:
+        return self._record(operation, "MOCK export write (no filesystem access)")
+
     def executors(self) -> Dict[str, Callable[[Operation], str]]:
         """Maps Operation.name to the mock implementation. Used by enforcement.run_pipeline."""
         return {
@@ -76,4 +84,6 @@ class MockDevOps:
             "kubernetes.delete": self.kubernetes_delete,
             "shell.healthcheck": self.shell_healthcheck,
             "filesystem.read_file": self.filesystem_read,
+            "curl.post_data": self.curl_post_data,
+            "filesystem.write_export": self.filesystem_write_export,
         }

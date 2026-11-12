@@ -23,6 +23,7 @@ import { DECISION_MARKS, DecisionIcon, DecisionLegend } from "./decision-mark";
 const SHORT_LABELS: Record<Gate, string> = {
   IDENTITY: "ID",
   PERMISSION: "Perm",
+  INSPECTION: "Scan",
   POLICY: "Policy",
   RISK_ENGINE: "Risk",
   TRAJECTORY: "Traj",

@@ -74,7 +74,7 @@ describe("planStream", () => {
           : {},
     );
     const byId = Object.fromEntries(planStream(sample, null, limits).dots.map((dot) => [dot.row.requestId, [dot.gate, dot.column]]));
-    expect(byId).toEqual({ r0: ["IDENTITY", 0], r1: ["TRAJECTORY", 4], r2: ["PASSED", 5] });
+    expect(byId).toEqual({ r0: ["IDENTITY", 0], r1: ["TRAJECTORY", 5], r2: ["PASSED", 6] });
   });
 
   it("tolerates zero or negative limits", () => {
@@ -87,7 +87,15 @@ describe("planStream", () => {
 describe("dotsByGate", () => {
   it("returns every gate, empty when unused", () => {
     const columns = dotsByGate(planStream(rows(2), null, limits).dots);
-    expect(Object.keys(columns)).toEqual(["IDENTITY", "PERMISSION", "POLICY", "RISK_ENGINE", "TRAJECTORY", "PASSED"]);
+    expect(Object.keys(columns)).toEqual([
+      "IDENTITY",
+      "PERMISSION",
+      "INSPECTION",
+      "POLICY",
+      "RISK_ENGINE",
+      "TRAJECTORY",
+      "PASSED",
+    ]);
     expect(columns.PASSED).toHaveLength(2);
     expect(columns.POLICY).toEqual([]);
   });

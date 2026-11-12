@@ -1,12 +1,15 @@
 package com.agentshield.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.agentshield.inspection.Finding;
+import com.agentshield.inspection.InspectionVerdict;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.RiskTier;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -51,6 +54,14 @@ public class EvaluationResponse {
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private String decisionToken;
+    /**
+     * Content inspection of the arguments (Phase V13): CLEAN, REVIEW or DENY, with redacted findings (type and
+     * location, never the value). Omitted when inspection did not run (authorization failed, or inspection is disabled).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private InspectionVerdict inspectionVerdict;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private List<Finding> inspectionFindings;
 
     public EvaluationResponse() {
     }
@@ -197,6 +208,22 @@ public class EvaluationResponse {
 
     public void setDecisionToken(String decisionToken) {
         this.decisionToken = decisionToken;
+    }
+
+    public InspectionVerdict getInspectionVerdict() {
+        return inspectionVerdict;
+    }
+
+    public void setInspectionVerdict(InspectionVerdict inspectionVerdict) {
+        this.inspectionVerdict = inspectionVerdict;
+    }
+
+    public List<Finding> getInspectionFindings() {
+        return inspectionFindings;
+    }
+
+    public void setInspectionFindings(List<Finding> inspectionFindings) {
+        this.inspectionFindings = inspectionFindings;
     }
 
     public int getEffectiveRiskScore() {

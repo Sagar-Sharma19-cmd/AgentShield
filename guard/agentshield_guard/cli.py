@@ -2,7 +2,7 @@
 agentshield-guard: a command guard that enforces AgentShield decisions on real commands (stdlib only).
 
     agentshield-guard run   --tool T --action A --resource R [--session S] [--wait-for-review]
-                            [--review-timeout N] -- <command...>
+                            [--review-timeout N] [--no-send-args] -- <command...>
     agentshield-guard check --tool T --action A --resource R [--session S]
 
 run:   evaluate -> ALLOW: redeem the one-time decision token, then run the command (argv list, no shell,
@@ -11,6 +11,10 @@ run:   evaluate -> ALLOW: redeem the one-time decision token, then run the comma
        redeem the claim's token and run the command. REJECTED exits 3 (reviewer and note shown); no decision
        in time, or an expired review, exits 5.
        DENY exits 3 with the reason. Any gateway or redeem error exits 5 and the command never runs.
+Content inspection (Phase V13): run sends the command's argv list (everything after --) to the gateway as
+       "arguments" on evaluate and again on redeem, so the gateway can deny secrets and send PII or prompt
+       injection to review, and the decision token is bound to exactly this argv. --no-send-args keeps the argv on
+       this machine: the gateway then decides on tool, action and resource only, as before.
 check: evaluate only and print the decision: exit 0 (ALLOW), 3 (DENY), 4 (REVIEW), 5 (error). An ALLOW from
        check is not redeemed; its token simply expires.
 
@@ -95,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
                              help="on REVIEW, wait for an operator decision instead of exiting 4")
             sub.add_argument("--review-timeout", type=float, default=DEFAULT_REVIEW_TIMEOUT_SECONDS,
                              help="seconds to wait for a review decision (default 300)")
+            sub.add_argument("--no-send-args", action="store_true",
+                             help="do not send the command's arguments to the gateway for inspection")
     return parser
 
 
@@ -130,9 +136,14 @@ class Guard:
             return EXIT_REVIEW
         return EXIT_DENIED
 
+    @staticmethod
+    def arguments_for(args, command: List[str]) -> Optional[List[str]]:
+        """The argv list sent for inspection (and bound to the token), or None with --no-send-args."""
+        return None if getattr(args, "no_send_args", False) else list(command)
+
     def run(self, args, command: List[str]) -> int:
         evaluation = self.client.evaluate(session_id=args.session, action=args.action, resource=args.resource,
-                                          tool=args.tool)
+                                          tool=args.tool, arguments=self.arguments_for(args, command))
         if evaluation.decision == "DENY":
             self.say(f"DENY (request {evaluation.request_id}): {evaluation.reason} Not run.")
             return EXIT_DENIED
@@ -184,7 +195,7 @@ class Guard:
             self.say("the gateway returned no decision token. Not run.")
             return EXIT_ERROR
         self.client.redeem(token=token, tool=args.tool, action=args.action, resource=args.resource,
-                           expected_request_id=request_id)
+                           expected_request_id=request_id, arguments=self.arguments_for(args, command))
         # Only the program name: arguments can hold secrets (for example a registry password).
         self.say(f"decision redeemed; running {os.path.basename(command[0])}.")
         try:

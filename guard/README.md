@@ -18,6 +18,8 @@ The command is run with `subprocess.run(argv, shell=False)`. It gets the guard's
 
 `check` only evaluates and prints the decision. It never redeems the token, so the token simply expires.
 
+**Arguments (V13).** `run` sends the command's argv (everything after `--`) as `arguments` on both evaluate and redeem, so the gateway can inspect it for secrets, personal data and prompt injection, and the decision token is bound to those exact arguments. A secret in the argv is a DENY (exit 3). Personal data or an injection phrase is held for REVIEW. Pass `--no-send-args` to send no arguments; then only the `--resource` string is inspected (V13.1), and the token has no `args` claim. `check` sends no arguments.
+
 ## Install
 
 From the repository root:
@@ -71,7 +73,9 @@ These use the demo agent from `scripts/demo.sh setup`. Its grants are:
 - docker: WRITE, EXTERNAL_REQUEST
 - kubernetes: WRITE, DELETE
 - jenkins and shell: EXECUTE
-- github and filesystem: READ
+- github: READ
+- filesystem: READ, WRITE
+- curl: EXTERNAL_REQUEST
 
 ```bash
 source ~/.agentshield-demo/env
@@ -105,7 +109,7 @@ Which of these are ALLOW, REVIEW or DENY depends on the policy and the risk engi
 
   The redeem is a primary-key insert, so a token works once.
 - **Not enforced:** anyone who runs `docker` or `kubectl` directly, without the guard. The target systems do not check AgentShield tokens. Keeping the deploy credentials only in the CI step that runs the guard is a deployment control, not something the guard can do.
-- **Not checked:** whether the command actually touches only the declared `--resource`. The guard does not parse commands.
+- **Not checked:** whether the command actually touches only the declared `--resource`. The guard does not parse commands. Content inspection looks at the argv text for sensitive values; it does not understand what the command does.
 
 ## In Jenkins
 

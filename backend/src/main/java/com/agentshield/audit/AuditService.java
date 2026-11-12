@@ -2,6 +2,7 @@ package com.agentshield.audit;
 
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.exception.ResourceNotFoundException;
+import com.agentshield.inspection.InspectionResult;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.AuthorizationResult;
 import com.agentshield.model.DecisionType;
@@ -64,6 +65,26 @@ public class AuditService {
                                       Instant timestamp,
                                       TrajectoryEvaluation trajectory,
                                       EscalationSource escalatedBy) {
+        return recordEvaluation(request, request.getResource(), requestId, result, authorization, timestamp,
+                trajectory, escalatedBy, InspectionResult.NOT_INSPECTED);
+    }
+
+    /**
+     * As above, plus the content inspection result (V13) and the resource to store. Only the verdict and the
+     * REDACTED findings are written; {@code request.getArguments()} is never read here, so the inspected
+     * arguments cannot reach the audit table. {@code storedResource} is the request's resource, or a redacted
+     * copy when inspection found a secret in it.
+     */
+    @Transactional
+    public AuditLog recordEvaluation(EvaluationRequest request,
+                                      String storedResource,
+                                      UUID requestId,
+                                      PolicyEvaluationResult result,
+                                      AuthorizationDecision authorization,
+                                      Instant timestamp,
+                                      TrajectoryEvaluation trajectory,
+                                      EscalationSource escalatedBy,
+                                      InspectionResult inspection) {
         ActionOutcome outcome = mapOutcome(result.getDecision());
 
         AuditLog log = AuditLog.builder()
@@ -72,7 +93,7 @@ public class AuditService {
                 .sessionId(request.getSessionId())
                 .tool(request.getTool())
                 .action(request.getAction())
-                .resource(request.getResource())
+                .resource(storedResource)
                 .resourceSensitivity(result.getResourceSensitivity())
                 .decision(result.getDecision())
                 .riskScore(result.getRiskScore())
@@ -86,9 +107,42 @@ public class AuditService {
                 .trajectoryTier(trajectory == null ? null : trajectory.tier())
                 .trajectoryReason(trajectory == null ? null : trajectory.reason())
                 .escalatedBy(Objects.requireNonNull(escalatedBy, "escalatedBy"))
+                .inspectionVerdict(inspection.verdict())
+                .inspectionFindings(inspection.findingsOrNull())
                 .timestamp(timestamp)
                 .build();
 
+        return auditRepository.save(log);
+    }
+
+    /**
+     * Audit row for an output inspection (POST /api/v1/gateway/inspect): action READ on {@code output:<tool>},
+     * with the verdict and the redacted findings. The inspected content is never stored.
+     */
+    @Transactional
+    public AuditLog recordOutputInspection(UUID requestId, String agentName, UUID agentId, String sessionId,
+                                           String tool, PolicyEvaluationResult result, EscalationSource escalatedBy,
+                                           InspectionResult inspection, Instant timestamp) {
+        AuditLog log = AuditLog.builder()
+                .requestId(requestId)
+                .agentId(agentName)
+                .sessionId(sessionId)
+                .tool(tool)
+                .action(com.agentshield.model.ActionType.READ)
+                .resource("output:" + tool)
+                .resourceSensitivity(result.getResourceSensitivity())
+                .decision(result.getDecision())
+                .riskScore(result.getRiskScore())
+                .reason(result.getReason())
+                .actionOutcome(mapOutcome(result.getDecision()))
+                .registeredAgentId(agentId)
+                .authorizationResult(AuthorizationResult.AUTHORIZED)
+                .authorizationReason("Output inspection by the authenticated, active agent. No tool grant is needed to inspect output.")
+                .escalatedBy(escalatedBy)
+                .inspectionVerdict(inspection.verdict())
+                .inspectionFindings(inspection.findingsOrNull())
+                .timestamp(timestamp)
+                .build();
         return auditRepository.save(log);
     }
 

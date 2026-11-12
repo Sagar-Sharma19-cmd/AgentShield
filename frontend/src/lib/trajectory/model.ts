@@ -16,7 +16,12 @@ export const TRAJECTORY_TIER_LABELS: Record<RiskTier, string> = {
   CRITICAL: "Critical",
 };
 
-export const ESCALATION_SOURCES = ["NONE", "RISK_ENGINE", "TRAJECTORY"] as const satisfies readonly EscalationSource[];
+export const ESCALATION_SOURCES = [
+  "NONE",
+  "RISK_ENGINE",
+  "TRAJECTORY",
+  "INSPECTION",
+] as const satisfies readonly EscalationSource[];
 
 const RISK_TIER_SET: ReadonlySet<string> = new Set(RISK_TIERS);
 const ESCALATION_SOURCE_SET: ReadonlySet<string> = new Set(ESCALATION_SOURCES);
@@ -75,7 +80,7 @@ export function trajectoryEvidence(input: {
  * Attribution for the stored escalatedBy value. Only TRAJECTORY credits trajectory. A REVIEW or DENY
  * that already existed is recorded as NONE, so it is never attributed to trajectory here.
  */
-export type EscalationAttribution = "not-recorded" | "none" | "risk-engine" | "trajectory";
+export type EscalationAttribution = "not-recorded" | "none" | "risk-engine" | "trajectory" | "inspection";
 
 export function escalationAttribution(escalatedBy: unknown): EscalationAttribution {
   switch (parseEscalationSource(escalatedBy)) {
@@ -83,6 +88,8 @@ export function escalationAttribution(escalatedBy: unknown): EscalationAttributi
       return "trajectory";
     case "RISK_ENGINE":
       return "risk-engine";
+    case "INSPECTION":
+      return "inspection";
     case "NONE":
       return "none";
     case null:
@@ -100,6 +107,7 @@ export const ESCALATION_COPY: Record<EscalationAttribution, string> = {
   none: "No escalation. The decision is the policy decision.",
   "risk-engine": "Raised by the Risk Engine.",
   trajectory: "Escalated to review by trajectory analysis.",
+  inspection: "Decided by content inspection of the arguments.",
 };
 
 /** "60 / 100", or null when there is no score. */

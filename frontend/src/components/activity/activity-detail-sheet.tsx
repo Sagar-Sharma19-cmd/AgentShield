@@ -25,6 +25,8 @@ import {
 } from "@/lib/trajectory/model";
 import type { AuditLogResponse } from "@/types/api";
 import { GateMark } from "@/components/checkpoint/gate-mark";
+import { ContentFindings } from "@/components/inspection/content-findings";
+import { inspectedSubject } from "@/lib/inspection/findings";
 import { gateFor } from "@/lib/checkpoint/gates";
 import { ActivityError } from "./activity-states";
 import { CopyButton } from "./copy-button";
@@ -90,6 +92,10 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
           Built from the recorded authorization result, decision and escalation source. Where the record cannot say what a
           gate did, the step says so.
         </p>
+      </DetailSection>
+
+      <DetailSection title="Content findings">
+        <ContentFindings findings={event.inspectionFindings} subject={inspectedSubject(event.resource)} />
       </DetailSection>
 
       <DetailSection title="Request">

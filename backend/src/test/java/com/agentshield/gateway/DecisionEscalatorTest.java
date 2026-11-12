@@ -108,4 +108,25 @@ class DecisionEscalatorTest {
                     "REVIEW must never be downgraded to ALLOW for risk tier " + tier);
         }
     }
+
+    // ------------------------------------------------------------------ Phase V13: content inspection
+
+    @Test
+    @DisplayName("Inspection combines escalate-only: the stricter of policy and inspection wins")
+    void inspectionIsEscalateOnly() {
+        assertEquals(DecisionType.ALLOW, decisionEscalator.combineInspection(DecisionType.ALLOW, null));
+        assertEquals(DecisionType.ALLOW, decisionEscalator.combineInspection(DecisionType.ALLOW,
+                com.agentshield.inspection.InspectionVerdict.CLEAN));
+        assertEquals(DecisionType.REVIEW, decisionEscalator.combineInspection(DecisionType.ALLOW,
+                com.agentshield.inspection.InspectionVerdict.REVIEW));
+        assertEquals(DecisionType.REVIEW, decisionEscalator.combineInspection(DecisionType.REVIEW,
+                com.agentshield.inspection.InspectionVerdict.CLEAN));
+        assertEquals(DecisionType.DENY, decisionEscalator.combineInspection(DecisionType.DENY,
+                com.agentshield.inspection.InspectionVerdict.REVIEW));
+        assertEquals(DecisionType.DENY, decisionEscalator.combineInspection(DecisionType.REVIEW,
+                com.agentshield.inspection.InspectionVerdict.DENY));
+        for (com.agentshield.inspection.InspectionVerdict verdict : com.agentshield.inspection.InspectionVerdict.values()) {
+            assertEquals(DecisionType.DENY, decisionEscalator.combineInspection(DecisionType.DENY, verdict));
+        }
+    }
 }

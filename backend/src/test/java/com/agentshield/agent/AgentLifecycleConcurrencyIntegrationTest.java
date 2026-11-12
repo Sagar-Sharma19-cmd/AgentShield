@@ -60,7 +60,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "spring.datasource.password=${AGENTSHIELD_PG_TEST_PASSWORD:}",
         "spring.datasource.driver-class-name=org.postgresql.Driver",
         "spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect",
-        "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect"
+        "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect",
+        // The test profile sets JSON for H2; PostgreSQL gets jsonb like production (V13).
+        "spring.flyway.placeholders.json_type=jsonb"
 })
 @ActiveProfiles("test")
 @EnabledIfEnvironmentVariable(named = "AGENTSHIELD_PG_TEST_URL", matches = ".+")

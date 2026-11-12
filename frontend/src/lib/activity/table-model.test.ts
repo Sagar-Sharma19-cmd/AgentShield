@@ -56,8 +56,16 @@ describe("gateCounts / filterByGate", () => {
   ];
 
   it("counts every gate, including zeros", () => {
-    expect(gateCounts(rows)).toEqual({ IDENTITY: 0, PERMISSION: 1, POLICY: 1, RISK_ENGINE: 0, TRAJECTORY: 1, PASSED: 2 });
-    expect(gateCounts([])).toEqual({ IDENTITY: 0, PERMISSION: 0, POLICY: 0, RISK_ENGINE: 0, TRAJECTORY: 0, PASSED: 0 });
+    expect(gateCounts(rows)).toEqual({ IDENTITY: 0, PERMISSION: 1, INSPECTION: 0, POLICY: 1, RISK_ENGINE: 0, TRAJECTORY: 1, PASSED: 2 });
+    expect(gateCounts([])).toEqual({
+      IDENTITY: 0,
+      PERMISSION: 0,
+      INSPECTION: 0,
+      POLICY: 0,
+      RISK_ENGINE: 0,
+      TRAJECTORY: 0,
+      PASSED: 0,
+    });
   });
 
   it("filters to one gate and keeps the order; null keeps every row", () => {

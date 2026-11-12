@@ -14,6 +14,7 @@ from agentshield import (
     MalformedResponse,
     load_config,
     parse_evaluation,
+    parse_output_inspection,
 )
 
 FAKE_KEY = "agk_live_FAKE_SDK_TEST_KEY_NOT_REAL_000000"
@@ -135,6 +136,66 @@ class ClientTests(unittest.TestCase):
                                    timeout=2.0)
         with self.assertRaises(GatewayUnavailable):
             client.redeem(token=FAKE_TOKEN, tool="docker", action="WRITE", resource="image:demo")
+
+
+    # ------------------------------------------------------------------ Phase V13: arguments and inspection
+
+    def test_evaluate_sends_arguments_only_when_given(self):
+        self.server.answers["/api/v1/gateway/evaluate"] = (200, evaluation(
+            "ALLOW", inspectionVerdict="CLEAN", inspectionFindings=[]))
+        result = self.client.evaluate(session_id="s", action="WRITE", resource="image:demo", tool="docker",
+                                      arguments=["docker", "build", "."])
+        self.assertEqual(self.server.requests[0][1]["arguments"], ["docker", "build", "."])
+        self.assertEqual(result.inspection_verdict, "CLEAN")
+        self.assertEqual(result.inspection_findings, ())
+
+    def test_evaluate_parses_redacted_findings(self):
+        finding = {"category": "PII", "type": "EMAIL", "location": "arguments.to", "preview": "[EMAIL] (17 chars)"}
+        self.server.answers["/api/v1/gateway/evaluate"] = (200, evaluation(
+            "REVIEW", inspectionVerdict="REVIEW", inspectionFindings=[finding]))
+        result = self.client.evaluate(session_id="s", action="WRITE", resource="image:demo", tool="docker",
+                                      arguments={"to": "someone"})
+        self.assertEqual(result.inspection_findings[0].type, "EMAIL")
+        self.assertEqual(result.inspection_findings[0].location, "arguments.to")
+
+    def test_inspection_deny_without_deny_is_contradictory(self):
+        with self.assertRaises(MalformedResponse):
+            parse_evaluation(json.dumps(evaluation("ALLOW", inspectionVerdict="DENY")).encode(),
+                             expected_action="WRITE", expected_resource="image:demo")
+        with self.assertRaises(MalformedResponse):
+            parse_evaluation(json.dumps(evaluation("DENY", inspectionVerdict="MAYBE")).encode(),
+                             expected_action="WRITE", expected_resource="image:demo")
+
+    def test_redeem_sends_the_same_arguments(self):
+        self.server.answers["/api/v1/gateway/decisions/redeem"] = (200, {"requestId": REQUEST_ID,
+                                                                         "redeemedAt": "2026-11-11T10:00:00Z"})
+        self.client.redeem(token=FAKE_TOKEN, tool="docker", action="WRITE", resource="image:demo",
+                           arguments=("docker", "push", "x"))
+        self.assertEqual(self.server.requests[0][1]["arguments"], ["docker", "push", "x"])
+
+    def test_arguments_must_be_json_container_or_string(self):
+        with self.assertRaises(TypeError):
+            self.client.evaluate(session_id="s", action="WRITE", resource="r", tool="t", arguments=42)
+        self.assertEqual(self.server.requests, [])
+
+    def test_inspect_output(self):
+        self.server.answers["/api/v1/gateway/inspect"] = (200, {
+            "requestId": REQUEST_ID, "verdict": "DENY",
+            "findings": [{"category": "SECRET", "type": "AWS_ACCESS_KEY", "location": "content",
+                          "preview": "AKIA… (20 chars)"}],
+            "redactedContent": "key [REDACTED:AWS_ACCESS_KEY]"})
+        result = self.client.inspect_output(session_id="s", tool="filesystem", content="key value")
+        self.assertEqual(result.verdict, "DENY")
+        self.assertEqual(result.redacted_content, "key [REDACTED:AWS_ACCESS_KEY]")
+        self.assertNotIn("REDACTED", repr(result), "content stays out of repr")
+        path, payload, _ = self.server.requests[0]
+        self.assertEqual((path, payload), ("/api/v1/gateway/inspect",
+                                           {"sessionId": "s", "tool": "filesystem", "content": "key value"}))
+
+    def test_inspect_output_rejects_unknown_verdict(self):
+        with self.assertRaises(MalformedResponse):
+            parse_output_inspection(json.dumps({"requestId": REQUEST_ID, "verdict": "OK", "findings": [],
+                                                "redactedContent": ""}).encode())
 
 
 class ConfigTests(unittest.TestCase):

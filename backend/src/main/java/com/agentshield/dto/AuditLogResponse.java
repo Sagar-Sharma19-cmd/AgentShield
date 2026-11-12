@@ -1,5 +1,9 @@
 package com.agentshield.dto;
 
+import com.agentshield.inspection.Finding;
+import com.agentshield.inspection.InspectionVerdict;
+import java.util.List;
+
 import com.agentshield.audit.AuditLog;
 import com.agentshield.model.ActionOutcome;
 import com.agentshield.model.ActionType;
@@ -21,6 +25,9 @@ import java.util.UUID;
  *
  * The trajectory fields are additive (V9). trajectoryScore/Tier/Reason are null when trajectory
  * was not evaluated. escalatedBy is null only on rows written before V9.
+ *
+ * inspectionVerdict/inspectionFindings are additive (V13). Findings are redacted when they are recorded: a type,
+ * a JSON path and a preview such as "AKIA… (20 chars)". The inspected arguments are never stored.
  */
 public record AuditLogResponse(
         UUID id,
@@ -43,7 +50,11 @@ public record AuditLogResponse(
         Integer trajectoryScore,
         RiskTier trajectoryTier,
         String trajectoryReason,
-        EscalationSource escalatedBy
+        EscalationSource escalatedBy,
+        /** Content inspection verdict (V13); null when inspection did not run or the row predates V13. */
+        InspectionVerdict inspectionVerdict,
+        /** Redacted content findings (V13); null when inspection did not run. Never raw values. */
+        List<Finding> inspectionFindings
 ) {
     public static AuditLogResponse from(AuditLog log) {
         return new AuditLogResponse(log.getId(), log.getRequestId(), log.getAgentId(), log.getSessionId(),
@@ -51,6 +62,6 @@ public record AuditLogResponse(
                 log.getRiskScore(), log.getReason(), log.getActionOutcome(), log.getRegisteredAgentId(),
                 log.getRegisteredToolId(), log.getAuthorizationResult(), log.getAuthorizationReason(),
                 log.getTimestamp(), log.getTrajectoryScore(), log.getTrajectoryTier(), log.getTrajectoryReason(),
-                log.getEscalatedBy());
+                log.getEscalatedBy(), log.getInspectionVerdict(), log.getInspectionFindings());
     }
 }

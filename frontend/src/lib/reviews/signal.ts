@@ -5,6 +5,7 @@
  *   NONE → Policy (policy held it; no later stage changed the decision)
  *   RISK_ENGINE → Risk engine
  *   TRAJECTORY → Trajectory
+ *   INSPECTION → Content inspection (V13: PII or prompt injection in the resource or arguments)
  *
  * `escalatedBy` is null only on reviews created before V11 whose audit row had no attribution. For those
  * old rows only, the signal is inferred from fields the review does store (GatewayService.escalationSource
@@ -18,7 +19,7 @@
 import { parseEscalationSource } from "@/lib/trajectory/model";
 import type { AuditLogResponse, EscalationSource, ReviewRequestResponse } from "@/types/api";
 
-export type ReviewSignal = "POLICY" | "RISK_ENGINE" | "TRAJECTORY" | "UNKNOWN";
+export type ReviewSignal = "POLICY" | "RISK_ENGINE" | "TRAJECTORY" | "INSPECTION" | "UNKNOWN";
 
 const RISK_ENGINE_NOTE = "Escalated to REVIEW by Risk Engine assessment";
 const TRAJECTORY_NOTE = "Escalated to REVIEW by trajectory analysis";
@@ -27,6 +28,7 @@ export const REVIEW_SIGNAL_LABELS: Record<ReviewSignal, string> = {
   POLICY: "Policy",
   RISK_ENGINE: "Risk engine",
   TRAJECTORY: "Trajectory",
+  INSPECTION: "Content inspection",
   UNKNOWN: "Not recorded",
 };
 
@@ -34,6 +36,7 @@ const SIGNAL_BY_SOURCE: Record<EscalationSource, ReviewSignal> = {
   NONE: "POLICY",
   RISK_ENGINE: "RISK_ENGINE",
   TRAJECTORY: "TRAJECTORY",
+  INSPECTION: "INSPECTION",
 };
 
 /** Text rule for old rows without a recorded escalatedBy. */

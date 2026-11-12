@@ -29,7 +29,8 @@ import java.util.UUID;
  * {@code agentshield.decision-token.secret} (AGENTSHIELD_DECISION_TOKEN_SECRET, required, at least 32 characters).
  *
  * Claims: jti = gateway requestId, sub = verified registered agent id, tool, action, res = SHA-256 hex of the
- * resource, src = ALLOW or REVIEW_APPROVED, iat, exp (iat + ttl-seconds, default 60).
+ * resource, src = ALLOW or REVIEW_APPROVED, iat, exp (iat + ttl-seconds, default 60), and (Phase V13, only when
+ * the request had arguments) args = SHA-256 hex of the canonical JSON of the arguments.
  *
  * A token proves that AgentShield decided this exact operation for this agent, recently. Being one-time is not
  * the token's job: redemption records the jti once (DecisionRedemptionService). Tokens and the secret are never
@@ -43,6 +44,7 @@ public class DecisionTokenService {
     static final String CLAIM_ACTION = "action";
     static final String CLAIM_RESOURCE_HASH = "res";
     static final String CLAIM_SOURCE = "src";
+    static final String CLAIM_ARGS = "args";
 
     private final MACSigner signer;
     private final MACVerifier verifier;
@@ -75,15 +77,26 @@ public class DecisionTokenService {
         return ttlSeconds;
     }
 
-    /** Signs a token for one decided operation. */
+    /** Signs a token for one decided operation without arguments. */
     public String issue(UUID requestId, UUID agentId, String tool, ActionType action, String resource,
                         DecisionSource source) {
+        return issue(requestId, agentId, tool, action, resource, source, null);
+    }
+
+    /**
+     * Signs a token for one decided operation.
+     *
+     * @param argsHash SHA-256 hex of the canonical arguments the decision was made with, or null for none. When
+     *                 present it is signed as the "args" claim, and the redeem must present the same arguments.
+     */
+    public String issue(UUID requestId, UUID agentId, String tool, ActionType action, String resource,
+                        DecisionSource source, String argsHash) {
         if (requestId == null || agentId == null || tool == null || action == null || resource == null || source == null) {
             throw new IllegalArgumentException("A decision token needs a request, a verified agent and an operation.");
         }
         // JWT dates have second precision; truncate so exp is exactly iat + ttl.
         Instant issuedAt = clock.instant().truncatedTo(ChronoUnit.SECONDS);
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .jwtID(requestId.toString())
                 .subject(agentId.toString())
                 .claim(CLAIM_TOOL, tool)
@@ -91,8 +104,11 @@ public class DecisionTokenService {
                 .claim(CLAIM_RESOURCE_HASH, sha256Hex(resource))
                 .claim(CLAIM_SOURCE, source.name())
                 .issueTime(Date.from(issuedAt))
-                .expirationTime(Date.from(issuedAt.plusSeconds(ttlSeconds)))
-                .build();
+                .expirationTime(Date.from(issuedAt.plusSeconds(ttlSeconds)));
+        if (argsHash != null) {
+            builder.claim(CLAIM_ARGS, argsHash);
+        }
+        JWTClaimsSet claims = builder.build();
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256).type(JOSEObjectType.JWT).build(), claims);
         try {
             jwt.sign(signer);
@@ -137,7 +153,8 @@ public class DecisionTokenService {
                     required(set.getStringClaim(CLAIM_RESOURCE_HASH)),
                     DecisionSource.valueOf(required(set.getStringClaim(CLAIM_SOURCE))),
                     required(set.getIssueTime()).toInstant(),
-                    required(set.getExpirationTime()).toInstant());
+                    required(set.getExpirationTime()).toInstant(),
+                    set.getStringClaim(CLAIM_ARGS));
         } catch (ParseException | RuntimeException e) {
             throw invalid();
         }

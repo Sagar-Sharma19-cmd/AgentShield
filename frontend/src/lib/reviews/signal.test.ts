@@ -16,6 +16,7 @@ describe("reviewSignal: recorded escalatedBy (V11)", () => {
     expect(reviewSignal(review("NONE", "REVIEW"))).toBe("POLICY");
     expect(reviewSignal(review("RISK_ENGINE"))).toBe("RISK_ENGINE");
     expect(reviewSignal(review("TRAJECTORY"))).toBe("TRAJECTORY");
+    expect(reviewSignal(review("INSPECTION"))).toBe("INSPECTION");
   });
 
   it("uses the recorded value even when the reason text says something else", () => {

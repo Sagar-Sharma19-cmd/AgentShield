@@ -97,6 +97,12 @@ describe("gateFor", () => {
     expect(gateFor(input("AUTHORIZED", "REVIEW", "NONE"))).toBe("POLICY");
   });
 
+  it("content inspection DENY or REVIEW is decided at INSPECTION", () => {
+    expect(gateFor(input("AUTHORIZED", "DENY", "INSPECTION"))).toBe("INSPECTION");
+    expect(gateFor(input("AUTHORIZED", "REVIEW", "INSPECTION"))).toBe("INSPECTION");
+    expect(GATES.indexOf("INSPECTION")).toBe(GATES.indexOf("PERMISSION") + 1);
+  });
+
   it("falls back to POLICY for pre-V9 rows with null escalatedBy", () => {
     expect(gateFor(input("AUTHORIZED", "REVIEW", null))).toBe("POLICY");
   });

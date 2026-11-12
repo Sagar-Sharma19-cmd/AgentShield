@@ -70,10 +70,11 @@ EOF
   echo "  agent id: $agent_id (API key saved to $ENV_FILE, not shown)"
 
   echo "Registering mock tools..."
-  local gh fs jk dk k8 sh
+  local gh fs jk dk k8 sh cu
   gh=$(tool_id github SOURCE_CONTROL); fs=$(tool_id filesystem FILESYSTEM)
   jk=$(tool_id jenkins OTHER);        dk=$(tool_id docker OTHER)
   k8=$(tool_id kubernetes OTHER);     sh=$(tool_id shell SHELL)
+  cu=$(tool_id curl HTTP)
 
   echo "Granting least-privilege permissions..."
   grant() {
@@ -83,11 +84,12 @@ EOF
     echo "  $2: $3 -> HTTP $code"
   }
   grant "$gh" github     '"READ"'
-  grant "$fs" filesystem '"READ"'
+  grant "$fs" filesystem '"READ","WRITE"'
   grant "$jk" jenkins    '"EXECUTE"'
   grant "$sh" shell      '"EXECUTE"'
   grant "$dk" docker     '"WRITE","EXTERNAL_REQUEST"'
   grant "$k8" kubernetes '"WRITE","DELETE"'
+  grant "$cu" curl       '"EXTERNAL_REQUEST"'
 
   echo
   echo "Done. In every terminal that runs the simulator:  source $ENV_FILE"

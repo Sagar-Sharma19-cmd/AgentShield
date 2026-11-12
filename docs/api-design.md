@@ -46,6 +46,7 @@ Any other path is denied. Agent keys never work on admin APIs and the admin key 
 | `GET` | `/gateway/reviews/{id}` | The calling agent's own review request (B3) | ✅ Implemented |
 | `POST` | `/gateway/reviews/{id}/claim` | Claim an approved review once and receive the exact approved operation (B3) | ✅ Implemented |
 | `POST` | `/gateway/decisions/redeem` | Redeem a signed one-time decision token before running the operation (E1) | ✅ Implemented |
+| `POST` | `/gateway/inspect` | Inspect tool output for secrets, personal data and prompt injection; returns it redacted (V13) | ✅ Implemented |
 | `GET` | `/actuator/health` | Health check endpoint (public) | ✅ Implemented |
 
 ### Agent review endpoints — requires agent API key (B3)
@@ -114,6 +115,7 @@ An `ALLOW` from `POST /gateway/evaluate` carries a `decisionToken`, and so does 
 | `tool`, `action` | The decided operation |
 | `res` | SHA-256 hex of the exact resource string (the resource itself is not in the token) |
 | `src` | `ALLOW` or `REVIEW_APPROVED` |
+| `args` | SHA-256 hex of the canonical JSON of `arguments` (sorted keys). Present only when the request sent arguments (V13) |
 | `iat`, `exp` | Issue time and expiry (seconds) |
 
 An enforcing client redeems the token **before** it runs the operation and runs it only on `200`:
@@ -122,6 +124,8 @@ An enforcing client redeems the token **before** it runs the operation and runs 
 ```json
 { "token": "eyJhbGciOiJIUzI1NiJ9…", "tool": "docker", "action": "WRITE", "resource": "image:agentshield-demo" }
 ```
+
+If the token has an `args` claim, the redeem must send the same `arguments` (compared by canonical hash). Different arguments, or arguments sent for a token issued without them, are a `403`.
 
 | Status | When |
 |--------|------|
@@ -325,9 +329,30 @@ Content-Type: application/json
   "tool": "string (required)",
   "metadata": {
     "key": "value"
-  }
+  },
+  "arguments": "optional (V13): string, array (e.g. argv) or object; at most 64 KB and nesting depth 10"
 }
 ```
+
+**`arguments` and content inspection (V13).** When the request is authorized, the gateway inspects the resource (always,
+since V13.1) and `arguments` (when present) before policy. A secret (cloud keys, private keys, tokens, high-entropy
+passwords) is a final `DENY` with `escalatedBy = INSPECTION`. Personal data (email, card, PAN, Aadhaar, phone) or
+prompt injection raises an `ALLOW` to `REVIEW`. The response then adds `inspectionVerdict` (`CLEAN`, `REVIEW`,
+`DENY`) and `inspectionFindings` (a list of `{category, type, location, preview}`; previews are redacted, for
+example `AKIA… (20 chars)` or `[EMAIL] (17 chars)`). Argument values are never persisted, logged or echoed back.
+Without `arguments`, the resource alone is inspected and the fields are still returned (`CLEAN` and `[]` when
+nothing is found). They are omitted only when authorization failed or inspection is disabled. Over the size or depth limit, or a
+non-string/array/object value, is a `400`.
+
+### `POST /gateway/inspect` (V13)
+
+```json
+{ "sessionId": "string", "tool": "string", "content": "string (at most 262,144 characters)" }
+```
+
+The agent is the one the API key belongs to. Returns `{ "requestId": "…", "verdict": "CLEAN | REVIEW | DENY", "findings": [...], "redactedContent": "…" }`, where each finding is
+replaced in the content by `[REDACTED:<TYPE>]`. The calling agent must be `ACTIVE` (`403` otherwise). One audit row
+is written with action `READ`, resource `output:<tool>` and the verdict as the decision; the content is not stored.
 
 `riskScore` is always PolicyEngine's own score (unaffected by the Risk Engine). `riskTier` /
 `riskEngineAvailable` describe the separate Risk Engine assessment that may have escalated

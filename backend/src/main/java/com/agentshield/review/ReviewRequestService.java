@@ -4,6 +4,7 @@ import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.exception.ConflictException;
 import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
+import com.agentshield.inspection.Finding;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
@@ -119,6 +120,22 @@ public class ReviewRequestService {
                                               DecisionType originalDecision, String reason, Instant timestamp,
                                               TrajectoryEvaluation trajectory, UUID registeredAgentId,
                                               EscalationSource escalatedBy) {
+        return createReviewRequest(requestId, request, resourceSensitivity, riskScore, riskTier, originalDecision,
+                reason, timestamp, trajectory, registeredAgentId, escalatedBy, null, null);
+    }
+
+    /**
+     * As above, plus content inspection (V13): the REDACTED findings (null when inspection did not run) and the
+     * SHA-256 of the canonical arguments (null when there were none). The claim's decision token carries that
+     * hash. The arguments themselves are never stored.
+     */
+    @Transactional
+    public ReviewRequest createReviewRequest(UUID requestId, EvaluationRequest request,
+                                              ResourceSensitivity resourceSensitivity, int riskScore, RiskTier riskTier,
+                                              DecisionType originalDecision, String reason, Instant timestamp,
+                                              TrajectoryEvaluation trajectory, UUID registeredAgentId,
+                                              EscalationSource escalatedBy, List<Finding> inspectionFindings,
+                                              String argsSha256) {
         return reviewRequestRepository.findByRequestId(requestId)
                 .orElseGet(() -> {
                     ReviewRequest reviewRequest = ReviewRequest.builder()
@@ -141,6 +158,8 @@ public class ReviewRequestService {
                             .updatedAt(timestamp)
                             .registeredAgentId(registeredAgentId)
                             .escalatedBy(escalatedBy)
+                            .inspectionFindings(inspectionFindings)
+                            .argsSha256(argsSha256)
                             .expiresAt(timestamp.plus(ttl))
                             .build();
                     return reviewRequestRepository.save(reviewRequest);

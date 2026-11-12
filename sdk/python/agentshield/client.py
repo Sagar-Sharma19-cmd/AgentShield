@@ -5,8 +5,14 @@ agentshield-guard CLI.
 Talks to POST /api/v1/gateway/evaluate using the exact request/response contract defined by
 backend/.../dto/EvaluationRequest.java and backend/.../dto/EvaluationResponse.java, to the agent's
 own review endpoints (Phase B3): GET /api/v1/gateway/reviews/{id} (AgentReviewResponse) and
-POST /api/v1/gateway/reviews/{id}/claim (ReviewClaimResponse), and to
-POST /api/v1/gateway/decisions/redeem (Phase E1, DecisionRedeemRequest/DecisionRedeemResponse).
+POST /api/v1/gateway/reviews/{id}/claim (ReviewClaimResponse), to
+POST /api/v1/gateway/decisions/redeem (Phase E1, DecisionRedeemRequest/DecisionRedeemResponse), and to
+POST /api/v1/gateway/inspect (Phase V13, output scanning).
+
+Content inspection (Phase V13): evaluate() and redeem() take an optional `arguments` value (a str, list or dict:
+what the agent is about to send to the tool). The gateway inspects it for secrets (DENY), PII and prompt injection
+(REVIEW), and signs its hash into the decision token, so redeem() must be given the same arguments. Leave it out
+(None) to keep the pre-V13 behaviour. Arguments are sent only in the request body and never printed or logged here.
 
 Enforcement contract (Phase E1): an ALLOW, or a successful claim, carries a one-time decision token.
 The caller must redeem it with the exact tool, action and resource BEFORE running the operation, and
@@ -34,11 +40,12 @@ import socket
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 GATEWAY_PATH = "/api/v1/gateway/evaluate"
 REVIEWS_PATH = "/api/v1/gateway/reviews"
 REDEEM_PATH = "/api/v1/gateway/decisions/redeem"
+INSPECT_PATH = "/api/v1/gateway/inspect"
 DEFAULT_TIMEOUT_SECONDS = 10.0
 
 ENV_GATEWAY_URL = "AGENTSHIELD_GATEWAY_URL"
@@ -48,6 +55,7 @@ ENV_AGENT_API_KEY = "AGENTSHIELD_AGENT_API_KEY"
 VALID_DECISIONS = frozenset({"ALLOW", "REVIEW", "DENY"})
 VALID_ACTIONS = frozenset({"READ", "WRITE", "DELETE", "EXECUTE", "EXTERNAL_REQUEST"})
 VALID_REVIEW_STATUSES = frozenset({"PENDING", "IN_REVIEW", "APPROVED", "REJECTED"})
+VALID_VERDICTS = frozenset({"CLEAN", "REVIEW", "DENY"})
 
 _UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 # Server error messages are shown to the operator; keep them short.
@@ -92,6 +100,16 @@ class GatewayConfig:
 
 
 @dataclass(frozen=True)
+class Finding:
+    """One redacted content finding (Phase V13). Never holds the raw value, only a preview such as 'AKIA… (20 chars)'."""
+
+    category: str   # SECRET, PII or PROMPT_INJECTION
+    type: str       # for example AWS_ACCESS_KEY or EMAIL
+    location: str   # for example arguments[3], arguments.body.to, resource, content
+    preview: str
+
+
+@dataclass(frozen=True)
 class Evaluation:
     """Parsed, validated EvaluationResponse."""
 
@@ -104,6 +122,19 @@ class Evaluation:
     review_request_id: Optional[str]
     # One-time decision token, present only on ALLOW. Never shown in repr.
     decision_token: Optional[str] = field(default=None, repr=False)
+    # Content inspection of the resource and arguments (V13, V13.1): None only when inspection did not run.
+    inspection_verdict: Optional[str] = None
+    inspection_findings: Tuple[Finding, ...] = ()
+
+
+@dataclass(frozen=True)
+class OutputInspection:
+    """Parsed InspectOutputResponse: the verdict, redacted findings and the content with each finding replaced."""
+
+    request_id: str
+    verdict: str
+    findings: Tuple[Finding, ...]
+    redacted_content: str = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -181,8 +212,12 @@ class AgentShieldClient:
     def agent_id(self) -> str:
         return self._config.agent_id
 
-    def evaluate(self, *, session_id: str, action: str, resource: str, tool: str) -> Evaluation:
-        """Sends one evaluation request. Raises a GatewayError subclass on any failure."""
+    def evaluate(self, *, session_id: str, action: str, resource: str, tool: str,
+                 arguments: Any = None) -> Evaluation:
+        """
+        Sends one evaluation request. Raises a GatewayError subclass on any failure. With `arguments` (a str, list or
+        dict), the gateway inspects them and binds their hash to the decision token: pass the same value to redeem().
+        """
         payload = {
             "agentId": self._config.agent_id,
             "sessionId": session_id,
@@ -190,6 +225,8 @@ class AgentShieldClient:
             "resource": resource,
             "tool": tool,
         }
+        if arguments is not None:
+            payload["arguments"] = _check_arguments(arguments)
         status, raw = self._send("POST", GATEWAY_PATH, payload)
         return parse_evaluation(raw, expected_action=action, expected_resource=resource)
 
@@ -207,17 +244,31 @@ class AgentShieldClient:
         return parse_claim(raw, expected_review_id=review_id)
 
     def redeem(self, *, token: str, tool: str, action: str, resource: str,
-               expected_request_id: Optional[str] = None) -> Redemption:
+               expected_request_id: Optional[str] = None, arguments: Any = None) -> Redemption:
         """
         Redeems a decision token once, for exactly this operation. Run the operation only if this returns.
         The gateway answers 401 (invalid or expired), 403 (another agent's token, a different operation,
-        or an agent that is not active) or 409 (already redeemed); each raises GatewayRejected.
+        or an agent that is not active) or 409 (already redeemed); each raises GatewayRejected. If the decision was
+        made with `arguments`, pass exactly the same value here (a different or missing value is a 403).
         """
         if not isinstance(token, str) or not token:
             raise MalformedResponse("no decision token to redeem")
         payload = {"token": token, "tool": tool, "action": action, "resource": resource}
+        if arguments is not None:
+            payload["arguments"] = _check_arguments(arguments)
         status, raw = self._send("POST", REDEEM_PATH, payload)
         return parse_redemption(raw, expected_request_id=expected_request_id)
+
+    def inspect_output(self, *, session_id: str, tool: str, content: str) -> OutputInspection:
+        """
+        Scans tool output before it is handed to a model (Phase V13). Returns the verdict (CLEAN, REVIEW or DENY), the
+        redacted findings and the content with each finding replaced by [REDACTED:<TYPE>]. Use redacted_content,
+        never the original, whenever the verdict is not CLEAN.
+        """
+        if not isinstance(content, str):
+            raise TypeError("content must be a str")
+        status, raw = self._send("POST", INSPECT_PATH, {"sessionId": session_id, "tool": tool, "content": content})
+        return parse_output_inspection(raw)
 
     def _send(self, method: str, path: str, payload: Optional[dict]) -> tuple:
         """
@@ -252,6 +303,51 @@ class AgentShieldClient:
         if not (200 <= int(status) < 300):
             raise GatewayRejected(int(status))
         return int(status), raw
+
+
+def _check_arguments(arguments: Any) -> Any:
+    """The gateway accepts a JSON string, array or object. Anything else is a caller bug, not a gateway answer."""
+    if isinstance(arguments, tuple):
+        arguments = list(arguments)
+    if not isinstance(arguments, (str, list, dict)):
+        raise TypeError("arguments must be a str, list or dict")
+    return arguments
+
+
+def _parse_findings(value: Any, what: str) -> Tuple[Finding, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise MalformedResponse(f"{what} has findings that are not a list")
+    findings = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise MalformedResponse(f"{what} has a finding that is not an object")
+        findings.append(Finding(
+            category=_required_str(item, "category", what),
+            type=_required_str(item, "type", what),
+            location=_required_str(item, "location", what),
+            preview=_required_str(item, "preview", what),
+        ))
+    return tuple(findings)
+
+
+def parse_output_inspection(raw: bytes) -> OutputInspection:
+    """Validates an InspectOutputResponse. Raises MalformedResponse on anything unexpected."""
+    what = "inspect response"
+    data = _load_object(raw, what)
+    verdict = data.get("verdict")
+    if verdict not in VALID_VERDICTS:
+        raise MalformedResponse("inspect response has no recognised verdict")
+    redacted = data.get("redactedContent")
+    if not isinstance(redacted, str):
+        raise MalformedResponse("inspect response has no redactedContent")
+    return OutputInspection(
+        request_id=_required_str(data, "requestId", what),
+        verdict=verdict,
+        findings=_parse_findings(data.get("findings"), what),
+        redacted_content=redacted,
+    )
 
 
 def _require_uuid(value: str) -> str:
@@ -398,6 +494,12 @@ def parse_evaluation(raw: bytes, *, expected_action: str, expected_resource: str
     # Only an ALLOW may carry a token. A token on REVIEW or DENY contradicts the contract: fail closed.
     if token is not None and decision != "ALLOW":
         raise MalformedResponse("gateway response is contradictory: decision token without ALLOW")
+    verdict = data.get("inspectionVerdict")
+    if verdict is not None and verdict not in VALID_VERDICTS:
+        raise MalformedResponse("gateway response has an unrecognised inspectionVerdict")
+    # A DENY verdict can only come with a DENY decision: inspection DENY is final.
+    if verdict == "DENY" and decision != "DENY":
+        raise MalformedResponse("gateway response is contradictory: inspection DENY without DENY")
     return Evaluation(
         request_id=request_id,
         decision=decision,
@@ -407,4 +509,6 @@ def parse_evaluation(raw: bytes, *, expected_action: str, expected_resource: str
         risk_tier=risk_tier if isinstance(risk_tier, str) else None,
         review_request_id=review_request_id if isinstance(review_request_id, str) else None,
         decision_token=token if isinstance(token, str) and token else None,
+        inspection_verdict=verdict,
+        inspection_findings=_parse_findings(data.get("inspectionFindings"), "gateway response"),
     )

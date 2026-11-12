@@ -76,6 +76,9 @@ def _print_step(index: int, total: int, step: StepResult) -> None:
         print(f"      Reason      : {ev.reason}")
         if ev.review_request_id:
             print(f"      Review ID   : {ev.review_request_id}")
+        for finding in ev.inspection_findings:
+            # Redacted by the gateway: a type, a location and a preview, never the value.
+            print(f"      Finding     : {finding.category} {finding.type} at {finding.location} ({finding.preview})")
     print(f"      Status      : {STATUS_LABEL[step.outcome]}")
     if step.outcome == Outcome.FAILED_CLOSED or step.review is not None:
         print(f"      Detail      : {step.message}")

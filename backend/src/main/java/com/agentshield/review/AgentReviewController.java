@@ -48,13 +48,15 @@ public class AgentReviewController {
      * Claims an approval once. 200 with the exact approved tool/action/resource and a one-time decision token
      * (src REVIEW_APPROVED, jti = the original requestId) issued only after the claim committed; 409 when the
      * review is not APPROVED, has expired or was already claimed; 404 for an unknown id or another agent's review.
+     * When the original request had arguments, the token carries their hash (V13), so the redeem must send the
+     * same arguments.
      */
     @PostMapping("/{id}/claim")
     public ResponseEntity<ReviewClaimResponse> claim(@PathVariable UUID id,
                                                      @AuthenticationPrincipal AuthenticatedAgent caller) {
         ReviewRequest claimed = reviewRequestService.claimForAgent(id, caller.id());
         String token = decisionTokenService.issue(claimed.getRequestId(), caller.id(), claimed.getTool(),
-                claimed.getAction(), claimed.getResource(), DecisionSource.REVIEW_APPROVED);
+                claimed.getAction(), claimed.getResource(), DecisionSource.REVIEW_APPROVED, claimed.getArgsSha256());
         return ResponseEntity.ok(ReviewClaimResponse.from(claimed, token));
     }
 }

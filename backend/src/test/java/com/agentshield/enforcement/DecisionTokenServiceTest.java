@@ -138,4 +138,19 @@ class DecisionTokenServiceTest {
         jwt.sign(new MACSigner(SECRET.getBytes(StandardCharsets.UTF_8)));
         assertThrows(InvalidDecisionTokenException.class, () -> service.verify(jwt.serialize()));
     }
+
+    @Test
+    @DisplayName("V13: the args claim is signed only when arguments were given, and read back on verify")
+    void argsClaim() throws Exception {
+        String hash = DecisionTokenService.sha256Hex("[\"build\"]");
+        String withArgs = service.issue(UUID.randomUUID(), UUID.randomUUID(), "docker", ActionType.WRITE, "r",
+                DecisionSource.ALLOW, hash);
+        assertEquals(hash, SignedJWT.parse(withArgs).getJWTClaimsSet().getStringClaim("args"));
+        assertEquals(hash, service.verify(withArgs).argsHash());
+
+        String without = service.issue(UUID.randomUUID(), UUID.randomUUID(), "docker", ActionType.WRITE, "r",
+                DecisionSource.ALLOW);
+        assertEquals(null, SignedJWT.parse(without).getJWTClaimsSet().getClaim("args"));
+        assertEquals(null, service.verify(without).argsHash());
+    }
 }

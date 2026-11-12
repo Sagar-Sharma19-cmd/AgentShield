@@ -1,5 +1,6 @@
 package com.agentshield.gateway;
 
+import com.agentshield.inspection.InspectionVerdict;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.RiskTier;
 import org.springframework.stereotype.Component;
@@ -61,5 +62,26 @@ public class DecisionEscalator {
             return DecisionType.REVIEW;
         }
         return existingDecision;
+    }
+
+    /**
+     * Content inspection (Phase V13) combined with the policy decision, escalate-only: the stricter of the two.
+     * An inspection DENY never reaches here (it is final before policy runs); a REVIEW raises an ALLOW to REVIEW;
+     * CLEAN or a verdict of null (inspection did not run) leaves the decision unchanged.
+     */
+    public DecisionType combineInspection(DecisionType existingDecision, InspectionVerdict verdict) {
+        if (verdict == null || verdict == InspectionVerdict.CLEAN) {
+            return existingDecision;
+        }
+        DecisionType inspectionDecision = verdict == InspectionVerdict.DENY ? DecisionType.DENY : DecisionType.REVIEW;
+        return rank(inspectionDecision) > rank(existingDecision) ? inspectionDecision : existingDecision;
+    }
+
+    private static int rank(DecisionType decision) {
+        return switch (decision) {
+            case ALLOW -> 0;
+            case REVIEW -> 1;
+            case DENY -> 2;
+        };
     }
 }

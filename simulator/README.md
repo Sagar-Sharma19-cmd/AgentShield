@@ -58,6 +58,8 @@ modifies a cluster. Each appends one line to `execution.log` in a temporary dire
 | `kubernetes` | delete a simulated resource | DELETE |
 | `shell` | simulated healthcheck (no process) | EXECUTE |
 | `filesystem` | simulated file read (nothing is opened) | READ |
+| `filesystem` | simulated export write (nothing is written) | WRITE |
+| `curl` | simulated POST of data (no network) | EXTERNAL_REQUEST |
 
 ## Scenarios
 
@@ -73,6 +75,8 @@ final decision.
 | `review_required` | jenkins EXECUTE; shell EXECUTE | Generic EXECUTE is REVIEW |
 | `deployment_pipeline` | github READ; docker WRITE; docker EXTERNAL_REQUEST; kubernetes WRITE | EXTERNAL_REQUEST is REVIEW. The pipeline halts there by default |
 | `scope_escalation` | kubernetes WRITE; kubernetes DELETE (canary) | Non-production DELETE is REVIEW |
+| `secret_exfiltration` | curl EXTERNAL_REQUEST with an AWS example key in the argv | Content inspection finds a secret: DENY, before policy (V13) |
+| `pii_export` | filesystem WRITE `exports/customers.csv` with an email and a test card number | Content inspection finds personal data: REVIEW (V13) |
 
 Authorization runs before policy. A step with no grant gets DENY from the PermissionEngine, and the
 policy is not evaluated.
@@ -119,6 +123,7 @@ JENKINS_ID=$(register_tool jenkins OTHER)
 DOCKER_ID=$(register_tool docker OTHER)
 K8S_ID=$(register_tool kubernetes OTHER)
 SHELL_ID=$(register_tool shell SHELL)
+CURL_ID=$(register_tool curl HTTP)
 
 # 4. Grant only what each scenario needs (least privilege).
 grant() {
@@ -127,7 +132,8 @@ grant() {
     -d "{\"agentId\":\"$AGENT_ID\",\"toolId\":\"$1\",\"allowedActions\":[$2]}"
 }
 grant "$GITHUB_ID"  '"READ"'
-grant "$FS_ID"      '"READ"'
+grant "$FS_ID"      '"READ","WRITE"'
+grant "$CURL_ID"    '"EXTERNAL_REQUEST"'
 grant "$JENKINS_ID" '"EXECUTE"'
 grant "$SHELL_ID"   '"EXECUTE"'
 grant "$DOCKER_ID"  '"WRITE","EXTERNAL_REQUEST"'

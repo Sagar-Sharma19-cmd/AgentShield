@@ -1,5 +1,6 @@
 package com.agentshield.review;
 
+import com.agentshield.inspection.Finding;
 import com.agentshield.model.ActionType;
 import com.agentshield.model.DecisionType;
 import com.agentshield.model.EscalationSource;
@@ -14,8 +15,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -128,6 +132,18 @@ public class ReviewRequest {
     @Enumerated(EnumType.STRING)
     @Column(name = "escalated_by", length = 20)
     private EscalationSource escalatedBy;
+
+    /** Redacted content findings of the request (V13), never raw values. NULL when inspection did not run. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "inspection_findings")
+    private List<Finding> inspectionFindings;
+
+    /**
+     * SHA-256 hex of the canonical JSON of the request's arguments (V13). The claim's decision token carries it,
+     * so the agent must redeem with the same arguments. The arguments themselves are never stored.
+     */
+    @Column(name = "args_sha256", length = 64)
+    private String argsSha256;
 
     public ReviewRequest() {
     }
@@ -363,6 +379,22 @@ public class ReviewRequest {
         this.escalatedBy = escalatedBy;
     }
 
+    public List<Finding> getInspectionFindings() {
+        return inspectionFindings;
+    }
+
+    public void setInspectionFindings(List<Finding> inspectionFindings) {
+        this.inspectionFindings = inspectionFindings;
+    }
+
+    public String getArgsSha256() {
+        return argsSha256;
+    }
+
+    public void setArgsSha256(String argsSha256) {
+        this.argsSha256 = argsSha256;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -389,6 +421,8 @@ public class ReviewRequest {
         private String trajectoryReason;
         private UUID registeredAgentId;
         private EscalationSource escalatedBy;
+        private List<Finding> inspectionFindings;
+        private String argsSha256;
         private Instant expiresAt;
 
         public Builder id(UUID id) {
@@ -496,6 +530,16 @@ public class ReviewRequest {
             return this;
         }
 
+        public Builder inspectionFindings(List<Finding> inspectionFindings) {
+            this.inspectionFindings = inspectionFindings;
+            return this;
+        }
+
+        public Builder argsSha256(String argsSha256) {
+            this.argsSha256 = argsSha256;
+            return this;
+        }
+
         public Builder expiresAt(Instant expiresAt) {
             this.expiresAt = expiresAt;
             return this;
@@ -508,6 +552,8 @@ public class ReviewRequest {
             built.setRegisteredAgentId(registeredAgentId);
             built.setExpiresAt(expiresAt);
             built.setEscalatedBy(escalatedBy);
+            built.setInspectionFindings(inspectionFindings);
+            built.setArgsSha256(argsSha256);
             return built;
         }
     }

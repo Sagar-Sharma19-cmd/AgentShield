@@ -1,9 +1,11 @@
 package com.agentshield.config;
 
 import com.agentshield.dto.ErrorResponse;
+import com.agentshield.exception.AgentNotActiveException;
 import com.agentshield.exception.ConflictException;
 import com.agentshield.exception.DecisionTokenForbiddenException;
 import com.agentshield.exception.InvalidDecisionTokenException;
+import com.agentshield.exception.InvalidArgumentsException;
 import com.agentshield.exception.InvalidReviewStateException;
 import com.agentshield.exception.ResourceNotFoundException;
 import jakarta.validation.ConstraintViolation;
@@ -108,6 +110,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidReviewStateException.class)
     public ResponseEntity<ErrorResponse> handleInvalidReviewState(InvalidReviewStateException ex) {
         return error(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
+    }
+
+    /** Arguments too large, too deep or of the wrong type. The message names the limit, never the content. */
+    @ExceptionHandler(InvalidArgumentsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidArguments(InvalidArgumentsException ex) {
+        return error(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
+    }
+
+    @ExceptionHandler(AgentNotActiveException.class)
+    public ResponseEntity<ErrorResponse> handleAgentNotActive(AgentNotActiveException ex) {
+        return error(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

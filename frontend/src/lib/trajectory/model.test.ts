@@ -79,6 +79,12 @@ describe("escalation attribution", () => {
     expect(isTrajectoryEscalation("NONE")).toBe(false);
   });
 
+  it("a decision by content inspection is attributed to inspection, never trajectory", () => {
+    expect(escalationAttribution("INSPECTION")).toBe("inspection");
+    expect(isTrajectoryEscalation("INSPECTION")).toBe(false);
+    expect(ESCALATION_COPY.inspection).toBe("Decided by content inspection of the arguments.");
+  });
+
   it("legacy NULL escalatedBy is 'not recorded', not 'none'", () => {
     expect(escalationAttribution(null)).toBe("not-recorded");
     expect(escalationAttribution(undefined)).toBe("not-recorded");

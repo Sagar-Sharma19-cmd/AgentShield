@@ -7,6 +7,8 @@ import com.agentshield.model.DecisionType;
 import com.agentshield.model.EscalationSource;
 import com.agentshield.model.ResourceSensitivity;
 import com.agentshield.model.RiskTier;
+import com.agentshield.inspection.Finding;
+import com.agentshield.inspection.InspectionVerdict;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,8 +17,11 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -103,6 +108,16 @@ public class AuditLog {
     @Enumerated(EnumType.STRING)
     @Column(name = "escalated_by", length = 20)
     private EscalationSource escalatedBy;
+
+    /** Content inspection verdict (V13). NULL means inspection did not run (authorization failed, inspection disabled, or a row from before V13; rows from V13 without arguments before V13.1). */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inspection_verdict", length = 10)
+    private InspectionVerdict inspectionVerdict;
+
+    /** Redacted content findings (V13), never raw values. NULL when inspection did not run. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "inspection_findings")
+    private List<Finding> inspectionFindings;
 
     @Column(nullable = false, updatable = false)
     private Instant timestamp;
@@ -294,6 +309,22 @@ public class AuditLog {
         this.escalatedBy = escalatedBy;
     }
 
+    public InspectionVerdict getInspectionVerdict() {
+        return inspectionVerdict;
+    }
+
+    public void setInspectionVerdict(InspectionVerdict inspectionVerdict) {
+        this.inspectionVerdict = inspectionVerdict;
+    }
+
+    public List<Finding> getInspectionFindings() {
+        return inspectionFindings;
+    }
+
+    public void setInspectionFindings(List<Finding> inspectionFindings) {
+        this.inspectionFindings = inspectionFindings;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -327,6 +358,8 @@ public class AuditLog {
         private RiskTier trajectoryTier;
         private String trajectoryReason;
         private EscalationSource escalatedBy;
+        private InspectionVerdict inspectionVerdict;
+        private List<Finding> inspectionFindings;
         private Instant timestamp;
 
         public Builder id(UUID id) {
@@ -434,8 +467,21 @@ public class AuditLog {
             return this;
         }
 
+        public Builder inspectionVerdict(InspectionVerdict inspectionVerdict) {
+            this.inspectionVerdict = inspectionVerdict;
+            return this;
+        }
+
+        public Builder inspectionFindings(List<Finding> inspectionFindings) {
+            this.inspectionFindings = inspectionFindings;
+            return this;
+        }
+
         public AuditLog build() {
-            return new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, trajectoryScore, trajectoryTier, trajectoryReason, escalatedBy, timestamp);
+            AuditLog log = new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, trajectoryScore, trajectoryTier, trajectoryReason, escalatedBy, timestamp);
+            log.setInspectionVerdict(inspectionVerdict);
+            log.setInspectionFindings(inspectionFindings);
+            return log;
         }
     }
 }

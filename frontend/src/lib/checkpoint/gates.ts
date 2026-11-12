@@ -2,7 +2,8 @@
  * "Checkpoint" model: where in the gateway pipeline each audited request was decided.
  *
  * The gateway evaluates every request in a fixed order (docs/architecture.md):
- *   Identity -> Permission -> Policy -> Risk Engine -> Trajectory -> decision.
+ *   Identity -> Permission -> Inspection -> Policy -> Risk Engine -> Trajectory -> decision.
+ * Inspection (V13) checks the request's arguments for secrets, PII and prompt injection.
  * An audit row records the authorization result, the final decision and, since V9, which stage
  * escalated it (escalatedBy). gateFor() maps a row onto the stage that produced its final outcome.
  * It reads recorded fields only; it never re-scores or infers anything the backend did not record.
@@ -11,13 +12,14 @@
  */
 import type { AuditLogResponse, AuthorizationResult, DecisionType, RiskTier } from "@/types/api";
 
-export const GATES = ["IDENTITY", "PERMISSION", "POLICY", "RISK_ENGINE", "TRAJECTORY", "PASSED"] as const;
+export const GATES = ["IDENTITY", "PERMISSION", "INSPECTION", "POLICY", "RISK_ENGINE", "TRAJECTORY", "PASSED"] as const;
 export type Gate = (typeof GATES)[number];
 
 /** Short display labels, in pipeline order. "PASSED" is shown as the end of the line: Allowed. */
 export const GATE_LABELS: Record<Gate, string> = {
   IDENTITY: "Identity",
   PERMISSION: "Permission",
+  INSPECTION: "Inspection",
   POLICY: "Policy",
   RISK_ENGINE: "Risk engine",
   TRAJECTORY: "Trajectory",
@@ -56,8 +58,10 @@ export type GateInput = Pick<AuditLogResponse, "authorizationResult" | "decision
  * | AGENT_* (identity results)     | any      | any                  | IDENTITY    |
  * | TOOL_*, UNAUTHORIZED, PERM_*   | any      | any                  | PERMISSION  |
  * | AUTHORIZED                     | ALLOW    | any                  | PASSED      |
+ * | AUTHORIZED                     | DENY     | INSPECTION           | INSPECTION  |
  * | AUTHORIZED                     | DENY     | RISK_ENGINE          | RISK_ENGINE |
  * | AUTHORIZED                     | DENY     | NONE/TRAJECTORY/null | POLICY      |
+ * | AUTHORIZED                     | REVIEW   | INSPECTION           | INSPECTION  |
  * | AUTHORIZED                     | REVIEW   | TRAJECTORY           | TRAJECTORY  |
  * | AUTHORIZED                     | REVIEW   | RISK_ENGINE          | RISK_ENGINE |
  * | AUTHORIZED                     | REVIEW   | NONE/null            | POLICY      |
@@ -70,6 +74,7 @@ export function gateFor(row: GateInput): Gate {
   if (IDENTITY_RESULTS.has(row.authorizationResult)) return "IDENTITY";
   if (PERMISSION_RESULTS.has(row.authorizationResult)) return "PERMISSION";
   if (row.decision === "ALLOW") return "PASSED";
+  if (row.escalatedBy === "INSPECTION") return "INSPECTION";
   if (row.decision === "DENY") return row.escalatedBy === "RISK_ENGINE" ? "RISK_ENGINE" : "POLICY";
   if (row.escalatedBy === "TRAJECTORY") return "TRAJECTORY";
   if (row.escalatedBy === "RISK_ENGINE") return "RISK_ENGINE";
@@ -94,7 +99,7 @@ export const FUNNEL_LABELS: Record<FunnelStageId, string> = {
 /** A row counts toward a stage when its deciding gate lies at or beyond this pipeline index. */
 const FUNNEL_MIN_GATE_INDEX: Record<FunnelStageId, number> = {
   REQUESTS: 0,
-  AUTHORIZED: GATE_INDEX.POLICY,
+  AUTHORIZED: GATE_INDEX.INSPECTION,
   PASSED_POLICY: GATE_INDEX.RISK_ENGINE,
   PASSED_RISK: GATE_INDEX.TRAJECTORY,
   ALLOWED: GATE_INDEX.PASSED,

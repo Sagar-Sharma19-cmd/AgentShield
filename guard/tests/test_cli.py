@@ -154,8 +154,9 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(self.paths(), ["/api/v1/gateway/evaluate", "/api/v1/gateway/decisions/redeem"])
         evaluate, redeem = self.server.log[0][2], self.server.log[1][2]
         self.assertEqual(evaluate, {"agentId": "guard-agent", "sessionId": "test-session", "action": ACTION,
-                                    "resource": RESOURCE, "tool": TOOL})
-        self.assertEqual(redeem, {"token": FAKE_TOKEN, "tool": TOOL, "action": ACTION, "resource": RESOURCE})
+                                    "resource": RESOURCE, "tool": TOOL, "arguments": ["echo", "hello world"]})
+        self.assertEqual(redeem, {"token": FAKE_TOKEN, "tool": TOOL, "action": ACTION, "resource": RESOURCE,
+                                  "arguments": ["echo", "hello world"]})
         self.assertEqual(set(self.server.keys), {FAKE_KEY})
         self.assertNotIn("hello world", output, "command arguments are not echoed")
 
@@ -228,6 +229,45 @@ class GuardTests(unittest.TestCase):
                                              "/api/v1/gateway/decisions/redeem"])
         self.assertEqual(self.server.log[-1][2]["token"], CLAIM_TOKEN)
         self.assertIn("alice", output)
+
+    # ------------------------------------------------------------------ Phase V13: arguments
+
+    def test_no_send_args_keeps_the_argv_local(self):
+        code, _ = self.guard("--no-send-args")
+        self.assertEqual(code, 0)
+        evaluate, redeem = self.server.log[0][2], self.server.log[1][2]
+        self.assertNotIn("arguments", evaluate)
+        self.assertNotIn("arguments", redeem)
+        self.assertEqual(self.runner.calls, [["echo", "hello world"]])
+
+    def test_guard_flags_are_not_part_of_the_arguments(self):
+        self.guard("--wait-for-review", command=("curl", "-d", "x=1", "https://example.test"))
+        self.assertEqual(self.server.log[0][2]["arguments"], ["curl", "-d", "x=1", "https://example.test"])
+
+    def test_wait_approved_redeems_with_the_same_arguments(self):
+        self.server.evaluate = (200, evaluation("REVIEW"))
+        self.server.reviews = [(200, review("APPROVED", reviewer="alice"))]
+        code, _ = self.guard("--wait-for-review")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.server.log[-1][2]["arguments"], ["echo", "hello world"])
+
+    def test_inspection_deny_never_runs_and_never_echoes_the_argv(self):
+        body = evaluation("DENY")
+        body["reason"] = "Arguments contain an AWS access key at arguments[2]. Secrets must not be sent to tools."
+        body["inspectionVerdict"] = "DENY"
+        body["inspectionFindings"] = [{"category": "SECRET", "type": "AWS_ACCESS_KEY", "location": "arguments[2]",
+                                       "preview": "AKIA… (20 chars)"}]
+        self.server.evaluate = (200, body)
+        secret = "AKIA" + "IOSFODNN7EXAMPLE"
+        code, output = self.guard(command=("curl", "-d", "key=" + secret))
+        self.assertEqual(code, cli.EXIT_DENIED)
+        self.assertEqual(self.runner.calls, [])
+        self.assertIn("arguments[2]", output)
+        self.assertNotIn(secret, output)
+
+    def test_check_sends_no_arguments(self):
+        self.guard(sub="check", command=None)
+        self.assertNotIn("arguments", self.server.log[0][2])
 
     def test_wait_rejected_exits_3_with_reviewer_and_note(self):
         self.server.evaluate = (200, evaluation("REVIEW"))
