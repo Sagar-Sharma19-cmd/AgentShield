@@ -857,3 +857,19 @@ becomes "AgentShield could not authorize (fail closed)". The console's CI/CD pag
 order, with no catalog. A run whose recorded steps were all allowed is labelled **Authorized**, not Succeeded:
 AgentShield sees decisions, not command results.
 
+### MCP proxy (M1)
+
+`agentshield-mcp-proxy` (`mcp-proxy/`) applies the same contract to an AI agent's MCP tool calls. It is a stdio MCP
+server that launches one downstream MCP server (the official filesystem server in the shipped config). For each
+`tools/call` it:
+
+1. canonicalizes the resource paths and rejects anything outside the allowed root;
+2. evaluates with the exact arguments the server will receive;
+3. waits for and claims a review if needed;
+4. redeems the token;
+5. calls the server;
+6. sends the text output to `POST /api/v1/gateway/inspect`, withholding it on DENY and redacting it on REVIEW.
+
+Gateway errors fail closed. Sessions are `mcp-<12 hex>`, one per proxy process, and the console labels them "MCP
+proxy". No backend change was needed. Details, the demo script and limitations are in `docs/mcp-proxy.md`.
+

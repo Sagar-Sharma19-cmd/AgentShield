@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentshield-mcp-proxy"
+version = "0.1.0"
+description = "A stdio MCP proxy that puts one downstream MCP server behind AgentShield: evaluate, review, redeem, then call; inspect the output before the model sees it."
+requires-python = ">=3.10"
+# The AgentShield client comes from sdk/python: installed (pip install -e sdk/python, which
+# scripts/setup-mcp-demo.sh does) or, from a repository checkout, found next to this package
+# (agentshield_mcp_proxy/gateway.py, import_sdk).
+dependencies = [
+    "mcp>=2.3,<3",
+    "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+agentshield-mcp-proxy = "agentshield_mcp_proxy.server:console_main"
+
+[tool.setuptools]
+packages = ["agentshield_mcp_proxy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["e2e: runs the real filesystem MCP server through npx"]

@@ -110,6 +110,7 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
               key={step.index}
               step={step}
               kind={run.kind}
+              source={run.real?.source ?? null}
               position={i}
               last={i === steps.length - 1}
               flash={flashes[step.index] ?? 0}
@@ -142,6 +143,7 @@ export function RunPipeline({ run, steps, status }: { run: PipelineRun; steps: R
 function StepWithConnector({
   step,
   kind,
+  source,
   position,
   last,
   flash,
@@ -149,6 +151,7 @@ function StepWithConnector({
 }: {
   step: RunStep;
   kind: RunKind;
+  source: RealRunSource["source"] | null;
   position: number;
   last: boolean;
   flash: number;
@@ -159,7 +162,7 @@ function StepWithConnector({
   const fill = "absolute inset-0 bg-primary transition-transform duration-300 ease-out motion-reduce:transition-none";
   return (
     <div role="listitem" aria-label={`Step ${step.index}, ${step.tool}.${step.action.toLowerCase()}: ${label}`} className="relative flex min-w-0">
-      <StepCard step={step} kind={kind} flash={flash} reducedMotion={reducedMotion} />
+      <StepCard step={step} kind={kind} source={source} flash={flash} reducedMotion={reducedMotion} />
       {last ? null : (
         <>
           <span aria-hidden="true" className="absolute top-full left-1/2 h-6 w-0.5 -translate-x-1/2 overflow-hidden rounded-full bg-border @min-[36rem]:hidden">
@@ -180,7 +183,19 @@ function StepWithConnector({
   );
 }
 
-function StepCard({ step, kind, flash, reducedMotion }: { step: RunStep; kind: RunKind; flash: number; reducedMotion: boolean }) {
+function StepCard({
+  step,
+  kind,
+  source,
+  flash,
+  reducedMotion,
+}: {
+  step: RunStep;
+  kind: RunKind;
+  source: RealRunSource["source"] | null;
+  flash: number;
+  reducedMotion: boolean;
+}) {
   const meta = STEP_STATUS_META[step.status];
   const pending = step.status === "NOT_STARTED" || step.status === "SKIPPED";
 
@@ -222,7 +237,7 @@ function StepCard({ step, kind, flash, reducedMotion }: { step: RunStep; kind: R
 
       {/* Fixed-height outcome slot, so a status change does not move the cards around it. */}
       <div className="min-h-[3.75rem] text-xs leading-relaxed">
-        <StepOutcome step={step} kind={kind} />
+        <StepOutcome step={step} kind={kind} source={source} />
       </div>
 
       <StepLinks step={step} />
@@ -230,7 +245,7 @@ function StepCard({ step, kind, flash, reducedMotion }: { step: RunStep; kind: R
   );
 }
 
-function StepOutcome({ step, kind }: { step: RunStep; kind: RunKind }) {
+function StepOutcome({ step, kind, source }: { step: RunStep; kind: RunKind; source: RealRunSource["source"] | null }) {
   const review = step.review;
   if (step.status === "BLOCKED" && step.gate) {
     return (
@@ -257,12 +272,14 @@ function StepOutcome({ step, kind }: { step: RunStep; kind: RunKind }) {
         {review.note ? <p className="line-clamp-2 text-muted-foreground">“{review.note}”</p> : null}
         {step.status === "EXPIRED" ? <p className="text-muted-foreground">Expired before the agent claimed it.</p> : null}
         {kind === "real" && step.status === "APPROVED_UNCLAIMED" ? (
-          <p className="text-muted-foreground">The guard claims it on its next poll.</p>
+          <p className="text-muted-foreground">
+            {source === "mcp" ? "The proxy claims it when the agent retries the call." : "The guard claims it on its next poll."}
+          </p>
         ) : null}
       </div>
     );
   }
-  return <p className="text-muted-foreground">{stepStatusText(step.status, kind).detail}</p>;
+  return <p className="text-muted-foreground">{stepStatusText(step.status, kind, source).detail}</p>;
 }
 
 function StepLinks({ step }: { step: RunStep }) {

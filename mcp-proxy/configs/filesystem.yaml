@@ -1,0 +1,35 @@
+# AgentShield MCP proxy: the official filesystem MCP server (@modelcontextprotocol/server-filesystem) behind AgentShield.
+#
+# The version is pinned on purpose: a new release can add tools, and an unmapped tool is evaluated as EXECUTE
+# (never a silent ALLOW). Review the tool list before changing the version.
+downstream:
+  command: npx
+  args: ["-y", "@modelcontextprotocol/server-filesystem@2.1.0", "{root}"]
+
+# The only directory the proxy (and the filesystem server) may touch. Relative to this file; --root overrides it.
+root: ../../demo-workspace
+
+agentshield:
+  tool: filesystem          # registered AgentShield tool (scripts/setup-mcp-demo.sh registers it)
+  sessionPrefix: "mcp-"     # the console labels these sessions "MCP proxy"
+  reviewWaitSeconds: 90     # how long a call waits for a human decision before it is reported as held
+
+# Downstream tool -> AgentShield action, and the argument(s) that hold the resource path.
+# Multi-path tools are evaluated once per path, and every path must be allowed.
+# Tools without resourceFrom are evaluated on the root itself (".").
+tools:
+  read_text_file:            { action: READ,  resourceFrom: path }
+  read_file:                 { action: READ,  resourceFrom: path }
+  read_multiple_files:       { action: READ,  resourceFrom: paths }
+  list_directory:            { action: READ,  resourceFrom: path }
+  list_directory_with_sizes: { action: READ,  resourceFrom: path }
+  directory_tree:            { action: READ,  resourceFrom: path }
+  search_files:              { action: READ,  resourceFrom: path }
+  get_file_info:             { action: READ,  resourceFrom: path }
+  list_allowed_directories:  { action: READ }
+  write_file:                { action: WRITE, resourceFrom: path }
+  edit_file:                 { action: WRITE, resourceFrom: path }
+  create_directory:          { action: WRITE, resourceFrom: path }
+  move_file:                 { action: WRITE, resourceFrom: [source, destination] }
+  # Not mapped on purpose: read_media_file returns images/audio, which output inspection cannot read.
+  # It is therefore evaluated as EXECUTE on "tool:read_media_file".

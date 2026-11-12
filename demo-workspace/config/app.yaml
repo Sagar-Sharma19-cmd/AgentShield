@@ -1,0 +1,7 @@
+# Demo application config. FAKE: the key below is the AWS documentation example (AKIA + IOSFODNN7EXAMPLE),
+# not a working credential. It is here so AgentShield withholds this file's output in the MCP demo.
+app:
+  name: demo-app
+  region: us-east-1
+aws:
+  access_key_id: AKIAIOSFODNN7EXAMPLE

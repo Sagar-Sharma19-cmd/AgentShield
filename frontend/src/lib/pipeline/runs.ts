@@ -11,6 +11,10 @@
  * requests in order. AgentShield records decisions, not command results: for a real run, "allowed" means the
  * guard may run the command after redeeming the decision, and the command's own outcome is in Jenkins.
  *
+ * MCP proxy sessions (M1) are real runs too: agentshield-mcp-proxy gives each proxy process one session id,
+ * "mcp-<12 hex>" (or "mcp-<name>-<12 hex>" with a longer configured prefix), and its steps are the tool calls the
+ * agent made, plus the proxy's output checks ("output:<tool>" rows).
+ *
  * Pure: no React, no fetching. Tested in runs.test.ts.
  */
 import { gateFor, GATE_LABELS, type Gate } from "@/lib/checkpoint/gates";
@@ -23,23 +27,24 @@ export const RUN_SESSION_PATTERN = /^ci-([a-z0-9-]+)-([0-9a-f]{12})$/;
 export const JENKINS_SESSION_PATTERN = /^jenkins-(.+)-(\d+)$/;
 /** agentshield-guard's own session id when no CI variable is set. */
 export const GUARD_SESSION_PATTERN = /^guard-[0-9a-f]{12}$/;
+/** agentshield-mcp-proxy's session id: "mcp-" (optionally "mcp-<name>-") and 12 hex digits, one per proxy process. */
+export const MCP_SESSION_PATTERN = /^mcp-(?:[a-z0-9]+-)*[0-9a-f]{12}$/;
 
-/** "simulator": a mock simulator run. "real": a guarded run of real commands (Jenkins or a bare guard). */
+/** "simulator": a mock simulator run. "real": a guarded run of real commands (Jenkins, a bare guard or the MCP proxy). */
 export type RunKind = "simulator" | "real";
 
 export interface RealRunSource {
-  source: "jenkins" | "guard";
-  /** Jenkins job name (as in BUILD_TAG, folders joined by "-"); null for a bare guard session. */
+  source: "jenkins" | "guard" | "mcp";
+  /** Jenkins job name (as in BUILD_TAG, folders joined by "-"); null for a guard or MCP proxy session. */
   job: string | null;
-  /** Jenkins build number; null for a bare guard session. */
+  /** Jenkins build number; null for a guard or MCP proxy session. */
   build: number | null;
 }
 
 /** Which kind of run a session id belongs to, or null when it is not a pipeline run. */
 export function runKindOf(sessionId: string): RunKind | null {
   if (RUN_SESSION_PATTERN.test(sessionId)) return "simulator";
-  if (JENKINS_SESSION_PATTERN.test(sessionId) || GUARD_SESSION_PATTERN.test(sessionId)) return "real";
-  return null;
+  return realRunSource(sessionId) ? "real" : null;
 }
 
 /** Where a real run came from, parsed from its session id; null for anything else. */
@@ -47,6 +52,7 @@ export function realRunSource(sessionId: string): RealRunSource | null {
   const jenkins = JENKINS_SESSION_PATTERN.exec(sessionId);
   if (jenkins) return { source: "jenkins", job: jenkins[1], build: Number(jenkins[2]) };
   if (GUARD_SESSION_PATTERN.test(sessionId)) return { source: "guard", job: null, build: null };
+  if (MCP_SESSION_PATTERN.test(sessionId)) return { source: "mcp", job: null, build: null };
   return null;
 }
 
@@ -89,10 +95,11 @@ export function pipelineSlug(pipelineName: string): string {
   return slug || "pipeline";
 }
 
-/** The run's title: "Jenkins · <job> #<build>", "Guard run", its scenario's title, or "Unknown pipeline". */
+/** The run's title: "Jenkins · <job> #<build>", "Guard run", "MCP proxy session", its scenario's title, or "Unknown pipeline". */
 export function runTitle(run: Pick<PipelineRun, "scenario"> & Partial<Pick<PipelineRun, "real">>): string {
   if (run.real?.source === "jenkins") return `Jenkins · ${run.real.job} #${run.real.build}`;
   if (run.real?.source === "guard") return "Guard run";
+  if (run.real?.source === "mcp") return "MCP proxy session";
   return run.scenario?.title ?? "Unknown pipeline";
 }
 
@@ -121,7 +128,7 @@ export function groupRuns(
       const match = RUN_SESSION_PATTERN.exec(row.sessionId);
       const real = match ? null : realRunSource(row.sessionId);
       if (match) group = { slug: match[1], real: null, rows: [] };
-      else if (real) group = { slug: real.job ?? "guard", real, rows: [] };
+      else if (real) group = { slug: real.job ?? real.source, real, rows: [] };
       else return;
     }
     group.rows.push({ row, order });
@@ -214,11 +221,26 @@ const REAL_STEP_TEXT: Partial<Record<StepStatus, { label: string; detail: string
   WAITING: { label: "Waiting for review", detail: "Sent to review. The build is paused until an operator decides." },
 };
 
-/** Label and detail for a step status, worded for the kind of run. */
-export function stepStatusText(status: StepStatus, kind: RunKind = "simulator"): { label: string; detail: string } {
+/** Details for MCP proxy sessions, where the proxy (not the guard or Jenkins) redeems and calls the tool. */
+const MCP_STEP_DETAIL: Partial<Record<StepStatus, string>> = {
+  EXECUTED: "The gateway allowed it. The MCP proxy calls the tool only after redeeming the decision.",
+  APPROVED_EXECUTED: "An operator approved it and the MCP proxy claimed the approval, then redeemed it before calling the tool.",
+  APPROVED_UNCLAIMED: "Approved. The agent has not retried the call yet, so the tool has not run.",
+  BLOCKED: "The gateway denied it, so the MCP proxy did not call the tool.",
+  WAITING: "Sent to review. The agent's call is held until an operator decides.",
+};
+
+/** Label and detail for a step status, worded for the kind of run (and, for a real run, its source). */
+export function stepStatusText(
+  status: StepStatus,
+  kind: RunKind = "simulator",
+  source: RealRunSource["source"] | null = null,
+): { label: string; detail: string } {
   const base = STEP_STATUS_META[status];
   const real = kind === "real" ? REAL_STEP_TEXT[status] : undefined;
-  return real ?? { label: base.label, detail: base.detail };
+  const text = real ?? { label: base.label, detail: base.detail };
+  const mcpDetail = kind === "real" && source === "mcp" ? MCP_STEP_DETAIL[status] : undefined;
+  return mcpDetail ? { label: text.label, detail: mcpDetail } : text;
 }
 
 export interface RunStep {

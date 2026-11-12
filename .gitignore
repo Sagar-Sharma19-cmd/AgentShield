@@ -9,6 +9,8 @@
 .env
 .env.*
 !.env.example
+# MCP demo only: every value in this file is fake (see demo-workspace/README.md).
+!demo-workspace/.env
 *.secret
 secrets/
 

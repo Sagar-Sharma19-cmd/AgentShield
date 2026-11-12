@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { DecisionIcon, DECISION_MARKS } from "@/components/checkpoint/decision-mark";
 import { GateMark } from "@/components/checkpoint/gate-mark";
 import { gateFor } from "@/lib/checkpoint/gates";
+import { isOutputCheck, OUTPUT_CHECK_LABEL, outputCheckSummary, SESSION_SOURCE_LABELS, sessionSource } from "@/lib/activity/source";
 import { relativeTime } from "@/lib/activity/table-model";
 import { ACTION_LABELS } from "@/lib/labels";
 import { formatTimestamp } from "@/lib/format";
@@ -65,7 +66,7 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
           <thead>
             <tr>
               <HeadCell className="w-36">Time</HeadCell>
-              <HeadCell className="w-[16%]">Agent</HeadCell>
+              <HeadCell className="w-[20%]">Agent</HeadCell>
               <HeadCell className="w-[14%]">Tool</HeadCell>
               <HeadCell className="w-28">Action</HeadCell>
               <HeadCell>Resource</HeadCell>
@@ -108,14 +109,19 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                     </button>
                   </Cell>
                   <Cell>
-                    <Truncated value={event.agentId} mono />
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span title={event.agentId} className="min-w-0 truncate font-mono text-xs">
+                        {event.agentId}
+                      </span>
+                      <SourceTag sessionId={event.sessionId} />
+                    </span>
                   </Cell>
                   <Cell>
                     <Truncated value={event.tool} mono muted />
                   </Cell>
-                  <Cell>{ACTION_LABELS[event.action]}</Cell>
+                  <Cell>{isOutputCheck(event.resource) ? OUTPUT_CHECK_LABEL : ACTION_LABELS[event.action]}</Cell>
                   <Cell>
-                    <Truncated value={event.resource} mono muted />
+                    <ResourceValue event={event} />
                   </Cell>
                   <Cell>
                     <GateMark gate={gateFor(event)} className="text-xs" />
@@ -162,12 +168,22 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                     {relativeTime(event.timestamp, now)}
                   </time>
                 </span>
-                <span className="truncate font-mono text-xs">{event.agentId}</span>
-                <span className="truncate text-sm">
-                  {ACTION_LABELS[event.action]}
-                  <span className="text-muted-foreground"> on </span>
-                  <span className="font-mono text-xs">{event.resource}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="min-w-0 truncate font-mono text-xs">{event.agentId}</span>
+                  <SourceTag sessionId={event.sessionId} />
                 </span>
+                {isOutputCheck(event.resource) ? (
+                  <span className="truncate text-sm">
+                    {OUTPUT_CHECK_LABEL}
+                    <span className="text-muted-foreground"> · {outputCheckSummary(event)}</span>
+                  </span>
+                ) : (
+                  <span className="truncate text-sm">
+                    {ACTION_LABELS[event.action]}
+                    <span className="text-muted-foreground"> on </span>
+                    <span className="font-mono text-xs">{event.resource}</span>
+                  </span>
+                )}
                 <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <GateMark gate={gateFor(event)} />
                   <span className="font-mono tabular-nums">Score {event.riskScore}</span>
@@ -197,6 +213,31 @@ function HeadCell({ className, children }: { className?: string; children: React
 
 function Cell({ className, children }: { className?: string; children: React.ReactNode }) {
   return <td className={cn("h-10 border-b border-border/60 px-3 align-middle group-last:border-b-0", className)}>{children}</td>;
+}
+
+/** Which client sent the request (MCP proxy, Guard, Jenkins, Simulator), from its session id. Neutral: not a verdict. */
+function SourceTag({ sessionId }: { sessionId: string }) {
+  const source = sessionSource(sessionId);
+  if (!source) return null;
+  return (
+    <span
+      title={`Session ${sessionId}`}
+      className="shrink-0 rounded-md border border-border px-1.5 text-[0.6875rem] leading-5 whitespace-nowrap text-muted-foreground"
+    >
+      {SESSION_SOURCE_LABELS[source]}
+    </span>
+  );
+}
+
+/** The resource, or for an output-check row ("output:<tool>") its verdict and finding types. */
+function ResourceValue({ event }: { event: AuditLogResponse }) {
+  if (!isOutputCheck(event.resource)) return <Truncated value={event.resource} mono muted />;
+  const summary = outputCheckSummary(event);
+  return (
+    <span title={`${event.resource}: ${summary}`} className="block truncate text-muted-foreground">
+      {summary}
+    </span>
+  );
 }
 
 /** One-line value with the full text on hover. */

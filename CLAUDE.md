@@ -320,6 +320,13 @@ ALSO IMPLEMENTED (on `main` since 5 Nov 2026):
 - M4.1 CI/CD simulator (`simulator/`): mock tools only, a tool runs only on ALLOW, fails closed otherwise
 - Demo tooling: `scripts/demo.sh`, `docs/demo-guide.md`
 
+ALSO IMPLEMENTED (branch `feature/real-enforcement`, not yet on `main`):
+
+- M1 MCP proxy (`mcp-proxy/`, `docs/mcp-proxy.md`): stdio MCP server in front of one downstream MCP server (shipped:
+  official filesystem server, `demo-workspace/`). Canonicalizes paths, evaluates, waits/claims reviews, redeems, then
+  inspects text output (DENY withheld, REVIEW redacted). Fails closed. Cooperative: a client that bypasses the proxy
+  is not stopped. Non-text output is not inspected. Setup: `scripts/setup-mcp-demo.sh`
+
 NOT IMPLEMENTED / INCOMPLETE:
 
 - ML-based risk/anomaly detection (the Risk Engine is rule-based; there is no trained model)
