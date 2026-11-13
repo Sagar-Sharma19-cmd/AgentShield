@@ -28,6 +28,11 @@ import java.util.UUID;
  *
  * inspectionVerdict/inspectionFindings are additive (V13). Findings are redacted when they are recorded: a type,
  * a JSON path and a preview such as "AKIA… (20 chars)". The inspected arguments are never stored.
+ *
+ * V14: riskScore stays the policy result's score. riskEngineScore/Tier/Available are the Risk Engine's own result
+ * (null when it was not consulted; available false when it did not answer and the gateway failed safe to HIGH).
+ * effectiveRiskScore is derived: the highest of riskScore, riskEngineScore and trajectoryScore, the score that
+ * drove the decision. claimedRequestId is set only on an approval-claim row and names the original request.
  */
 public record AuditLogResponse(
         UUID id,
@@ -54,7 +59,16 @@ public record AuditLogResponse(
         /** Content inspection verdict (V13); null when inspection did not run or the row predates V13. */
         InspectionVerdict inspectionVerdict,
         /** Redacted content findings (V13); null when inspection did not run. Never raw values. */
-        List<Finding> inspectionFindings
+        List<Finding> inspectionFindings,
+        /** Highest of the policy, Risk Engine and trajectory scores (V14, derived). */
+        int effectiveRiskScore,
+        /** Risk Engine score, or the fail-safe 65; null when it was not consulted (V14). */
+        Integer riskEngineScore,
+        RiskTier riskEngineTier,
+        /** False when the Risk Engine did not answer and the gateway failed safe; null when not consulted (V14). */
+        Boolean riskEngineAvailable,
+        /** Set only on an approval-claim row: the original request's id (V14). */
+        UUID claimedRequestId
 ) {
     public static AuditLogResponse from(AuditLog log) {
         return new AuditLogResponse(log.getId(), log.getRequestId(), log.getAgentId(), log.getSessionId(),
@@ -62,6 +76,8 @@ public record AuditLogResponse(
                 log.getRiskScore(), log.getReason(), log.getActionOutcome(), log.getRegisteredAgentId(),
                 log.getRegisteredToolId(), log.getAuthorizationResult(), log.getAuthorizationReason(),
                 log.getTimestamp(), log.getTrajectoryScore(), log.getTrajectoryTier(), log.getTrajectoryReason(),
-                log.getEscalatedBy(), log.getInspectionVerdict(), log.getInspectionFindings());
+                log.getEscalatedBy(), log.getInspectionVerdict(), log.getInspectionFindings(),
+                log.getEffectiveRiskScore(), log.getRiskEngineScore(), log.getRiskEngineTier(),
+                log.getRiskEngineAvailable(), log.getClaimedRequestId());
     }
 }

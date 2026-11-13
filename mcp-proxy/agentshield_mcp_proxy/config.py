@@ -8,7 +8,7 @@ Proxy configuration (YAML, --config). Example (configs/filesystem.yaml):
     agentshield:
       tool: filesystem                  # the registered AgentShield tool name
       sessionPrefix: "mcp-"
-      reviewWaitSeconds: 90
+      reviewWaitSeconds: 45
     tools:
       read_text_file: { action: READ,  resourceFrom: path }
       move_file:      { action: WRITE, resourceFrom: [source, destination] }
@@ -29,7 +29,7 @@ import yaml
 ACTIONS = ("READ", "WRITE", "DELETE", "EXECUTE", "EXTERNAL_REQUEST")
 UNMAPPED_ACTION = "EXECUTE"
 DEFAULT_SESSION_PREFIX = "mcp-"
-DEFAULT_REVIEW_WAIT_SECONDS = 90.0
+DEFAULT_REVIEW_WAIT_SECONDS = 45.0
 MAX_REVIEW_WAIT_SECONDS = 600.0
 ROOT_PLACEHOLDER = "{root}"
 

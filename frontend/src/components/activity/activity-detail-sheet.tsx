@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { DecisionBadge } from "@/components/security/decision-badge";
+import { ShieldAlert } from "lucide-react";
 import { RiskScore } from "@/components/security/risk-score";
+import { RiskTierBadge } from "@/components/security/risk-tier-badge";
+import { APPROVAL_CLAIMED_LABEL, effectiveScore, isApprovalClaim } from "@/lib/activity/source";
+import { RISK_ENGINE_FAILED_SAFE } from "@/lib/activity/decision-path";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { resolveAgent } from "@/lib/agents/resolve";
@@ -86,13 +90,31 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
         </span>
       </div>
 
-      <DetailSection title="Decision path">
-        <DecisionPath event={event} />
-        <p className="text-xs text-muted-foreground">
-          Built from the recorded authorization result, decision and escalation source. Where the record cannot say what a
-          gate did, the step says so.
-        </p>
-      </DetailSection>
+      {isApprovalClaim(event) ? (
+        <DetailSection title={APPROVAL_CLAIMED_LABEL}>
+          <p className="text-sm leading-relaxed">{event.reason}</p>
+          <dl className="grid grid-cols-[7rem_1fr] gap-x-4 gap-y-3 text-sm">
+            <Field label="Held request">
+              <span className="flex items-start gap-2">
+                <span className="min-w-0 font-mono text-xs break-all">{event.claimedRequestId}</span>
+                <CopyButton value={event.claimedRequestId ?? ""} label="Copy held request ID" />
+              </span>
+            </Field>
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            The agent claimed the approved review once. This row records that the approval was used; the held
+            request&apos;s own row shows its decision path.
+          </p>
+        </DetailSection>
+      ) : (
+        <DetailSection title="Decision path">
+          <DecisionPath event={event} />
+          <p className="text-xs text-muted-foreground">
+            Built from the recorded authorization result, decision and escalation source. Where the record cannot say what
+            a gate did, the step says so.
+          </p>
+        </DetailSection>
+      )}
 
       <DetailSection title="Content findings">
         <ContentFindings findings={event.inspectionFindings} subject={inspectedSubject(event.resource)} />
@@ -131,9 +153,19 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
               <span className="text-xs leading-relaxed text-muted-foreground">{event.authorizationReason}</span>
             </span>
           </Field>
-          <Field label="Policy risk">
-            <RiskScore score={event.riskScore} />
+          <Field label="Effective score">
+            <RiskScore score={effectiveScore(event)} />
           </Field>
+          {event.riskEngineAvailable != null ? (
+            <>
+              <Field label="Policy score">
+                <span className="font-mono text-sm tabular-nums">{event.riskScore}/100</span>
+              </Field>
+              <Field label="Risk Engine">
+                <RiskEngineValue event={event} />
+              </Field>
+            </>
+          ) : null}
           <Field label="Outcome">
             <span className="flex flex-col gap-0.5">
               <span>{OUTCOME_LABELS[event.actionOutcome]}</span>
@@ -150,8 +182,9 @@ function DetailBody({ event }: { event: AuditLogResponse }) {
           </Field>
         </dl>
         <p className="text-xs text-muted-foreground">
-          The policy risk score is the one recorded on the audit row. Audit rows do not store a risk tier or the Risk
-          Engine&apos;s own score.
+          The effective score is the highest of the policy, Risk Engine and trajectory scores: the one that drove the
+          decision, and the one a review shows. Rows logged before the Risk Engine result was recorded show the policy
+          score only.
         </p>
       </DetailSection>
 
@@ -200,6 +233,27 @@ function TrajectoryDetail({ event }: { event: AuditLogResponse }) {
         A session-history signal, separate from the policy risk score. It can only escalate an ALLOW to review.
       </p>
     </div>
+  );
+}
+
+/** The Risk Engine's own result, or the fail-safe wording when it did not answer. Icon and words, never colour alone. */
+function RiskEngineValue({ event }: { event: AuditLogResponse }) {
+  if (event.riskEngineAvailable === false) {
+    return (
+      <span className="flex flex-col gap-1">
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-risk-high-text">
+          <ShieldAlert aria-hidden="true" className="size-3.5 shrink-0" />
+          {RISK_ENGINE_FAILED_SAFE}
+        </span>
+        <span className="text-xs text-muted-foreground">The gateway used the fail-safe score of {event.riskEngineScore}.</span>
+      </span>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="font-mono text-sm tabular-nums">{event.riskEngineScore}/100</span>
+      {event.riskEngineTier ? <RiskTierBadge tier={event.riskEngineTier} /> : null}
+    </span>
   );
 }
 

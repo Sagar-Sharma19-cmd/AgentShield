@@ -12,7 +12,7 @@ root: ../../demo-workspace
 agentshield:
   tool: filesystem          # registered AgentShield tool (scripts/setup-mcp-demo.sh registers it)
   sessionPrefix: "mcp-"     # the console labels these sessions "MCP proxy"
-  reviewWaitSeconds: 90     # how long a call waits for a human decision before it is reported as held
+  reviewWaitSeconds: 45     # how long a first attempt waits for a human decision (some clients time out at ~60 s)
 
 # Downstream tool -> AgentShield action, and the argument(s) that hold the resource path.
 # Multi-path tools are evaluated once per path, and every path must be allowed.

@@ -178,7 +178,7 @@ public class GatewayService {
         EscalationSource escalatedBy = escalationSource(policyResult.getDecision(), inspectedDecision, riskDecision,
                 finalDecision);
         auditService.recordEvaluation(request, request.getResource(), requestId, finalResult, authorization, timestamp,
-                trajectory.orElse(null), escalatedBy, inspection);
+                trajectory.orElse(null), escalatedBy, inspection, riskAssessment);
 
         // 5. Final decision REVIEW -> persist a human review request (Phase 3). ALLOW/DENY never do.
         //    The Risk Engine's score and tier are passed unchanged. The review row stores the effective

@@ -59,7 +59,8 @@ export function realRunSource(sessionId: string): RealRunSource | null {
 export type RunRow = Pick<
   AuditLogResponse,
   "requestId" | "sessionId" | "tool" | "action" | "resource" | "decision" | "authorizationResult" | "escalatedBy" | "timestamp"
->;
+> &
+  Partial<Pick<AuditLogResponse, "claimedRequestId">>;
 
 export type RunReview = Pick<
   ReviewRequestResponse,
@@ -123,6 +124,8 @@ export function groupRuns(
   const groups = new Map<string, { slug: string; real: RealRunSource | null; rows: { row: RunRow; order: number }[] }>();
 
   rows.forEach((row, order) => {
+    // "Approval claimed" rows (V14) repeat a held step; the run already shows the claim from that step's review.
+    if (row.claimedRequestId) return;
     let group = groups.get(row.sessionId);
     if (!group) {
       const match = RUN_SESSION_PATTERN.exec(row.sessionId);

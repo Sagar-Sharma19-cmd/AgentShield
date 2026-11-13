@@ -9,6 +9,8 @@ import com.agentshield.model.DecisionType;
 import com.agentshield.model.EscalationSource;
 import com.agentshield.permission.AuthorizationDecision;
 import com.agentshield.policy.PolicyEvaluationResult;
+import com.agentshield.review.ReviewRequest;
+import com.agentshield.riskengine.RiskAssessment;
 import com.agentshield.trajectory.TrajectoryEvaluation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -85,6 +87,25 @@ public class AuditService {
                                       TrajectoryEvaluation trajectory,
                                       EscalationSource escalatedBy,
                                       InspectionResult inspection) {
+        return recordEvaluation(request, storedResource, requestId, result, authorization, timestamp, trajectory,
+                escalatedBy, inspection, null);
+    }
+
+    /**
+     * As above, plus the Risk Engine result (V14): its score, tier and whether it answered. Null means the engine
+     * was not consulted. {@code result.getRiskScore()} stays the policy score; the effective score is derived.
+     */
+    @Transactional
+    public AuditLog recordEvaluation(EvaluationRequest request,
+                                      String storedResource,
+                                      UUID requestId,
+                                      PolicyEvaluationResult result,
+                                      AuthorizationDecision authorization,
+                                      Instant timestamp,
+                                      TrajectoryEvaluation trajectory,
+                                      EscalationSource escalatedBy,
+                                      InspectionResult inspection,
+                                      RiskAssessment riskAssessment) {
         ActionOutcome outcome = mapOutcome(result.getDecision());
 
         AuditLog log = AuditLog.builder()
@@ -109,10 +130,47 @@ public class AuditService {
                 .escalatedBy(Objects.requireNonNull(escalatedBy, "escalatedBy"))
                 .inspectionVerdict(inspection.verdict())
                 .inspectionFindings(inspection.findingsOrNull())
+                .riskEngine(riskAssessment)
                 .timestamp(timestamp)
                 .build();
 
         return auditRepository.save(log);
+    }
+
+    /**
+     * Audit row for a successful approval claim (POST /api/v1/gateway/reviews/{id}/claim): decision ALLOW for the
+     * exact approved tool, action and resource, linked to the original request by {@code claimed_request_id}. It
+     * gets its own request id, so the original request keeps exactly one evaluation row. It records that the
+     * approval was used; it decides nothing.
+     */
+    @Transactional
+    public AuditLog recordApprovalClaim(ReviewRequest claimed, Instant timestamp) {
+        String reviewer = claimed.getReviewer() == null || claimed.getReviewer().isBlank()
+                ? "a reviewer" : claimed.getReviewer();
+        AuditLog log = AuditLog.builder()
+                .requestId(UUID.randomUUID())
+                .claimedRequestId(claimed.getRequestId())
+                .agentId(claimed.getAgentId())
+                .sessionId(claimed.getSessionId())
+                .tool(claimed.getTool())
+                .action(claimed.getAction())
+                .resource(claimed.getResource())
+                .resourceSensitivity(claimed.getResourceSensitivity())
+                .decision(DecisionType.ALLOW)
+                .riskScore(claimed.getRiskScore())
+                .reason(truncate("Approved by " + reviewer + "; claimed once by the agent.", 1000))
+                .actionOutcome(ActionOutcome.ALLOWED)
+                .registeredAgentId(claimed.getRegisteredAgentId())
+                .authorizationResult(AuthorizationResult.AUTHORIZED)
+                .authorizationReason("Claim of approved review " + claimed.getId() + " by its owning agent.")
+                .escalatedBy(EscalationSource.NONE)
+                .timestamp(timestamp)
+                .build();
+        return auditRepository.save(log);
+    }
+
+    private static String truncate(String value, int max) {
+        return value.length() <= max ? value : value.substring(0, max);
     }
 
     /**
@@ -159,7 +217,8 @@ public class AuditService {
     /**
      * Looks up the single audit row for a gateway request (Audit Read API,
      * GET /api/v1/audit/{requestId}). One row is written per requestId — see
-     * GatewayService.evaluateRequest — so a missing row means the id is unknown.
+     * GatewayService.evaluateRequest; an approval-claim row gets its own requestId — so a missing row
+     * means the id is unknown.
      */
     @Transactional(readOnly = true)
     public AuditLog getByRequestId(UUID requestId) {

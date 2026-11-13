@@ -46,13 +46,13 @@ class TrajectoryServiceTest {
     @DisplayName("History query is scoped to the session and the verified agent, and the history is evaluated")
     void scopesQueryAndEvaluatesHistory() {
         UUID agentId = UUID.randomUUID();
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc("session-1", agentId))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc("session-1", agentId))
                 .thenReturn(List.of(auditRow(DecisionType.DENY, NOW.minusSeconds(5))));
 
         Optional<TrajectoryEvaluation> result = trajectoryService.evaluate(UUID.randomUUID(), "session-1", agentId,
                 candidate());
 
-        verify(auditRepository).findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc("session-1", agentId);
+        verify(auditRepository).findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc("session-1", agentId);
         assertTrue(result.isPresent());
         assertEquals(1, result.get().historySize());
     }
@@ -60,7 +60,7 @@ class TrajectoryServiceTest {
     @Test
     @DisplayName("A failed history query returns empty (not a score), and does not throw")
     void historyFailureReturnsEmpty() {
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(anyString(), any()))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(anyString(), any()))
                 .thenThrow(new DataAccessResourceFailureException("database unavailable"));
 
         Optional<TrajectoryEvaluation> result = trajectoryService.evaluate(UUID.randomUUID(), "session-1",
@@ -83,7 +83,7 @@ class TrajectoryServiceTest {
     @DisplayName("A session with no prior events is evaluated as an empty history (score 0), which differs from a failed read")
     void emptyHistoryIsEvaluatedNotFailed() {
         UUID agentId = UUID.randomUUID();
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(eq("fresh"), eq(agentId)))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(eq("fresh"), eq(agentId)))
                 .thenReturn(List.of());
 
         Optional<TrajectoryEvaluation> result = trajectoryService.evaluate(UUID.randomUUID(), "fresh", agentId,
@@ -99,7 +99,7 @@ class TrajectoryServiceTest {
     void evaluatorRuntimeFailureReturnsEmpty() {
         TrajectoryEvaluator failing = org.mockito.Mockito.mock(TrajectoryEvaluator.class);
         TrajectoryService service = new TrajectoryService(auditRepository, failing);
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(anyString(), any()))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(anyString(), any()))
                 .thenReturn(List.of());
         when(failing.evaluate(any(), any())).thenThrow(new IllegalStateException("evaluator bug"));
 
@@ -114,7 +114,7 @@ class TrajectoryServiceTest {
     void evaluatorErrorPropagates() {
         TrajectoryEvaluator failing = org.mockito.Mockito.mock(TrajectoryEvaluator.class);
         TrajectoryService service = new TrajectoryService(auditRepository, failing);
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(anyString(), any()))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(anyString(), any()))
                 .thenReturn(List.of());
         when(failing.evaluate(any(), any())).thenThrow(new OutOfMemoryError("simulated fatal error"));
 

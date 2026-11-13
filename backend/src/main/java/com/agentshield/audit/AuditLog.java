@@ -119,6 +119,23 @@ public class AuditLog {
     @Column(name = "inspection_findings")
     private List<Finding> inspectionFindings;
 
+    /** Risk Engine score (V14), or the fail-safe 65 when it did not answer. NULL when it was not consulted. */
+    @Column(name = "risk_engine_score")
+    private Integer riskEngineScore;
+
+    /** Risk Engine tier (V14). NULL when it was not consulted. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "risk_engine_tier", length = 20)
+    private RiskTier riskEngineTier;
+
+    /** False when the Risk Engine did not answer and the gateway failed safe to HIGH (V14). NULL when not consulted. */
+    @Column(name = "risk_engine_available")
+    private Boolean riskEngineAvailable;
+
+    /** Set only on an approval-claim row (V14): the request id of the original, held request. */
+    @Column(name = "claimed_request_id")
+    private UUID claimedRequestId;
+
     @Column(nullable = false, updatable = false)
     private Instant timestamp;
 
@@ -325,6 +342,53 @@ public class AuditLog {
         this.inspectionFindings = inspectionFindings;
     }
 
+    public Integer getRiskEngineScore() {
+        return riskEngineScore;
+    }
+
+    public void setRiskEngineScore(Integer riskEngineScore) {
+        this.riskEngineScore = riskEngineScore;
+    }
+
+    public RiskTier getRiskEngineTier() {
+        return riskEngineTier;
+    }
+
+    public void setRiskEngineTier(RiskTier riskEngineTier) {
+        this.riskEngineTier = riskEngineTier;
+    }
+
+    public Boolean getRiskEngineAvailable() {
+        return riskEngineAvailable;
+    }
+
+    public void setRiskEngineAvailable(Boolean riskEngineAvailable) {
+        this.riskEngineAvailable = riskEngineAvailable;
+    }
+
+    public UUID getClaimedRequestId() {
+        return claimedRequestId;
+    }
+
+    public void setClaimedRequestId(UUID claimedRequestId) {
+        this.claimedRequestId = claimedRequestId;
+    }
+
+    /**
+     * The score that drove the decision: the highest of the policy score, the Risk Engine score (including the
+     * fail-safe 65) and the trajectory score. The same rule as {@code EvaluationResponse.effectiveRiskScore}.
+     */
+    public int getEffectiveRiskScore() {
+        int effective = riskScore;
+        if (riskEngineScore != null) {
+            effective = Math.max(effective, riskEngineScore);
+        }
+        if (trajectoryScore != null) {
+            effective = Math.max(effective, trajectoryScore);
+        }
+        return effective;
+    }
+
     public Instant getTimestamp() {
         return timestamp;
     }
@@ -360,6 +424,10 @@ public class AuditLog {
         private EscalationSource escalatedBy;
         private InspectionVerdict inspectionVerdict;
         private List<Finding> inspectionFindings;
+        private Integer riskEngineScore;
+        private RiskTier riskEngineTier;
+        private Boolean riskEngineAvailable;
+        private UUID claimedRequestId;
         private Instant timestamp;
 
         public Builder id(UUID id) {
@@ -477,10 +545,27 @@ public class AuditLog {
             return this;
         }
 
+        /** The Risk Engine result (V14); null leaves the three columns NULL (not consulted). */
+        public Builder riskEngine(com.agentshield.riskengine.RiskAssessment assessment) {
+            this.riskEngineScore = assessment == null ? null : assessment.riskScore();
+            this.riskEngineTier = assessment == null ? null : assessment.riskTier();
+            this.riskEngineAvailable = assessment == null ? null : assessment.engineAvailable();
+            return this;
+        }
+
+        public Builder claimedRequestId(UUID claimedRequestId) {
+            this.claimedRequestId = claimedRequestId;
+            return this;
+        }
+
         public AuditLog build() {
             AuditLog log = new AuditLog(id, requestId, agentId, sessionId, tool, action, resource, resourceSensitivity, decision, riskScore, reason, actionOutcome, registeredAgentId, registeredToolId, authorizationResult, authorizationReason, trajectoryScore, trajectoryTier, trajectoryReason, escalatedBy, timestamp);
             log.setInspectionVerdict(inspectionVerdict);
             log.setInspectionFindings(inspectionFindings);
+            log.setRiskEngineScore(riskEngineScore);
+            log.setRiskEngineTier(riskEngineTier);
+            log.setRiskEngineAvailable(riskEngineAvailable);
+            log.setClaimedRequestId(claimedRequestId);
             return log;
         }
     }

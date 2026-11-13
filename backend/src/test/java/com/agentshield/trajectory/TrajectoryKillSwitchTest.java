@@ -48,7 +48,7 @@ class TrajectoryKillSwitchTest {
     @DisplayName("Enabled (default constructor): history is read and evaluated")
     void enabledEvaluatesHistory() {
         UUID agentId = UUID.randomUUID();
-        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(anyString(), any()))
+        when(auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(anyString(), any()))
                 .thenReturn(List.of());
         TrajectoryService service = new TrajectoryService(auditRepository, new TrajectoryEvaluator());
 
@@ -56,7 +56,7 @@ class TrajectoryKillSwitchTest {
 
         assertTrue(result.isPresent());
         assertEquals(0, result.get().score());
-        verify(auditRepository).findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc("session-1", agentId);
+        verify(auditRepository).findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc("session-1", agentId);
     }
 
     private static TrajectoryEvent candidate() {

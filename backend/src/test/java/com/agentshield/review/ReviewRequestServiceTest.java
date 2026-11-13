@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DataJpaTest
 @org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase(replace = org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE)
-@Import({ReviewRequestService.class, ClockConfig.class})
+@Import({ReviewRequestService.class, com.agentshield.audit.AuditService.class, ClockConfig.class})
 @ActiveProfiles("test")
 class ReviewRequestServiceTest {
 

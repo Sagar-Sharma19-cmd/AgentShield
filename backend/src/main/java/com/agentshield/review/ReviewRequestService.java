@@ -1,5 +1,6 @@
 package com.agentshield.review;
 
+import com.agentshield.audit.AuditService;
 import com.agentshield.dto.EvaluationRequest;
 import com.agentshield.exception.ConflictException;
 import com.agentshield.exception.InvalidReviewStateException;
@@ -45,16 +46,18 @@ public class ReviewRequestService {
     private static final Logger log = LoggerFactory.getLogger(ReviewRequestService.class);
 
     private final ReviewRequestRepository reviewRequestRepository;
+    private final AuditService auditService;
     private final Clock clock;
     private final Duration ttl;
 
     @Autowired
-    public ReviewRequestService(ReviewRequestRepository reviewRequestRepository, Clock clock,
-                                @Value("${agentshield.review.ttl-minutes:30}") long ttlMinutes) {
+    public ReviewRequestService(ReviewRequestRepository reviewRequestRepository, AuditService auditService,
+                                Clock clock, @Value("${agentshield.review.ttl-minutes:30}") long ttlMinutes) {
         if (ttlMinutes <= 0) {
             throw new IllegalArgumentException("agentshield.review.ttl-minutes must be positive.");
         }
         this.reviewRequestRepository = reviewRequestRepository;
+        this.auditService = auditService;
         this.clock = clock;
         this.ttl = Duration.ofMinutes(ttlMinutes);
     }
@@ -243,9 +246,13 @@ public class ReviewRequestService {
      * {@link ReviewRequestRepository#claimApproved}), so two concurrent claims cannot both succeed. The
      * returned row carries the exact approved tool, action and resource.
      *
+     * A successful claim also writes an "approval claimed" audit row (V14) in the same transaction, so the claim
+     * and its audit record commit together or not at all. A refused claim writes nothing.
+     *
      * @throws ResourceNotFoundException (404) when the review does not exist or belongs to another agent
      * @throws ConflictException (409) when it is not APPROVED, has expired, or was already claimed
      */
+    @Transactional
     public ReviewRequest claimForAgent(UUID id, UUID agentId) {
         Instant now = clock.instant();
         int updated;
@@ -260,6 +267,7 @@ public class ReviewRequestService {
         ReviewRequest reviewRequest = getForAgent(id, agentId);
         if (updated == 1) {
             log.info("Review request {} claimed by its agent.", id);
+            auditService.recordApprovalClaim(reviewRequest, now);
             return reviewRequest;
         }
         throw new ConflictException(claimRefusal(reviewRequest, now));

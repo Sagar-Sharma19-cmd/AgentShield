@@ -16,9 +16,13 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -34,11 +38,15 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 class HttpRiskEngineClientTest {
 
     private HttpServer server;
+    private ExecutorService executor;
 
     @AfterEach
     void tearDown() {
         if (server != null) {
             server.stop(0);
+        }
+        if (executor != null) {
+            executor.shutdownNow();
         }
     }
 
@@ -188,6 +196,101 @@ class HttpRiskEngineClientTest {
         assertTrue(elapsedMs < serverDelayMs,
                 "client must fail via its own timeout (" + timeoutMs + "ms) rather than wait for the " +
                         serverDelayMs + "ms server delay; elapsed=" + elapsedMs + "ms");
+    }
+
+    // ------------------------------------------------------------------
+    // Retry: one retry for a timeout or connection error, none for an HTTP error
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("First attempt times out, the retry answers: the engine's score is used")
+    void testTimeoutThenSuccessUsesEngineScore() throws IOException {
+        AtomicInteger hits = startEngine(attempt -> attempt == 1 ? 2000 : 0, 200);
+        HttpRiskEngineClient client = new HttpRiskEngineClient(engineUrl(), 300);
+
+        RiskAssessment result = client.assessRisk(ActionType.READ, "notes/plan.md", ResourceSensitivity.INTERNAL);
+
+        assertTrue(result.engineAvailable());
+        assertEquals(5, result.riskScore());
+        assertEquals(RiskTier.LOW, result.riskTier());
+        assertEquals(2, hits.get());
+    }
+
+    @Test
+    @DisplayName("Both attempts time out: fail safe to HIGH after exactly one retry")
+    void testTimeoutTwiceFailsSafe() throws IOException {
+        AtomicInteger hits = startEngine(attempt -> 2000, 200);
+        HttpRiskEngineClient client = new HttpRiskEngineClient(engineUrl(), 150);
+
+        long start = System.currentTimeMillis();
+        RiskAssessment result = client.assessRisk(ActionType.READ, "notes/plan.md", ResourceSensitivity.INTERNAL);
+        long elapsedMs = System.currentTimeMillis() - start;
+
+        assertFallbackAssessment(result);
+        assertEquals(2, hits.get());
+        assertTrue(elapsedMs < 2000, "two bounded attempts, not the server delay; elapsed=" + elapsedMs + "ms");
+    }
+
+    @Test
+    @DisplayName("HTTP 500 is not retried: one request, then fail safe to HIGH")
+    void testServerErrorIsNotRetried() throws IOException {
+        AtomicInteger hits = startEngine(attempt -> 0, 500);
+        HttpRiskEngineClient client = new HttpRiskEngineClient(engineUrl(), 1000);
+
+        RiskAssessment result = client.assessRisk(ActionType.READ, "notes/plan.md", ResourceSensitivity.INTERNAL);
+
+        assertFallbackAssessment(result);
+        assertEquals(1, hits.get());
+    }
+
+    @Test
+    @DisplayName("max-retries 0 makes a single attempt; out-of-range values are refused")
+    void testRetryCountIsConfigurable() throws IOException {
+        AtomicInteger hits = startEngine(attempt -> 2000, 200);
+        HttpRiskEngineClient client = new HttpRiskEngineClient(engineUrl(), 150, 0);
+
+        assertFallbackAssessment(client.assessRisk(ActionType.READ, "notes/plan.md", ResourceSensitivity.INTERNAL));
+        assertEquals(1, hits.get());
+        assertThrows(IllegalArgumentException.class,
+                () -> new HttpRiskEngineClient(engineUrl(), 150, -1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new HttpRiskEngineClient(engineUrl(), 150, HttpRiskEngineClient.MAX_RETRIES_LIMIT + 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> new HttpRiskEngineClient(engineUrl(), 0, 1));
+    }
+
+    /** A real engine stub: delayMs(attempt) before answering with the given status (200 = a LOW score of 5). */
+    private AtomicInteger startEngine(java.util.function.IntUnaryOperator delayMs, int status) throws IOException {
+        AtomicInteger hits = new AtomicInteger();
+        executor = Executors.newCachedThreadPool();
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
+        server.setExecutor(executor);
+        server.createContext("/score", exchange -> {
+            int attempt = hits.incrementAndGet();
+            try {
+                Thread.sleep(delayMs.applyAsInt(attempt));
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            byte[] body = (status == 200
+                    ? "{\"risk_score\":5,\"risk_tier\":\"LOW\",\"factors\":[],\"reason\":\"ok\"}"
+                    : "{\"detail\":\"boom\"}").getBytes(StandardCharsets.UTF_8);
+            try {
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(status, body.length);
+                exchange.getResponseBody().write(body);
+            } catch (IOException ignored) {
+                // The client gave up on this attempt.
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        return hits;
+    }
+
+    private String engineUrl() {
+        return "http://localhost:" + server.getAddress().getPort();
     }
 
     private void assertFallbackAssessment(RiskAssessment result) {

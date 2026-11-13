@@ -75,7 +75,7 @@ public class TrajectoryService {
 
         List<TrajectoryEvent> history;
         try {
-            history = auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(sessionId, registeredAgentId)
+            history = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(sessionId, registeredAgentId)
                     .stream()
                     .map(TrajectoryEvent::from)
                     .toList();

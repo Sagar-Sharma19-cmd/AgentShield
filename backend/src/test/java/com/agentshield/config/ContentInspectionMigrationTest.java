@@ -53,11 +53,11 @@ class ContentInspectionMigrationTest {
     }
 
     @Test
-    @DisplayName("A fresh database migrates straight to V13")
+    @DisplayName("A fresh database migrates straight to the latest version")
     void cleanDatabase() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:v13_clean_" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1", "sa", "");
-        assertEquals(13, flyway(dataSource, "latest").migrate().migrationsExecuted);
+        assertEquals(14, flyway(dataSource, "latest").migrate().migrationsExecuted);
     }
 
     private static Flyway flyway(DriverManagerDataSource dataSource, String target) {

@@ -19,7 +19,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Trajectory history query (findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc)
+ * Trajectory history query (findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc)
  * and the V7 composite index it relies on. Covers session isolation and agent isolation.
  */
 @DataJpaTest
@@ -46,11 +46,26 @@ class AuditSessionHistoryRepositoryTest {
         save("session-1", agentB, "agent-b", NOW.minusMillis(500));   // same session, different agent
         save("session-2", agentA, "agent-a", NOW.minusMillis(1500));  // same agent, different session
 
-        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(
+        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(
                 "session-1", agentA);
 
         assertEquals(List.of(newest.getRequestId(), middle.getRequestId(), oldest.getRequestId()),
                 result.stream().map(AuditLog::getRequestId).toList());
+    }
+
+    @Test
+    @DisplayName("Approval-claim rows (V14) are left out of the history: the claim repeats a request already there")
+    void approvalClaimRowsExcluded() {
+        UUID agent = UUID.randomUUID();
+        AuditLog held = save("session-claim", agent, "agent-c", NOW.minusSeconds(2));
+        AuditLog claim = save("session-claim", agent, "agent-c", NOW.minusSeconds(1));
+        claim.setClaimedRequestId(held.getRequestId());
+        auditRepository.save(claim);
+
+        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(
+                "session-claim", agent);
+
+        assertEquals(List.of(held.getRequestId()), result.stream().map(AuditLog::getRequestId).toList());
     }
 
     @Test
@@ -61,7 +76,7 @@ class AuditSessionHistoryRepositoryTest {
         // The impostor's rows carry the victim's name in agent_id, but their registered id is the impostor's.
         save("shared-session", impostor, "victim-agent", NOW.minusSeconds(1));
 
-        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(
+        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(
                 "shared-session", verifiedAgent);
 
         assertEquals(List.of(), result);
@@ -75,7 +90,7 @@ class AuditSessionHistoryRepositoryTest {
             save("session-cap", agent, "agent-cap", NOW.minusSeconds(i));
         }
 
-        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(
+        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(
                 "session-cap", agent);
 
         assertEquals(10, result.size());
@@ -89,7 +104,7 @@ class AuditSessionHistoryRepositoryTest {
         UUID agent = UUID.randomUUID();
         save("session-null", null, "ghost", NOW.minusSeconds(1));
 
-        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(
+        List<AuditLog> result = auditRepository.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(
                 "session-null", agent);
 
         assertEquals(List.of(), result);

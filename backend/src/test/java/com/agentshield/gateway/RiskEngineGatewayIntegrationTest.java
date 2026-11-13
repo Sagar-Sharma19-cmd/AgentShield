@@ -14,6 +14,7 @@ import com.agentshield.model.RiskTier;
 import com.agentshield.model.ToolType;
 import com.agentshield.permission.AgentToolPermission;
 import com.agentshield.permission.AgentToolPermissionRepository;
+import com.agentshield.review.ReviewRequest;
 import com.agentshield.review.ReviewRequestRepository;
 import com.agentshield.riskengine.RiskAssessment;
 import com.agentshield.riskengine.RiskAssessmentRecord;
@@ -42,6 +43,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -267,6 +269,43 @@ class RiskEngineGatewayIntegrationTest {
         assertEquals(RiskTier.HIGH, records.get(0).getRiskTier());
         assertFalse(records.get(0).isEngineAvailable());
         assertEquals("risk_engine_unavailable", records.get(0).getReason());
+
+        // V14: the audit row records that the engine did not answer, and its effective score is the fail-safe
+        // 65 the review shows, not the policy's 10.
+        AuditLog audit = auditRepository.findByAgentId("risk-test-agent").get(0);
+        assertEquals(10, audit.getRiskScore());
+        assertEquals(65, audit.getRiskEngineScore());
+        assertEquals(RiskTier.HIGH, audit.getRiskEngineTier());
+        assertEquals(Boolean.FALSE, audit.getRiskEngineAvailable());
+        assertEquals(65, audit.getEffectiveRiskScore());
+        ReviewRequest review = reviewRequestRepository.findAll().get(0);
+        assertEquals(review.getRiskScore(), audit.getEffectiveRiskScore());
+    }
+
+    @Test
+    @DisplayName("V14. The audit row keeps the policy score and the Risk Engine result separately; DENY rows have none")
+    void testAuditRecordsRiskEngineResult() throws Exception {
+        grant(ActionType.READ);
+        when(riskEngineClient.assessRisk(any(), any(), any()))
+                .thenReturn(new RiskAssessment(42, RiskTier.MEDIUM, List.of(), "MEDIUM risk", true));
+
+        evaluate("READ", "src/Main.java").andExpect(jsonPath("$.decision").value("ALLOW"));
+        evaluate("READ", ".env").andExpect(jsonPath("$.decision").value("DENY"));
+
+        AuditLog allowed = auditRepository.findByAgentId("risk-test-agent").stream()
+                .filter(a -> a.getDecision() == com.agentshield.model.DecisionType.ALLOW).findFirst().orElseThrow();
+        assertEquals(10, allowed.getRiskScore());
+        assertEquals(42, allowed.getRiskEngineScore());
+        assertEquals(RiskTier.MEDIUM, allowed.getRiskEngineTier());
+        assertEquals(Boolean.TRUE, allowed.getRiskEngineAvailable());
+        assertEquals(42, allowed.getEffectiveRiskScore());
+
+        AuditLog denied = auditRepository.findByAgentId("risk-test-agent").stream()
+                .filter(a -> a.getDecision() == com.agentshield.model.DecisionType.DENY).findFirst().orElseThrow();
+        assertNull(denied.getRiskEngineScore());
+        assertNull(denied.getRiskEngineTier());
+        assertNull(denied.getRiskEngineAvailable());
+        assertEquals(90, denied.getEffectiveRiskScore());
     }
 
     // ------------------------------------------------------------------

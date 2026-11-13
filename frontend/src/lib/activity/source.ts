@@ -7,7 +7,7 @@
  */
 import { findingTypeLabel } from "@/lib/inspection/findings";
 import { realRunSource, RUN_SESSION_PATTERN } from "@/lib/pipeline/runs";
-import type { ContentFinding, InspectionVerdict } from "@/types/api";
+import type { AuditLogResponse, ContentFinding, InspectionVerdict } from "@/types/api";
 
 export type SessionSource = "mcp" | "guard" | "jenkins" | "simulator";
 
@@ -57,3 +57,19 @@ export function outputCheckSummary(row: {
   const verdict = OUTPUT_VERDICT_LABELS[row.inspectionVerdict];
   return types.length > 0 ? `${verdict} · ${types.join(", ")}` : verdict;
 }
+
+/**
+ * The score that drove the decision (V14): the backend's effectiveRiskScore, the highest of the policy, Risk Engine
+ * (including the fail-safe 65) and trajectory scores. The same number a review shows as "Effective score" when the
+ * Risk Engine or trajectory set it. Rows from an older backend have no effectiveRiskScore and fall back to riskScore.
+ */
+export function effectiveScore(row: Pick<AuditLogResponse, "riskScore" | "effectiveRiskScore">): number {
+  return row.effectiveRiskScore ?? row.riskScore;
+}
+
+/** "Approval claimed" rows (V14): written when the agent claims an approved review, linked to the held request. */
+export function isApprovalClaim(row: Pick<AuditLogResponse, "claimedRequestId">): boolean {
+  return Boolean(row.claimedRequestId);
+}
+
+export const APPROVAL_CLAIMED_LABEL = "Approval claimed";

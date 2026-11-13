@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AuthorizationResult, DecisionType, EscalationSource } from "@/types/api";
-import { decidingStepIndex, decisionPath, STEP_STATUS_LABELS, type PathInput, type ReviewOutcome, type StepStatus } from "./decision-path";
+import {
+  decidingStepIndex,
+  decisionPath,
+  RISK_ENGINE_FAILED_SAFE,
+  STEP_STATUS_LABELS,
+  type PathInput,
+  type ReviewOutcome,
+  type StepStatus,
+} from "./decision-path";
 
 function row(
   authorizationResult: AuthorizationResult,
@@ -239,5 +247,39 @@ describe("decisionPath with a review outcome (review detail panel)", () => {
 
   it("labels the new status", () => {
     expect(STEP_STATUS_LABELS["decided-after-review"]).toBe("Decided after review");
+  });
+});
+
+describe("Risk Engine step with the recorded engine result (V14)", () => {
+  const engineStep = (input: PathInput) => decisionPath(input).find((step) => step.gate === "RISK_ENGINE")!;
+
+  it("says the engine did not respond and failed safe, instead of a score explanation", () => {
+    const failedSafe = { ...row("AUTHORIZED", "REVIEW", "RISK_ENGINE"), riskEngineScore: 65, riskEngineTier: "HIGH" as const, riskEngineAvailable: false };
+    const step = engineStep(failedSafe);
+    expect(step.status).toBe("decided");
+    expect(step.note).toBe(RISK_ENGINE_FAILED_SAFE);
+    expect(step.note).toBe("Did not respond. Failed safe to HIGH.");
+    expect(step.failedSafe).toBe(true);
+    expect(step.detail).toEqual({ kind: "reason", text: "decision reason" });
+
+    // also when the fail-safe did not change a policy REVIEW
+    const policyReview = { ...row("AUTHORIZED", "REVIEW", "NONE"), riskEngineScore: 65, riskEngineTier: "HIGH" as const, riskEngineAvailable: false };
+    expect(engineStep(policyReview)).toMatchObject({ status: "evaluated", note: RISK_ENGINE_FAILED_SAFE, failedSafe: true });
+  });
+
+  it("states the engine's score when it answered", () => {
+    const allowed = { ...row("AUTHORIZED", "ALLOW", "NONE", 0), riskEngineScore: 5, riskEngineTier: "LOW" as const, riskEngineAvailable: true };
+    expect(engineStep(allowed).note).toBe("The Risk Engine did not raise the decision. Score 5 / 100 (Low).");
+    expect(engineStep(allowed).failedSafe).toBeUndefined();
+
+    const held = { ...row("AUTHORIZED", "REVIEW", "NONE"), riskEngineScore: 30, riskEngineTier: "MEDIUM" as const, riskEngineAvailable: true };
+    expect(engineStep(held).note).toBe("Consulted for the review and did not raise it. Score 30 / 100 (Medium).");
+  });
+
+  it("keeps the old wording for rows without the engine result, and never marks a step it did not reach", () => {
+    expect(engineStep(row("AUTHORIZED", "REVIEW", "NONE")).note).toMatch(/not stored on the audit row/);
+    const denied = { ...row("AUTHORIZED", "DENY", "NONE"), riskEngineAvailable: false, riskEngineScore: 65, riskEngineTier: "HIGH" as const };
+    expect(engineStep(denied)).toMatchObject({ status: "not-reached" });
+    expect(engineStep(denied).failedSafe).toBeUndefined();
   });
 });

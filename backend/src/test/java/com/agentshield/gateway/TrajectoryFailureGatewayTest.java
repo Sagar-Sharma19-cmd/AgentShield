@@ -82,7 +82,7 @@ class TrajectoryFailureGatewayTest extends AbstractTrajectoryGatewayTest {
     @Test
     @DisplayName("History lookup failure: decision kept, trajectory NULL (not evaluated), failure logged with requestId")
     void historyLookupFailureIsRecordedAsNotEvaluated() throws Exception {
-        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(any(), any()))
+        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(any(), any()))
                 .thenThrow(new DataAccessResourceFailureException("history unavailable"));
 
         UUID requestId = requestIdOf(send("fail-lookup", "filesystem", "READ", "src/Main.java")
@@ -105,7 +105,7 @@ class TrajectoryFailureGatewayTest extends AbstractTrajectoryGatewayTest {
     @Test
     @DisplayName("History lookup failure that marks the transaction rollback-only still keeps the decision")
     void rollbackMarkingHistoryFailureStillKeepsTheDecision() throws Exception {
-        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(any(), any()))
+        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(any(), any()))
                 .thenAnswer(invocation -> {
                     if (TransactionSynchronizationManager.isActualTransactionActive()) {
                         EntityManagerFactoryUtils.getTransactionalEntityManager(entityManagerFactory)
@@ -124,7 +124,7 @@ class TrajectoryFailureGatewayTest extends AbstractTrajectoryGatewayTest {
     @Test
     @DisplayName("Evaluator RuntimeException: decision kept, trajectory NULL (not evaluated), failure logged with requestId")
     void evaluatorRuntimeFailureIsRecordedAsNotEvaluated() throws Exception {
-        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(any(), any()))
+        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(any(), any()))
                 .thenReturn(List.of());
         doThrow(new IllegalStateException("evaluator bug")).when(trajectoryEvaluator).evaluate(any(), any());
 
@@ -144,7 +144,7 @@ class TrajectoryFailureGatewayTest extends AbstractTrajectoryGatewayTest {
     @Test
     @DisplayName("Fatal Error from the evaluator is not recorded as a decision: 500 and no audit row")
     void fatalErrorIsNotCompletedAsADecision() throws Exception {
-        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(any(), any()))
+        when(auditRepositoryMock.findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(any(), any()))
                 .thenReturn(List.of());
         doThrow(new OutOfMemoryError("simulated fatal error")).when(trajectoryEvaluator).evaluate(any(), any());
 

@@ -305,7 +305,7 @@ IMPLEMENTED:
 - Review loop (B3): the owning agent (verified registered agent id) reads `GET /api/v1/gateway/reviews/{id}`
   and claims an approval once with `POST /api/v1/gateway/reviews/{id}/claim`, which returns the exact
   approved tool/action/resource. Simulator `--wait-for-review` polls, claims and fails closed otherwise
-- Flyway migrations V1–V11 (V7–V9 are the trajectory migrations; V10 is the human-review loop; V11 is `review_requests.escalated_by`; V12–V14 are reserved for M3.4 and not written)
+- Flyway migrations V1–V14 (V7–V9 are the trajectory migrations; V10 is the human-review loop; V11 is `review_requests.escalated_by`; V12 decision redemptions; V13 content inspection; V14 the Risk Engine result and approval-claim link on `audit_logs`). V15 is reserved for the ML risk model and V16–V18 for M3.4; none of those is written
 - PostgreSQL persistence
 - Backend unit tests
 - Backend integration tests

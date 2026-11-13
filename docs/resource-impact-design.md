@@ -168,7 +168,7 @@ the simulator plan. The classification below was checked against the contract.
 
 ## 4. Resource inventory model
 
-Planned table `resources` (Flyway V15, not yet written):
+Planned table `resources` (Flyway V16, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -192,7 +192,7 @@ inventoried.
 
 ## 5. Resource relationship model
 
-Planned table `resource_relationships` (Flyway V16, not yet written):
+Planned table `resource_relationships` (Flyway V17, not yet written):
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -437,7 +437,7 @@ be updated with the endpoints, not before.
 
 ## 10. Persistence and audit correlation
 
-### 10.1 `impact_assessments` (planned, Flyway V17)
+### 10.1 `impact_assessments` (planned, Flyway V18)
 
 | Column | Type (planned) | Notes |
 |---|---|---|
@@ -474,9 +474,9 @@ This is listed as a risk (section 13).
 
 | Migration | Content | Dependency |
 |---|---|---|
-| V15 | `resources` table, its unique constraint and indexes | none |
-| V16 | `resource_relationships` table, constraints and indexes | V15 |
-| V17 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
+| V16 | `resources` table, its unique constraint and indexes | none |
+| V17 | `resource_relationships` table, constraints and indexes | V16 |
+| V18 | `impact_assessments` table, constraints and index on `request_id` (unique) | none (no foreign keys) |
 
 > **Renumbering (M4.3).** This plan was originally written as V7–V9. Those numbers are now used by the
 > trajectory-analysis migrations (V7 `audit_logs` session/agent index, V8 `review_requests` trajectory
@@ -498,6 +498,11 @@ This is listed as a risk (section 13).
 > and V13 and V14 are reserved for content inspection and the ML risk model. The M3.4 migrations move to
 > V15–V17, in the same order and with the same dependencies. Nothing else changes, and no M3.4 migration
 > file exists yet.
+>
+> **Renumbering (M1.1).** V14 is now used by `V14__add_audit_risk_engine_available.sql` (the Risk Engine
+> result and approval-claim link on `audit_logs`), and the ML risk model moves to V15. The M3.4 migrations
+> move to V16–V18, in the same order and with the same dependencies. Nothing else changes, and no M3.4
+> migration file exists yet.
 
 Rules for all three:
 - Additive only. No existing table is altered. No existing data is changed.
@@ -545,7 +550,8 @@ Rules for all three:
   BFS level), and one batch read of the affected resources. No per-node queries.
 - The node cap of 50 bounds the work regardless of graph size.
 - No cache in v1. Caching is added only if measurement shows a need.
-- The Risk Engine already consumes a 300 ms budget (`agentshield.risk-engine.timeout-ms`). The impact
+- The Risk Engine already consumes up to about 2.1 s (`agentshield.risk-engine.timeout-ms`, 1000 ms, plus one
+  retry). The impact
   stage has its own budget and must not share it. The exact value is open (Q7).
 - Inventory size is not limited in v1. Listing endpoints must be paginated.
 
@@ -597,7 +603,7 @@ Confirm that no combination can produce DENY from REVIEW or ALLOW.
 - Canary test: a resource name placed in the inventory must not appear anywhere in the gateway
   response body.
 
-**Persistence and migrations.** `DatabaseMigrationTest` for V15–V17. Repository tests for the unique
+**Persistence and migrations.** `DatabaseMigrationTest` for V16–V18. Repository tests for the unique
 constraints and the self-loop CHECK. Run the same tests on PostgreSQL 16 (a disposable container, as
 in M3.3), not only on H2.
 
@@ -614,9 +620,9 @@ and 404 or 403 for an unknown path under the admin matcher.
 |---|---|---|
 | 0 | This document. Documentation corrections. No code. | Review |
 | 1 | Canonicalizer (pure function) and its unit tests. No persistence. | Canonicalizer matrix passes |
-| 2 | V15 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
-| 3 | V16 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
-| 4 | V17 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
+| 2 | V16 inventory, repository, admin CRUD, admin matcher update, admin-action audit gap decided (Q8) | Admin security tests pass |
+| 3 | V17 relationships, admin CRUD, cycle-safe analyzer as a pure class with no gateway use | Analyzer tests pass, including the 1000-node bound |
+| 4 | V18 `impact_assessments`, flag-gated gateway stage, `ImpactEscalator`, additive response field | Flag-OFF golden test passes; flag-ON tests pass |
 | 5 | Admin impact endpoint under `/api/v1/audit/{requestId}/impact` | Names appear only in the admin view |
 | 6 | Frontend impact panel (branch) | Browser checks |
 

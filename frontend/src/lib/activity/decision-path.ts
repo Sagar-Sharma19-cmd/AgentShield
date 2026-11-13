@@ -12,11 +12,14 @@
  * - The Risk Engine is consulted only for a policy ALLOW or REVIEW, never after a DENY. It only escalates.
  * - Trajectory runs only when the decision is not DENY. It only escalates ALLOW to REVIEW.
  * - escalatedBy records which stage changed the decision (null on rows written before V9).
+ * - V14 rows carry the Risk Engine's own result (riskEngineScore/Tier/Available). riskEngineAvailable false means it
+ *   did not answer and the gateway failed safe to HIGH; that step then says so instead of a score explanation.
  *
  * Where the record cannot tell (for example, what the policy said before the Risk Engine escalated to DENY),
  * the step says so instead of guessing.
  */
 import { GATE_INDEX, GATES, gateFor, HIGH_RISK_THRESHOLD, type Gate } from "@/lib/checkpoint/gates";
+import { TRAJECTORY_TIER_LABELS } from "@/lib/trajectory/model";
 import type { AuditLogResponse, ReviewStatus } from "@/types/api";
 
 export type StepStatus =
@@ -48,11 +51,16 @@ export type StepDetail =
   | { kind: "reason"; text: string }
   | { kind: "trajectory"; text: string };
 
+/** The Risk Engine step's note when the engine did not answer and the gateway failed safe (V14). */
+export const RISK_ENGINE_FAILED_SAFE = "Did not respond. Failed safe to HIGH.";
+
 export interface PathStep {
   gate: Gate;
   status: StepStatus;
   /** One short sentence describing what happened at this gate. */
   note: string;
+  /** Risk Engine step only: the engine did not answer and the gateway used the fail-safe HIGH (V14). */
+  failedSafe?: boolean;
   /** Present on the deciding step only. */
   detail?: StepDetail;
 }
@@ -79,7 +87,8 @@ export type PathInput = Pick<
   | "reason"
   | "trajectoryScore"
   | "inspectionVerdict"
-> & { reviewOutcome?: ReviewOutcome };
+> &
+  Partial<Pick<AuditLogResponse, "riskEngineScore" | "riskEngineTier" | "riskEngineAvailable">> & { reviewOutcome?: ReviewOutcome };
 
 function trajectoryNote(score: number | null): string {
   if (score === null) return "No trajectory score was recorded for this request.";
@@ -174,7 +183,7 @@ function policyStep(decided: Gate, row: PathInput): PathStep {
   return { gate: "POLICY", status: "passed", note: "Policy allowed the request." };
 }
 
-function riskEngineStep(decided: Gate, row: PathInput): PathStep {
+function riskEngineStepFromDecision(decided: Gate, row: PathInput): PathStep {
   if (decided === "IDENTITY" || decided === "PERMISSION") {
     return { gate: "RISK_ENGINE", status: "not-reached", note: "Authorization failed, so the Risk Engine was not consulted." };
   }
@@ -213,6 +222,30 @@ function riskEngineStep(decided: Gate, row: PathInput): PathStep {
     };
   }
   return { gate: "RISK_ENGINE", status: "passed", note: "The Risk Engine did not raise the decision." };
+}
+
+/** " Score 30 / 100 (Medium)." when the row recorded the Risk Engine's answer (V14), else "". */
+function engineScoreSuffix(row: PathInput): string {
+  if (row.riskEngineAvailable !== true || row.riskEngineScore == null || !row.riskEngineTier) return "";
+  return ` Score ${row.riskEngineScore} / 100 (${TRAJECTORY_TIER_LABELS[row.riskEngineTier]}).`;
+}
+
+const NOT_STORED = " Its score is not stored on the audit row.";
+
+/**
+ * The Risk Engine step, with what V14 rows record: the engine's score when it answered, or the fail-safe wording when
+ * it did not. Older rows keep the wording that says the score was not stored.
+ */
+function riskEngineStep(decided: Gate, row: PathInput): PathStep {
+  const step = riskEngineStepFromDecision(decided, row);
+  if (step.status === "not-reached" || step.status === "not-recorded") return step;
+  if (row.riskEngineAvailable === false) {
+    return { ...step, note: RISK_ENGINE_FAILED_SAFE, failedSafe: true };
+  }
+  const suffix = engineScoreSuffix(row);
+  if (!suffix) return step;
+  const base = step.note.endsWith(NOT_STORED) ? step.note.slice(0, -NOT_STORED.length) : step.note;
+  return { ...step, note: base + suffix };
 }
 
 function trajectoryStep(decided: Gate, row: PathInput): PathStep {

@@ -272,14 +272,40 @@ async def test_retry_of_a_different_call_does_not_reuse_the_review(root):
     assert len(gateway.of("evaluate")) == 2
 
 
-async def test_retry_while_still_pending_is_held_again_without_new_review(root):
+async def test_retry_while_still_pending_returns_at_once_without_new_review(root):
     gateway = review_then(review_status("PENDING", resource="notes/x.txt"))
     args = {"path": "notes/x.txt", "content": "a@b.com"}
-    async with proxy(root, gateway, wait=0) as (client, enforcer, downstream):
-        await client.call_tool("write_file", args)
+    async with proxy(root, gateway, wait=90) as (client, enforcer, downstream):
+        first = await client.call_tool("write_file", args)
+        assert "Held for human review" in text_of(first)
+        polls, waited = len(gateway.of("get_review")), enforcer.monotonic()
+        assert waited == 90  # the first attempt waited the full time
+
+        gateway.reviews[:] = [review_status("IN_REVIEW", resource="notes/x.txt")]
         again = await client.call_tool("write_file", args)
-    assert "Held for human review" in text_of(again)
+        assert enforcer.monotonic() == waited  # the retry did not wait at all
+    assert again.is_error
+    assert text_of(again) == (f"Still waiting for human review {REVIEW_ID} (status: IN_REVIEW, expires "
+                              "2099-01-01 00:00:00 UTC). Approve it in the AgentShield console, then ask me to retry.")
+    assert len(gateway.of("get_review")) == polls + 1  # one read of the review, no polling
     assert len(gateway.of("evaluate")) == 1
+    assert downstream.calls == [] and gateway.of("claim") == []
+    assert len(enforcer.reviews) == 1  # still remembered for the next retry
+
+
+async def test_retry_with_approved_review_claims_and_runs_without_waiting(root):
+    gateway = review_then(review_status("PENDING", resource="notes/x.txt"))
+    args = {"path": "notes/x.txt", "content": "a@b.com"}
+    async with proxy(root, gateway, wait=90) as (client, enforcer, downstream):
+        await client.call_tool("write_file", args)
+        waited = enforcer.monotonic()
+        gateway.calls.clear()
+        gateway.reviews[:] = [review_status("APPROVED", resource="notes/x.txt", reviewer="sagar")]
+        result = await client.call_tool("write_file", args)
+        assert enforcer.monotonic() == waited
+    assert not result.is_error
+    assert gateway.kinds() == ["get_review", "claim", "redeem", "inspect"]
+    assert len(downstream.calls) == 1 and enforcer.reviews == {}
 
 
 async def test_retry_after_the_approval_was_used_evaluates_again(root):

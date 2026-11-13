@@ -5,7 +5,16 @@ import { motion, useReducedMotion } from "motion/react";
 import { DecisionIcon, DECISION_MARKS } from "@/components/checkpoint/decision-mark";
 import { GateMark } from "@/components/checkpoint/gate-mark";
 import { gateFor } from "@/lib/checkpoint/gates";
-import { isOutputCheck, OUTPUT_CHECK_LABEL, outputCheckSummary, SESSION_SOURCE_LABELS, sessionSource } from "@/lib/activity/source";
+import {
+  APPROVAL_CLAIMED_LABEL,
+  effectiveScore,
+  isApprovalClaim,
+  isOutputCheck,
+  OUTPUT_CHECK_LABEL,
+  outputCheckSummary,
+  SESSION_SOURCE_LABELS,
+  sessionSource,
+} from "@/lib/activity/source";
 import { relativeTime } from "@/lib/activity/table-model";
 import { ACTION_LABELS } from "@/lib/labels";
 import { formatTimestamp } from "@/lib/format";
@@ -119,7 +128,7 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                   <Cell>
                     <Truncated value={event.tool} mono muted />
                   </Cell>
-                  <Cell>{isOutputCheck(event.resource) ? OUTPUT_CHECK_LABEL : ACTION_LABELS[event.action]}</Cell>
+                  <Cell>{actionLabel(event)}</Cell>
                   <Cell>
                     <ResourceValue event={event} />
                   </Cell>
@@ -133,7 +142,7 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                     </span>
                   </Cell>
                   <Cell className="text-right font-mono tabular-nums">
-                    {event.riskScore}
+                    {effectiveScore(event)}
                     <span className="sr-only"> out of 100</span>
                   </Cell>
                 </motion.tr>
@@ -172,7 +181,13 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                   <span className="min-w-0 truncate font-mono text-xs">{event.agentId}</span>
                   <SourceTag sessionId={event.sessionId} />
                 </span>
-                {isOutputCheck(event.resource) ? (
+                {isApprovalClaim(event) ? (
+                  <span className="truncate text-sm">
+                    {APPROVAL_CLAIMED_LABEL}
+                    <span className="text-muted-foreground"> · {ACTION_LABELS[event.action]} on </span>
+                    <span className="font-mono text-xs">{event.resource}</span>
+                  </span>
+                ) : isOutputCheck(event.resource) ? (
                   <span className="truncate text-sm">
                     {OUTPUT_CHECK_LABEL}
                     <span className="text-muted-foreground"> · {outputCheckSummary(event)}</span>
@@ -186,7 +201,7 @@ export function ActivityList({ events, selectedRequestId, onSelect, isUpdating, 
                 )}
                 <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <GateMark gate={gateFor(event)} />
-                  <span className="font-mono tabular-nums">Score {event.riskScore}</span>
+                  <span className="font-mono tabular-nums">Score {effectiveScore(event)}</span>
                 </span>
               </button>
             </motion.li>
@@ -230,6 +245,13 @@ function SourceTag({ sessionId }: { sessionId: string }) {
 }
 
 /** The resource, or for an output-check row ("output:<tool>") its verdict and finding types. */
+/** The Action column: "Approval claimed" and "Output check" rows name the event, others the action. */
+function actionLabel(event: AuditLogResponse): string {
+  if (isApprovalClaim(event)) return APPROVAL_CLAIMED_LABEL;
+  if (isOutputCheck(event.resource)) return OUTPUT_CHECK_LABEL;
+  return ACTION_LABELS[event.action];
+}
+
 function ResourceValue({ event }: { event: AuditLogResponse }) {
   if (!isOutputCheck(event.resource)) return <Truncated value={event.resource} mono muted />;
   const summary = outputCheckSummary(event);

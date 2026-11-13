@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Shows the policy risk score recorded on an audit event (0–100). Audit events carry no risk tier,
- * so this component deliberately shows the number and a proportional bar, not a LOW/HIGH label.
+ * Shows a 0–100 risk score (Activity passes the effective score) as a number and a proportional bar. It shows no
+ * LOW/HIGH label: the Risk Engine's tier, when recorded, is shown next to it with RiskTierBadge.
  */
 export function RiskScore({ score, className }: { score: number; className?: string }) {
   const clamped = Math.min(100, Math.max(0, score));

@@ -6,6 +6,8 @@ Per-call enforcement. For each tools/call:
 3. For each resource, get a decision: evaluate (or, for a retry of the same call, check the review it created).
    DENY -> blocked. ALLOW -> one-time token. REVIEW -> wait up to reviewWaitSeconds; APPROVED -> claim (token);
    REJECTED / expired -> blocked; still pending -> held, with the review id to approve.
+   A retry whose earlier review is still PENDING or IN_REVIEW is answered at once ("Still waiting ..."), without
+   waiting again: only a call's first attempt waits.
    Multi-path calls need every resource to be allowed or approved.
 4. Redeem every token with the same tool, action, resource and arguments. Any failure: no downstream call.
 5. Call the downstream server with the canonical arguments.
@@ -22,7 +24,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import anyio
@@ -64,6 +66,14 @@ def describe_findings(findings: Sequence[Any]) -> List[str]:
     return [f"- {f.category} {f.type} at {f.location}: {f.preview}" for f in findings]
 
 
+def format_expiry(expires_at: Optional[str]) -> str:
+    """The review's expiry for a message, e.g. "2026-11-13 10:30:00 UTC"; "unknown" when absent or unreadable."""
+    epoch = _expiry_epoch(expires_at)
+    if epoch is None:
+        return "unknown"
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def _expiry_epoch(expires_at: Optional[str]) -> Optional[float]:
     if not expires_at:
         return None
@@ -98,6 +108,10 @@ class Blocked:
 @dataclass(frozen=True)
 class Pending:
     review_id: str
+    # True when a retry found its earlier review still open: report it at once, do not wait again.
+    retry: bool = False
+    status: Optional[str] = None
+    expires_at: Optional[str] = None
 
 
 Outcome = Union[Granted, Blocked, Pending]
@@ -220,6 +234,13 @@ class Enforcer:
                 return text_result(outcome.message)
             outcomes.append(outcome)
 
+        # A retry that found its review still open is answered at once. Waiting again would hold the client for
+        # the whole wait on every retry, and some clients time a tool call out at about 60 s.
+        if any(isinstance(o, Pending) and o.retry for o in outcomes):
+            lines = [self._pending_line(o) for o in outcomes if isinstance(o, Pending)]
+            log.info("call %s: retry still waiting for review", operations[0].downstream_tool)
+            return text_result("\n".join(lines))
+
         deadline = self.monotonic() + self.config.review_wait_seconds
         held: List[str] = []
         granted: List[Granted] = []
@@ -239,6 +260,15 @@ class Enforcer:
             return text_result(f"Held for human {noun} {ids}. Approve {it} in the AgentShield console, then ask me "
                                "to retry this exact action.")
         return granted
+
+    @staticmethod
+    def _pending_line(outcome: Pending) -> str:
+        if outcome.retry:
+            return (f"Still waiting for human review {outcome.review_id} (status: {outcome.status}, expires "
+                    f"{format_expiry(outcome.expires_at)}). Approve it in the AgentShield console, then ask me to "
+                    "retry.")
+        return (f"Held for human review {outcome.review_id}. Approve it in the AgentShield console, then ask me to "
+                "retry this exact action.")
 
     def _known_review(self, key: str) -> Optional[str]:
         now = self.clock()
@@ -291,7 +321,10 @@ class Enforcer:
         if review.status == "APPROVED" and review.consumed:
             self.reviews.pop(op.key, None)
             return None
-        return await self._review_outcome(op, review)
+        outcome = await self._review_outcome(op, review)
+        if isinstance(outcome, Pending):
+            return Pending(outcome.review_id, retry=True, status=review.status, expires_at=review.expires_at)
+        return outcome
 
     async def _review_outcome(self, op: Operation, review: Any) -> Outcome:
         """Blocked, Granted (claimed), or Pending for one read of a review."""

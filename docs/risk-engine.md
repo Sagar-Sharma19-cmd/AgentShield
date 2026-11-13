@@ -189,14 +189,23 @@ Integration".
 - **Escalation only:** the Java-side `DecisionEscalator` combines the Risk Engine's `risk_tier`
   with the existing decision and can only escalate it (ALLOW→REVIEW→DENY), never grant or
   downgrade. The Risk Engine provides a risk signal and does not grant authorization.
-- **Timeout:** `agentshield.risk-engine.timeout-ms` (default 300) bounds both the connect and
-  read phase of the Java HTTP call.
-- **Fail-safe fallback:** on timeout, connection failure, an HTTP error status, or a response
-  the Java client cannot parse, it uses `risk_score=65`, `risk_tier=HIGH`,
+- **Timeout:** `agentshield.risk-engine.timeout-ms` (env `RISK_ENGINE_TIMEOUT_MS`, default 1000)
+  bounds both the connect and read phase of each Java HTTP call. It was 300 ms until M1.1: under CPU
+  load (a frontend build) the engine missed it, the gateway failed safe to HIGH, and harmless READs
+  went to review.
+- **One retry:** a timeout or connection error is retried `agentshield.risk-engine.max-retries` times
+  (env `RISK_ENGINE_MAX_RETRIES`, default 1, allowed 0–3) after a 100 ms pause. An HTTP error status
+  (for example 500) or a response that cannot be interpreted is not retried: the engine answered.
+  With the defaults, a slow engine costs at most about 2 × 1000 ms + 100 ms ≈ 2.1 s. (A hanging
+  connect adds up to the same timeout per attempt; on localhost a refused connection fails at once.)
+- **Fail-safe fallback:** when every attempt timed out or failed to connect, on an HTTP error status,
+  or on a response the Java client cannot parse, it uses `risk_score=65`, `risk_tier=HIGH`,
   `reason="risk_engine_unavailable"` — never fails open and never throws.
 - **Persistence:** every call (successful or fallback) is persisted to the Java-side
   `risk_assessments` table, correlated by `request_id` with the `audit_logs` row for the same
-  gateway request.
+  gateway request. Since V14 the score, tier and availability are also stored on that audit row
+  (`risk_engine_score`, `risk_engine_tier`, `risk_engine_available`), so Activity shows the
+  effective score and says "Did not respond. Failed safe to HIGH." when the engine did not answer.
 
 ---
 

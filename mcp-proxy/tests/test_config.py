@@ -15,7 +15,7 @@ SHIPPED = os.path.join(HERE, os.pardir, "configs", "filesystem.yaml")
 def test_shipped_filesystem_config_loads_and_points_at_the_demo_workspace():
     config = load_proxy_config(SHIPPED)
     assert config.root == os.path.realpath(os.path.join(HERE, os.pardir, os.pardir, "demo-workspace"))
-    assert config.tool == "filesystem" and config.session_prefix == "mcp-" and config.review_wait_seconds == 90
+    assert config.tool == "filesystem" and config.session_prefix == "mcp-" and config.review_wait_seconds == 45
     reads = {"read_text_file", "read_file", "read_multiple_files", "list_directory", "directory_tree",
              "search_files", "get_file_info"}
     writes = {"write_file", "edit_file", "create_directory", "move_file"}

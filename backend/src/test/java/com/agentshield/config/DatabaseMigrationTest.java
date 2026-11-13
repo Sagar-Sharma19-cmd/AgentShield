@@ -33,7 +33,7 @@ class DatabaseMigrationTest {
                 .map(info -> info.getVersion().getVersion())
                 .toList();
 
-        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"), applied);
+        assertEquals(List.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"), applied);
         assertTrue(Arrays.stream(flyway.info().applied()).allMatch(info -> info.getState().isApplied()));
         assertEquals(0, flyway.info().pending().length);
     }

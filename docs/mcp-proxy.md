@@ -15,8 +15,8 @@ SDK (`sdk/python`).
                     ├─ map tool -> action, canonicalize paths (reject outside root: no gateway or downstream call)
                     ├─ POST /gateway/evaluate        tool=filesystem action resource=<root-relative path> arguments
                     │    DENY   ─► "Blocked by AgentShield: <reason>" + redacted findings
-                    │    REVIEW ─► poll GET /gateway/reviews/{id} (up to 90 s) ─► APPROVED: POST …/claim
-                    │              still pending ─► "Held for human review <id> …"  (retry claims the same review)
+                    │    REVIEW ─► poll GET /gateway/reviews/{id} (up to 45 s) ─► APPROVED: POST …/claim
+                    │              still pending ─► "Held for human review <id> …"  (retry: claims it, or "Still waiting …" at once)
                     │    ALLOW / claimed ─► POST /gateway/decisions/redeem (same tool, action, resource, arguments)
                     ├─ tools/call on the real server with the canonical absolute paths
                     └─ POST /gateway/inspect (text output, ≤ 262,144 characters)
@@ -73,7 +73,7 @@ the proxy still starts and lists tools, but every call fails closed with a messa
 | `root` | The only directory calls may touch. Relative paths are resolved from the config file; `--root` overrides it. |
 | `agentshield.tool` | Registered AgentShield tool name (`filesystem`). |
 | `agentshield.sessionPrefix` | `mcp-`. One session id per proxy process: `mcp-<12 hex>`. |
-| `agentshield.reviewWaitSeconds` | How long a call waits for a human decision (default 90, max 600). |
+| `agentshield.reviewWaitSeconds` | How long a call's first attempt waits for a human decision (default 45, max 600). A retry never waits. |
 | `tools.<name>` | `{ action, resourceFrom }`. `resourceFrom` names the argument (or list of arguments) that holds the path. Without it, the resource is the root (`.`). |
 
 The filesystem mapping:
@@ -108,8 +108,15 @@ to review.
      me to retry this exact action.`
 
    The proxy keeps an in-memory map from sha256(tool, action, canonical resource, canonical arguments) to the review
-   id until the review expires. A retry of the same call therefore checks and claims that review instead of
-   creating a new one.
+   id until the review expires. A retry of the same call therefore reads that review once instead of creating a
+   new one, and does not wait again:
+   - **APPROVED:** it is claimed and the call runs.
+   - **REJECTED or expired:** the call is blocked.
+   - **Still PENDING or IN_REVIEW:** the call returns at once with `Still waiting for human review <id> (status:
+     <status>, expires <time>). Approve it in the AgentShield console, then ask me to retry.`
+
+   Only a call's first attempt waits. The default wait is 45 s because some MCP clients time a tool call out at
+   about 60 s.
 5. **ALLOW.** The proxy redeems the token with the same arguments, then calls the server. A failed redeem (401, 403
    or 409) means no call.
 6. **Fail closed.** An unreachable gateway, a timeout, a non-2xx answer or a malformed reply blocks the call, and
@@ -144,7 +151,7 @@ console: these rows carry the **MCP proxy** label, and output checks read **Outp
 | 2 | read `notes/plan.md` | ALLOW; output check Clean |
 | 3 | read `.env` | DENY by policy ("Access to credential or secret resource is denied by policy."); nothing is read |
 | 4 | read `config/app.yaml` | ALLOW, but the output check is Deny: `Output withheld by AgentShield: contained AWS_ACCESS_KEY` |
-| 5 | write `notes/contact.txt` containing an email address and a card number (for example `4111 1111 1111 1111`) | REVIEW (inspection: PII). Approve it in **Reviews** within 90 s and the same call runs; otherwise Claude reports it as held. Approve it and ask Claude to retry the exact action, and the write runs. |
+| 5 | write `notes/contact.txt` containing an email address and a card number (for example `4111 1111 1111 1111`) | REVIEW (inspection: PII). Approve it in **Reviews** within 45 s and the same call runs; otherwise Claude reports it as held. A retry before you approve answers at once with "Still waiting for human review …". Approve it and ask Claude to retry the exact action, and the write runs. |
 | 6 | read `docs/../.env` | DENY: evaluated as `.env` |
 
 Also try `../README.md`: the proxy rejects it before it reaches the gateway ("outside the allowed directory").
@@ -153,7 +160,7 @@ Also try `../README.md`: the proxy rejects it before it reaches the gateway ("ou
 (`~/.agentshield-mcp/run-proxy.sh`) and filesystem server 2.1.0, driven by an MCP client script:
 
 - Steps 1 to 4 and 6 gave exactly the results above.
-- Step 5 ran both ways: approved while the call waited (the call ran after 3 s), and held after 90 s, then approved
+- Step 5 ran both ways: approved while the call waited (the call ran after 3 s), and held after the wait (then 90 s), then approved
   and retried, after which the retry claimed the same review and the write ran.
 - The proxy's stderr contained no arguments, output, email address, card number or key.
 
@@ -169,8 +176,9 @@ scan of the repository passes.
   protected. The proxy holds the agent key; the downstream server does not.
 - **Time of check vs time of use:** a symlink created between canonicalization and the server's own access is not
   seen. The server re-checks that paths stay inside its allowed directory, which bounds this to the root.
-- **Client timeouts:** some MCP clients time out tool calls before 90 s. The proxy then reports nothing, but the
-  review stays open, and a retry of the same call claims it. Lower `reviewWaitSeconds` if your client times out.
+- **Client timeouts:** some MCP clients time a tool call out at about 60 s, so the first attempt waits 45 s by
+  default. If a client still times out, the review stays open: a retry of the same call claims it once approved, or
+  says at once that it is still waiting. Lower `reviewWaitSeconds` if your client times out sooner.
 - **Memory:** the retry map lives in the process. After a restart, a retry creates a new review.
 - **Trajectory:** all calls of one proxy process share a session, so trajectory analysis can escalate a later ALLOW
   to REVIEW after several denials. That is the gateway working as designed.

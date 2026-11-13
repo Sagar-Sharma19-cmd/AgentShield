@@ -355,12 +355,19 @@ final decision ── audited (audit_logs, unchanged schema) ── risk assessm
   `reason="risk_engine_unavailable"`, `engineAvailable=false`) instead of throwing or defaulting
   to "no risk". Combined with an existing ALLOW, this fallback escalates to REVIEW.
 - **Timeout is enforced on the wire**, not just configured: `agentshield.risk-engine.timeout-ms`
-  (default 300) sets both the connect and read timeout on the underlying
-  `SimpleClientHttpRequestFactory`, so a slow or hanging Risk Engine cannot block the gateway
-  past that bound. No retries are performed (a retry could multiply the timeout budget).
+  (default 1000) sets both the connect and read timeout on the underlying
+  `SimpleClientHttpRequestFactory`. A timeout or connection error is retried
+  `agentshield.risk-engine.max-retries` times (default 1, allowed 0–3) after a 100 ms pause; an HTTP
+  error status or an unreadable answer is not retried. With the defaults a slow engine costs at most
+  about 2 × 1000 ms + 100 ms before the fallback. (The default was 300 ms with no retry until M1.1;
+  under CPU load the engine missed it and harmless READs went to review.)
 - **Configuration:** `agentshield.risk-engine.url` (env `RISK_ENGINE_URL`, default
-  `http://localhost:8000`) and `agentshield.risk-engine.timeout-ms` (env
-  `RISK_ENGINE_TIMEOUT_MS`, default `300`).
+  `http://localhost:8000`), `agentshield.risk-engine.timeout-ms` (env `RISK_ENGINE_TIMEOUT_MS`,
+  default `1000`) and `agentshield.risk-engine.max-retries` (env `RISK_ENGINE_MAX_RETRIES`, default `1`).
+- **On the audit row (V14):** the engine's score, tier and `risk_engine_available` are also stored on
+  the `audit_logs` row, so Activity can show the effective score (the highest of the policy, Risk
+  Engine and trajectory scores, the same number the review shows) and say when the engine did not
+  respond and the gateway failed safe. `risk_score` keeps its meaning: the policy result's score.
 - **Persistence:** every Risk Engine consultation (successful or fallback) is persisted to
   `risk_assessments` (id, request_id, risk_score, risk_tier, factors as JSON text, reason,
   engine_available, created_at), correlated with the `audit_logs` row for the same request via
@@ -598,6 +605,13 @@ Agent (agent API key)            Gateway / ReviewRequestService               Op
   request and nothing else. A claim is not a permission grant, does not change `agent_tool_permissions`,
   and does not affect any future gateway decision. The simulator refuses to run anything whose
   tool/action/resource differs from the claim.
+- **Claim audit row (V14).** A successful claim writes one `audit_logs` row in the same transaction as
+  the `UPDATE`: decision `ALLOW`, the claimed tool, action and resource, reason `Approved by <reviewer>;
+  claimed once by the agent.`, and `claimed_request_id` = the original request id. It has its own
+  `request_id`, so `GET /api/v1/audit/{requestId}` still returns one row per request. A refused claim
+  writes nothing. Activity shows the row as **Approval claimed**. It is left out of trajectory history
+  (a claim repeats a request already in the session) and out of pipeline runs. How claims work is
+  unchanged.
 - **Expiry.** `expires_at = created_at + agentshield.review.ttl-minutes` (env
   `AGENTSHIELD_REVIEW_TTL_MINUTES`, default 30). Start, approve, reject and claim on an expired review
   answer **409**. Responses carry `expired`, computed from the injected `Clock` when the response is built.
@@ -703,7 +717,11 @@ GET /api/v1/audit?agentId=&decision=&authorizationResult=&from=&to=&page=&size=
 
 | V12 | `V12__add_decision_redemptions.sql` | Decision tokens (E1): `decision_redemptions` (`jti` UUID PK = gateway request id, `registered_agent_id` UUID NOT NULL, `tool`, `action` with CHECK, `resource_hash` VARCHAR(64), `redeemed_at`) and index `idx_decision_redemptions_agent`. The primary key makes each token redeemable once |
 
-- **Reserved:** V13 is reserved for content inspection and V14 for the ML risk model. V15–V17 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; planned as V10–V12, then V11–V13, then V12–V14, and moved each time a later phase took a number). They are design only, and no migration file exists for them yet.
+| V13 | `V13__add_content_inspection.sql` | Content inspection: `audit_logs.inspection_verdict` and `inspection_findings` (redacted JSON), `review_requests.inspection_findings` and `args_sha256`, and `INSPECTION` added to both `escalated_by` CHECKs |
+
+| V14 | `V14__add_audit_risk_engine_available.sql` | M1.1: `audit_logs.risk_engine_score`, `risk_engine_tier`, `risk_engine_available` (the Risk Engine's own result; all three NULL when it was not consulted, CHECK that they are set together) and `claimed_request_id` (set only on an "approval claimed" row, indexed). Backfill: the Risk Engine columns from `risk_assessments` for the same `request_id` |
+
+- **Reserved:** V15 is reserved for the ML risk model (moved from V14 in M1.1). V16–V18 are reserved for the resource-impact design (`docs/resource-impact-design.md`, M3.4 Stage 0; planned as V10–V12, then V11–V13, then V12–V14, then V15–V17, and moved each time a later phase took a number). They are design only, and no migration file exists for them yet.
 
 - `spring.jpa.hibernate.ddl-auto=validate` everywhere, **including tests**: the H2 test database is built by the same migrations, so any drift between entities and SQL fails the build.
 - Scripts use portable SQL that runs on both PostgreSQL and H2.

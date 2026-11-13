@@ -29,12 +29,17 @@ public interface AuditRepository extends JpaRepository<AuditLog, UUID>, JpaSpeci
 
     List<AuditLog> findByAuthorizationResult(AuthorizationResult authorizationResult);
 
-    /** One audit row is written per gateway request — see GatewayService.evaluateRequest. */
+    /**
+     * One audit row is written per gateway request — see GatewayService.evaluateRequest. An approval-claim row
+     * has its own request id (V14), so this stays a single-row lookup.
+     */
     Optional<AuditLog> findByRequestId(UUID requestId);
 
     /**
      * The 10 most recent audit rows for one session, scoped to one verified agent (newest first).
-     * Served by idx_audit_logs_session_agent_timestamp (V7). Used by TrajectoryService.
+     * Served by idx_audit_logs_session_agent_timestamp (V7). Used by TrajectoryService. Approval-claim rows (V14)
+     * are left out: a claim repeats a request that is already in the history, so counting it would add a second
+     * event for one operation.
      */
-    List<AuditLog> findTop10BySessionIdAndRegisteredAgentIdOrderByTimestampDesc(String sessionId, UUID registeredAgentId);
+    List<AuditLog> findTop10BySessionIdAndRegisteredAgentIdAndClaimedRequestIdIsNullOrderByTimestampDesc(String sessionId, UUID registeredAgentId);
 }

@@ -1,6 +1,9 @@
 package com.agentshield.gateway;
 
 import com.agentshield.agent.Agent;
+import com.agentshield.audit.AuditLog;
+import com.agentshield.model.ActionOutcome;
+import com.agentshield.model.DecisionType;
 import com.agentshield.config.MutableClock;
 import com.agentshield.config.MutableClockConfig;
 import com.agentshield.dto.AgentCreateRequest;
@@ -39,6 +42,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -188,6 +192,33 @@ class ReviewLoopIntegrationTest extends AbstractTrajectoryGatewayTest {
 
         agentGet(reviewId, agentApiKey).andExpect(jsonPath("$.consumed").value(true));
         adminGet(reviewId).andExpect(jsonPath("$.consumedAt").isNotEmpty());
+
+        // The successful claim left exactly one "approval claimed" audit row, linked to the original request;
+        // the refused second claim left none. The original request still has exactly one row of its own.
+        UUID originalRequestId = reviewRequestRepository.findById(reviewId).orElseThrow().getRequestId();
+        List<AuditLog> claims = claimRows(originalRequestId);
+        assertEquals(1, claims.size());
+        AuditLog claimRow = claims.get(0);
+        assertNotEquals(originalRequestId, claimRow.getRequestId());
+        assertEquals(DecisionType.ALLOW, claimRow.getDecision());
+        assertEquals(ActionOutcome.ALLOWED, claimRow.getActionOutcome());
+        assertEquals("filesystem", claimRow.getTool());
+        assertEquals(ActionType.DELETE, claimRow.getAction());
+        assertEquals(REVIEW_RESOURCE, claimRow.getResource());
+        assertEquals(ownerAgentId, claimRow.getRegisteredAgentId());
+        assertEquals("Approved by alice; claimed once by the agent.", claimRow.getReason());
+        assertEquals(DecisionType.REVIEW, auditRepository.findByRequestId(originalRequestId).orElseThrow().getDecision());
+
+        mockMvc.perform(admin(get("/api/v1/audit/{requestId}", claimRow.getRequestId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.claimedRequestId").value(originalRequestId.toString()))
+                .andExpect(jsonPath("$.decision").value("ALLOW"));
+    }
+
+    private List<AuditLog> claimRows(UUID originalRequestId) {
+        return auditRepository.findAll().stream()
+                .filter(row -> originalRequestId.equals(row.getClaimedRequestId()))
+                .toList();
     }
 
     @Test
@@ -221,7 +252,9 @@ class ReviewLoopIntegrationTest extends AbstractTrajectoryGatewayTest {
                 .andExpect(jsonPath("$.note").value("Cache is shared with prod."));
 
         for (UUID id : List.of(pending, inReview, rejected)) {
-            assertEquals(null, reviewRequestRepository.findById(id).orElseThrow().getConsumedAt());
+            ReviewRequest refused = reviewRequestRepository.findById(id).orElseThrow();
+            assertEquals(null, refused.getConsumedAt());
+            assertEquals(0, claimRows(refused.getRequestId()).size(), "a refused claim writes no audit row");
         }
     }
 
@@ -291,7 +324,9 @@ class ReviewLoopIntegrationTest extends AbstractTrajectoryGatewayTest {
                     }
                 }
                 assertEquals(1, wins, "round " + round + ": exactly one claim succeeds");
-                assertNotNull(reviewRequestRepository.findById(reviewId).orElseThrow().getConsumedAt());
+                ReviewRequest claimed = reviewRequestRepository.findById(reviewId).orElseThrow();
+                assertNotNull(claimed.getConsumedAt());
+                assertEquals(1, claimRows(claimed.getRequestId()).size(), "round " + round + ": one claim audit row");
             }
         } finally {
             pool.shutdownNow();

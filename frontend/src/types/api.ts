@@ -261,6 +261,18 @@ export interface AuditLogResponse {
   inspectionVerdict?: InspectionVerdict | null;
   /** Redacted content findings (V13). Null (or absent) when inspection did not run; [] when nothing was found. */
   inspectionFindings?: ContentFinding[] | null;
+  /**
+   * Highest of riskScore (policy), riskEngineScore and trajectoryScore: the score that drove the decision (V14).
+   * Absent from an older backend; fall back to riskScore.
+   */
+  effectiveRiskScore?: number;
+  /** Risk Engine score, or the fail-safe 65 when it did not answer. Null when it was not consulted (V14). */
+  riskEngineScore?: number | null;
+  riskEngineTier?: RiskTier | null;
+  /** False when the Risk Engine did not answer and the gateway failed safe to HIGH. Null when not consulted (V14). */
+  riskEngineAvailable?: boolean | null;
+  /** Set only on an "approval claimed" row: the request id of the original, held request (V14). */
+  claimedRequestId?: string | null;
   timestamp: string;
 }
 

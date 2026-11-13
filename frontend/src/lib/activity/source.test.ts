@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ContentFinding } from "@/types/api";
 import { groupRuns, MCP_SESSION_PATTERN, realRunSource, runKindOf, runTitle, stepStatusText } from "@/lib/pipeline/runs";
-import { isOutputCheck, outputCheckSummary, SESSION_SOURCE_LABELS, sessionSource } from "./source";
+import { APPROVAL_CLAIMED_LABEL, effectiveScore, isApprovalClaim, isOutputCheck, outputCheckSummary, SESSION_SOURCE_LABELS, sessionSource } from "./source";
 
 const MCP = "mcp-0123456789ab";
 
@@ -74,5 +74,43 @@ describe("output checks", () => {
     );
     expect(outputCheckSummary({ inspectionVerdict: null })).toBe("Not inspected");
     expect(outputCheckSummary({})).toBe("Not inspected");
+  });
+});
+
+describe("effective score (V14)", () => {
+  it("shows the score that drove the decision, the same one the review shows", () => {
+    // The demo case: policy READ 10, Risk Engine did not answer (fail-safe 65), review shows 65.
+    expect(effectiveScore({ riskScore: 10, effectiveRiskScore: 65 })).toBe(65);
+    expect(effectiveScore({ riskScore: 90, effectiveRiskScore: 90 })).toBe(90);
+  });
+
+  it("falls back to the policy score for rows from an older backend", () => {
+    expect(effectiveScore({ riskScore: 10 })).toBe(10);
+  });
+});
+
+describe("approval claims (V14)", () => {
+  it("are recognised by their link to the held request", () => {
+    expect(isApprovalClaim({ claimedRequestId: "11111111-1111-1111-1111-111111111111" })).toBe(true);
+    expect(isApprovalClaim({ claimedRequestId: null })).toBe(false);
+    expect(isApprovalClaim({})).toBe(false);
+    expect(APPROVAL_CLAIMED_LABEL).toBe("Approval claimed");
+  });
+
+  it("are left out of pipeline runs, which already show the claim through the review", () => {
+    const base = {
+      sessionId: MCP,
+      tool: "filesystem",
+      action: "WRITE" as const,
+      resource: "notes/contact.txt",
+      authorizationResult: "AUTHORIZED" as const,
+      escalatedBy: "NONE" as const,
+    };
+    const runs = groupRuns([
+      { ...base, requestId: "claim", decision: "ALLOW", timestamp: "2026-11-12T10:01:00Z", claimedRequestId: "held" },
+      { ...base, requestId: "held", decision: "REVIEW", timestamp: "2026-11-12T10:00:00Z" },
+    ]);
+    expect(runs).toHaveLength(1);
+    expect(runs[0].rows.map((r) => r.requestId)).toEqual(["held"]);
   });
 });

@@ -1,4 +1,4 @@
-import { Check, CircleDashed, CircleHelp, Minus } from "lucide-react";
+import { Check, CircleDashed, CircleHelp, Minus, ShieldAlert } from "lucide-react";
 import { GateIcon } from "@/components/checkpoint/gate-mark";
 import { DecisionIcon } from "@/components/checkpoint/decision-mark";
 import { decisionPath, STEP_STATUS_LABELS, type PathInput, type ReviewOutcome, type StepStatus } from "@/lib/activity/decision-path";
@@ -70,7 +70,15 @@ export function DecisionPath({ event, reviewOutcome }: { event: PathInput; revie
                   {STEP_STATUS_LABELS[step.status]}
                 </span>
               </p>
-              <p className={cn("text-xs leading-relaxed", decided ? "text-foreground" : "text-muted-foreground")}>{step.note}</p>
+              {step.failedSafe ? (
+                // Never-Alone: the HIGH tier's icon with the words; the tone only reinforces it.
+                <p className="inline-flex items-center gap-1.5 text-xs leading-relaxed font-medium text-risk-high-text">
+                  <ShieldAlert aria-hidden="true" className="size-3.5 shrink-0" />
+                  {step.note}
+                </p>
+              ) : (
+                <p className={cn("text-xs leading-relaxed", decided ? "text-foreground" : "text-muted-foreground")}>{step.note}</p>
+              )}
               {step.detail ? (
                 <div className="mt-1 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm leading-relaxed">
                   <span className="sr-only">
